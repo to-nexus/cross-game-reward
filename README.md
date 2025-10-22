@@ -1,66 +1,266 @@
-## Foundry
+# Cross-Staking Protocol
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
+프로젝트별 $CROSS 토큰 스테이킹 및 보상 분배 프로토콜
 
-Foundry consists of:
+## 개요
 
--   **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
--   **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
--   **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
--   **Chisel**: Fast, utilitarian, and verbose solidity REPL.
+Cross-Staking Protocol은 다중 프로젝트를 지원하는 시즌 기반 스테이킹 시스템입니다. 각 프로젝트는 독립적인 스테이킹 풀을 가지며, 시즌별로 사용자의 참여도를 포인트로 측정하여 보상을 분배합니다.
 
-## Documentation
+## 주요 기능
 
-https://book.getfoundry.sh/
+### 1. 다중 프로젝트 지원
+- Factory 패턴을 통한 프로젝트별 독립적인 StakingPool 생성
+- 각 프로젝트는 자체 시즌 스케줄 및 보상 구조 보유
+- Code 컨트랙트 패턴으로 가스비 최적화
 
-## Usage
+### 2. 시즌 기반 시스템
+- 블록 기반 시즌 관리
+- Lazy Evaluation을 통한 가스비 절감
+- 자동 시즌 전환 및 수동 시즌 재시작 지원
+- 시즌별 독립적인 포인트 계산 및 보상 분배
 
-### Build
+### 3. 포인트 시스템
+- 시간 가중 포인트 누적 (balance × time)
+- 정밀도: 소수점 6자리 (POINTS_PRECISION = 1e6)
+- Lazy snapshot을 통한 효율적인 데이터 관리
+- 실시간 포인트 조회 및 예상 보상 계산
 
-```shell
-$ forge build
+### 4. 유연한 스테이킹
+- 최소 스테이킹: 1 CROSS
+- 락업 기간 없음 (자유로운 입출금)
+- 분할 스테이킹 지원
+- 전액 출금 시 현재 시즌 포인트 몰수 (이전 시즌 보상은 유지)
+
+### 5. 다중 토큰 보상
+- 시즌별 다양한 ERC20 토큰 보상 지원
+- 프로젝트 크리에이터가 자유롭게 보상 토큰 및 수량 설정
+- 비례 분배 방식 (사용자 포인트 / 총 포인트)
+
+## 컨트랙트 구조
+
+```
+┌─────────────────┐
+│ StakingProtocol │ ← Factory & Registry
+└────────┬────────┘
+         │ creates
+    ┌────┴────┐
+    ▼         ▼
+┌──────────┐ ┌──────────┐
+│StakingPool││RewardPool│
+└──────────┘ └──────────┘
+    ▲              │
+    │ uses         │ distributes
+    │              ▼
+    └──────────[Users]
 ```
 
-### Test
+### 핵심 컨트랙트
 
-```shell
-$ forge test
+#### 1. StakingProtocol
+- **역할**: Factory 및 프로젝트 레지스트리
+- **기능**:
+  - 프로젝트별 StakingPool 및 RewardPool 생성
+  - 프로젝트 관리 (활성화/비활성화)
+  - 전역 설정 관리
+
+#### 2. StakingPool
+- **역할**: 프로젝트별 스테이킹 및 포인트 관리
+- **주요 기능**:
+  - 스테이킹 (stake/unstake)
+  - 시즌 관리 (rollover, finalize)
+  - 포인트 계산 및 스냅샷
+  - 보상 청구 (claimSeason)
+- **최적화**:
+  - Lazy evaluation으로 가스비 절감
+  - 유저별 시즌 데이터 통합 관리
+  - 불필요한 staker 순회 제거
+
+#### 3. RewardPool
+- **역할**: 시즌별 보상 관리 및 분배
+- **주요 기능**:
+  - 보상 토큰 예치 (fundSeason)
+  - 보상 지급 (payUser)
+  - 남은 보상 회수 (recoverRemaining)
+
+#### 4. StakingRouter
+- **역할**: Native CROSS 지원 및 통합 조회 API
+- **주요 기능**:
+  - Native CROSS ↔ WCROSS 자동 변환
+  - 프로젝트별 통합 조회 함수
+  - 사용자 친화적인 인터페이스
+
+## 코드 구조 및 가독성
+
+### 함수 배치 순서
+모든 컨트랙트는 다음 순서로 함수가 배치되어 있습니다:
+
+**1차 순서:**
+1. **Execute Functions**: 상태를 변경하는 함수들 (stake, withdraw, rollover, claim 등)
+2. **View Functions**: 상태를 조회하는 함수들 (get*, is* 등)
+3. **Configuration Functions**: 설정을 변경하는 함수들 (set* 등)
+
+**2차 순서 (각 그룹 내):**
+1. External
+2. Public
+3. Internal
+4. Private
+
+이러한 구조를 통해 코드 가독성과 유지보수성을 크게 향상시켰습니다.
+
+## 주요 설계 원칙
+
+### 1. 가스 효율성
+- **Lazy Evaluation**: 필요한 시점에만 데이터 계산
+  - rolloverSeason 시 모든 staker 순회 제거
+  - 유저별 시즌 데이터는 해당 유저의 액션 시점에 스냅샷
+  - totalPoints는 첫 claim 시점에 계산 및 캐싱
+
+- **데이터 구조 최적화**:
+  - UserSeasonData로 시즌별 유저 정보 통합
+  - 불필요한 중복 저장 제거
+  - 효율적인 mapping 활용
+
+### 2. 보안
+- **재진입 방지**: ReentrancyGuardTransient 사용
+- **권한 관리**: AccessControlDefaultAdminRules
+  - DEFAULT_ADMIN_ROLE: 최고 관리자
+  - MANAGER_ROLE: 운영 관리자
+  - REWARD_POOL_ROLE: RewardPool 전용
+- **안전한 토큰 전송**: SafeERC20 사용
+
+### 3. 확장성
+- **모듈화**: 각 컨트랙트의 독립적인 책임
+- **Factory 패턴**: 새로운 프로젝트 추가 용이
+- **유연한 시즌 관리**: 자동/수동 시작, 종료 블록 설정 가능
+
+### 4. 사용자 경험
+- **간단한 인터페이스**: Router를 통한 Native CROSS 지원
+- **포괄적인 조회 API**: 실시간 포인트, 예상 보상 등
+- **명확한 에러 메시지**: 커스텀 에러 사용
+
+## 시스템 흐름
+
+### 1. 프로젝트 생성
+```solidity
+// StakingProtocol.createProject()
+uint projectId = protocol.createProject(
+    "ProjectName",
+    seasonBlocks,      // 시즌 길이 (블록 수)
+    startBlock,        // 첫 시즌 시작 블록
+    endBlock           // 풀 종료 블록 (0이면 무한)
+);
 ```
 
-### Format
+### 2. 스테이킹
+```solidity
+// Native CROSS 스테이킹 (Router)
+router.stake{value: 10 ether}(projectId);
 
-```shell
-$ forge fmt
+// 또는 ERC20 스테이킹 (직접)
+stakingPool.stake(10 ether);
 ```
 
-### Gas Snapshots
-
-```shell
-$ forge snapshot
+### 3. 시즌 진행
+```
+[시즌 1 시작] → [사용자 스테이킹] → [포인트 누적] → [시즌 1 종료]
+                                                           ↓
+                                            [rolloverSeason 호출]
+                                                           ↓
+[시즌 2 시작] → ...                            [시즌 1 데이터 finalize]
 ```
 
-### Anvil
+### 4. 보상 청구
+```solidity
+// 프로젝트 크리에이터: 보상 예치
+protocol.fundProjectSeason(projectId, seasonNum, rewardToken, amount);
 
-```shell
-$ anvil
+// 사용자: 보상 청구
+stakingPool.claimSeason(seasonNum, rewardToken);
 ```
 
-### Deploy
+## 포인트 계산 공식
 
-```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
+```
+points = (stakeAmount × timeStaked × POINTS_PRECISION) / pointsTimeUnit
+
+where:
+- stakeAmount: 스테이킹한 토큰 수량
+- timeStaked: 스테이킹 유지 시간 (초)
+- POINTS_PRECISION: 1e6 (정밀도)
+- pointsTimeUnit: 기준 시간 단위 (기본: 1 hour)
 ```
 
-### Cast
+### 예시
+- 사용자 A: 10 CROSS를 시즌 전체 (30일) 스테이킹
+- 사용자 B: 5 CROSS를 시즌 전체 (30일) 스테이킹
+- 포인트 비율: A:B = 2:1
+- 보상 배분: 시즌 총 보상의 2/3를 A, 1/3를 B가 수령
 
-```shell
-$ cast <subcommand>
-```
+## 최적화 내역
 
-### Help
+### Lazy Evaluation 적용
+- **Before**: rolloverSeason 시 모든 staker 순회 → O(n) 가스비
+- **After**: 각 유저의 액션 시점에 lazy snapshot → 분산된 가스비
+- **효과**: staker 수가 많을수록 rollover 가스비 절감 효과 증가
 
-```shell
-$ forge --help
-$ anvil --help
-$ cast --help
-```
+### 데이터 구조 통합
+- **Before**: seasonUserPoints, seasonPositions, seasonUserClaimed (3개 mapping)
+- **After**: UserSeasonData (단일 struct)
+- **효과**: 코드 가독성 향상, 메모리 효율성 증가
+
+### 중복 로직 제거
+- `_calculatePoints` 헬퍼 함수로 포인트 계산 로직 통합
+- `_ensureUserSeasonSnapshot` 및 `_ensureUserAllPreviousSeasons`로 스냅샷 로직 통합
+
+## 기술 스택
+
+- **Language**: Solidity ^0.8.13
+- **Framework**: Foundry
+- **Dependencies**:
+  - OpenZeppelin Contracts (AccessControl, ReentrancyGuard, SafeERC20)
+- **Testing**: Foundry Test (68 tests, 100% pass rate)
+
+## 보안 고려사항
+
+### 1. 재진입 공격 방지
+- 모든 외부 호출 함수에 `nonReentrant` modifier 적용
+- Checks-Effects-Interactions 패턴 준수
+
+### 2. 권한 관리
+- 3일 delay가 있는 AccessControlDefaultAdminRules 사용
+- 역할별 권한 분리
+
+### 3. 오버플로우/언더플로우
+- Solidity 0.8+ 내장 검사 활용
+- SafeERC20으로 안전한 토큰 전송
+
+### 4. 논리적 검증
+- 광범위한 테스트 커버리지
+- Fuzz testing 포함
+- Edge case 테스트
+
+## 📚 상세 문서
+
+프로젝트를 완벽히 이해하기 위한 종합 문서가 준비되어 있습니다:
+
+### [📖 docs/](./docs/)
+
+| 문서 | 내용 | 추천 대상 |
+|-----|------|---------|
+| [00-개요.md](./docs/00-개요.md) | 프로젝트 전체 개요 | 모든 사용자 |
+| [01-아키텍처.md](./docs/01-아키텍처.md) | 시스템 아키텍처 상세 | 개발자 |
+| [02-핵심개념.md](./docs/02-핵심개념.md) | 핵심 개념 심화 학습 | 개발자 |
+| [03-컨트랙트상세.md](./docs/03-컨트랙트상세.md) | 함수별 상세 설명 | 통합 개발자 |
+| [04-워크플로우.md](./docs/04-워크플로우.md) | 실제 사용 시나리오 | 운영자, 프론트엔드 |
+| [05-기술구현.md](./docs/05-기술구현.md) | 기술 구현 디테일 | 고급 개발자 |
+
+**학습 경로:**
+- 처음 접하는 경우: `00-개요.md` → `04-워크플로우.md`
+- 개발자: `00-개요.md` → `01-아키텍처.md` → `02-핵심개념.md` → `03-컨트랙트상세.md`
+- 고급 개발자: 전체 문서 순차 읽기 + `05-기술구현.md`
+
+자세한 내용은 [docs/README.md](./docs/README.md)를 참고하세요.
+
+## 라이선스
+
+MIT License
