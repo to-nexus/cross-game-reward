@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.13;
+pragma solidity 0.8.28;
 
 import "./BaseTest.sol";
 
@@ -25,14 +25,14 @@ contract MultiPoolTest is BaseTest {
 
         // Protocol을 통해 추가 프로젝트 생성 (즉시 시작)
         (, address poolAddr2, address rewardPoolAddr2) =
-            protocol.createProject("TestProject2", SEASON_BLOCKS * 2, block.number, 0, address(0));
+            protocol.createProject("TestProject2", SEASON_BLOCKS * 2, block.number, 0, owner, 0);
         pool2 = StakingPool(poolAddr2);
         rewardPool2 = RewardPool(rewardPoolAddr2);
         router2 = new StakingRouter(address(wcross), address(protocol));
         protocol.setApprovedRouter(PROJECT_ID_2, address(router2), true);
 
         (, address poolAddr3, address rewardPoolAddr3) =
-            protocol.createProject("TestProject3", SEASON_BLOCKS / 2, block.number, 0, address(0));
+            protocol.createProject("TestProject3", SEASON_BLOCKS / 2, block.number, 0, owner, 0);
         pool3 = StakingPool(poolAddr3);
         rewardPool3 = RewardPool(rewardPoolAddr3);
         router3 = new StakingRouter(address(wcross), address(protocol));

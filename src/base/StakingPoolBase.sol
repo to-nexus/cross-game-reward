@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.13;
+pragma solidity 0.8.28;
 
-import "../interfaces/IStakingAddon.sol";
 import "../interfaces/IStakingPool.sol";
 import "../libraries/PointsLib.sol";
 import "../libraries/SeasonLib.sol";
@@ -28,6 +27,7 @@ abstract contract StakingPoolBase is IStakingPool, CrossStakingBase {
     bytes32 public constant ROUTER_ROLE = keccak256("ROUTER_ROLE");
 
     uint public constant MIN_STAKE = 1e18; // 최소 스테이크: 1 CROSS
+    uint public constant MAX_AUTO_ROLLOVERS = 50; // 자동 롤오버 최대 시즌 수
 
     // ============================================
     // Errors
@@ -41,7 +41,9 @@ abstract contract StakingPoolBase is IStakingPool, CrossStakingBase {
     error StakingPoolBaseNoActiveSeason();
     error StakingPoolBaseInvalidStartBlock();
     error StakingPoolBaseInvalidEndBlock();
-    error StakingPoolBaseAddonNotApproved(); // 승인되지 않은 애드온
+    error StakingPoolBaseTooManySeasons();
+    error StakingPoolBaseOnlySelf();
+    error StakingPoolBaseInvalidMaxRollovers();
 
     // ============================================
     // Structs
@@ -64,13 +66,15 @@ abstract contract StakingPoolBase is IStakingPool, CrossStakingBase {
         uint seasonTotalStaked; // 시즌 중 총 스테이킹 (집계용, 변동)
         uint lastAggregatedBlock; // 마지막 집계 블록
         uint aggregatedPoints; // 집계된 포인트 (실시간 누적, finalize 시 totalPoints로 복사)
+        uint forfeitedPoints; // unstake로 몰수된 포인트 (totalPoints 계산 시 제외)
     }
 
     /// @notice 시즌별 유저 데이터
     struct UserSeasonData {
         uint points;
         uint balance;
-        uint joinBlock;
+        uint joinBlock; // 실제 참여 블록 (정보용)
+        uint lastPointsBlock; // 마지막 포인트 계산 블록
         bool claimed;
         bool finalized;
     }
@@ -104,6 +108,9 @@ abstract contract StakingPoolBase is IStakingPool, CrossStakingBase {
     /// @notice 다음 시즌 시작 블록
     uint public nextSeasonStartBlock;
 
+    /// @notice 사전 예치 시작 블록 (첫 시즌 시작 전 보상 예치 가능 시점)
+    uint public preDepositStartBlock;
+
     /// @notice 포인트 계산 시간 단위
     uint public pointsTimeUnit = 1 hours;
 
@@ -119,12 +126,6 @@ abstract contract StakingPoolBase is IStakingPool, CrossStakingBase {
     /// @notice 사용자별 마지막 finalize된 시즌
     mapping(address => uint) public lastFinalizedSeason;
 
-    /// @notice 연결된 애드온 (선택적)
-    IStakingAddon public stakingAddon;
-
-    /// @notice 승인된 애드온 목록 (allowlist)
-    mapping(address => bool) public approvedAddons;
-
     // ============================================
     // Events
     // ============================================
@@ -134,9 +135,9 @@ abstract contract StakingPoolBase is IStakingPool, CrossStakingBase {
     event PointsUpdated(address indexed user, uint points);
     event SeasonRolledOver(uint indexed oldSeason, uint indexed newSeason, uint totalPoints);
     event SeasonClaimed(address indexed user, uint indexed season, uint points);
-    event AddonSet(IStakingAddon indexed oldAddon, IStakingAddon indexed newAddon);
-    event AddonCallFailed(IStakingAddon indexed addon, bytes4 selector, string reason);
-    event AddonApprovalChanged(IStakingAddon indexed addon, bool approved);
+    event ManualRolloverCompleted(uint rolloversPerformed, uint fromSeason, uint toSeason);
+    event PointsForfeited(address indexed user, uint indexed season, uint amount);
+    event SeasonAggregationUpdated(uint indexed season, uint aggregatedPoints, uint lastAggregatedBlock);
 
     // ============================================
     // Constructor
@@ -147,7 +148,8 @@ abstract contract StakingPoolBase is IStakingPool, CrossStakingBase {
         address admin,
         uint _seasonBlocks,
         uint _firstSeasonStartBlock,
-        uint _poolEndBlock
+        uint _poolEndBlock,
+        uint _preDepositStartBlock
     ) CrossStakingBase(admin) {
         _validateAddress(address(_stakingToken));
         require(_seasonBlocks != 0, StakingPoolBaseInvalidSeasonBlocks());
@@ -156,11 +158,19 @@ abstract contract StakingPoolBase is IStakingPool, CrossStakingBase {
             _poolEndBlock == 0 || _poolEndBlock > _firstSeasonStartBlock + _seasonBlocks,
             StakingPoolBaseInvalidEndBlock()
         );
+        require(
+            _preDepositStartBlock == 0 || _preDepositStartBlock <= _firstSeasonStartBlock,
+            "preDepositStartBlock must be before or equal to firstSeasonStartBlock"
+        );
 
         stakingToken = _stakingToken;
         seasonBlocks = _seasonBlocks;
         nextSeasonStartBlock = _firstSeasonStartBlock;
         poolEndBlock = _poolEndBlock;
+        preDepositStartBlock = _preDepositStartBlock;
+
+        // Protocol(admin)에게 MANAGER_ROLE 부여
+        _grantRole(MANAGER_ROLE, admin);
     }
 
     // ============================================
@@ -177,7 +187,8 @@ abstract contract StakingPoolBase is IStakingPool, CrossStakingBase {
     /**
      * @notice 다른 사용자를 위한 스테이킹 (Router 전용)
      */
-    function stakeFor(address user, uint amount) external virtual nonReentrant onlyRole(ROUTER_ROLE) {
+    function stakeFor(address user, uint amount) external virtual nonReentrant {
+        require(_isApprovedRouter(msg.sender), CrossStakingBaseNotAuthorized());
         _stakeFor(user, amount, msg.sender);
     }
 
@@ -191,7 +202,8 @@ abstract contract StakingPoolBase is IStakingPool, CrossStakingBase {
     /**
      * @notice 유저를 대신해 전액 출금 (Router 전용)
      */
-    function withdrawAllFor(address user) external virtual nonReentrant onlyRole(ROUTER_ROLE) {
+    function withdrawAllFor(address user) external virtual nonReentrant {
+        require(_isApprovedRouter(msg.sender), CrossStakingBaseNotAuthorized());
         _withdrawAll(user, msg.sender);
     }
 
@@ -203,27 +215,40 @@ abstract contract StakingPoolBase is IStakingPool, CrossStakingBase {
      * @notice 스테이킹 내부 로직
      */
     function _stakeFor(address user, uint amount, address from) internal virtual {
+        // 풀 종료 체크
+        if (poolEndBlock > 0 && block.number >= poolEndBlock) revert StakingPoolBaseNoActiveSeason();
+
         _ensureSeason();
-        require(isSeasonActive(), StakingPoolBaseNoActiveSeason());
+
+        // 시즌 활성 체크
+        if (currentSeason == 0) {
+            // 첫 시즌이 아직 생성되지 않음
+            if (preDepositStartBlock > 0 && block.number >= preDepositStartBlock) {
+                // preDeposit 기간: preDepositStartBlock이 설정되어 있고 해당 블록 이후
+                // 시즌 시작 전에도 스테이킹 가능
+            } else {
+                // preDeposit이 없거나 아직 preDeposit 블록 이전이면 시즌 시작 블록 이후부터만 가능
+                require(block.number >= nextSeasonStartBlock, StakingPoolBaseNoActiveSeason());
+            }
+        } else {
+            // 시즌이 생성되었지만, 활성 시즌인지 확인
+            require(isSeasonActive(), StakingPoolBaseNoActiveSeason());
+        }
+
         _ensureUserAllPreviousSeasons(user);
 
         StakePosition storage position = userStakes[user];
         uint oldBalance = position.balance;
 
-        // Hook: 스테이킹 전 처리
-        _beforeStake(user, amount, oldBalance);
-
         if (oldBalance > 0) {
-            uint additionalPoints = PointsLib.calculatePoints(
-                position.balance,
-                position.lastUpdateBlock < seasons[currentSeason].startBlock
-                    ? seasons[currentSeason].startBlock
-                    : position.lastUpdateBlock,
-                block.number,
-                blockTime,
-                pointsTimeUnit
-            );
-            userSeasonData[currentSeason][user].points += additionalPoints;
+            uint effectiveStart = position.lastUpdateBlock < seasons[currentSeason].startBlock
+                ? seasons[currentSeason].startBlock
+                : position.lastUpdateBlock;
+            uint additionalPoints =
+                PointsLib.calculatePoints(position.balance, effectiveStart, block.number, blockTime, pointsTimeUnit);
+            UserSeasonData storage currentUserData = userSeasonData[currentSeason][user];
+            currentUserData.points += additionalPoints;
+            currentUserData.lastPointsBlock = block.number;
             position.points = 0;
         }
 
@@ -246,17 +271,16 @@ abstract contract StakingPoolBase is IStakingPool, CrossStakingBase {
             Season storage current = seasons[currentSeason];
             seasonData.balance = newBalance;
             seasonData.joinBlock = block.number < current.startBlock ? current.startBlock : block.number;
+            seasonData.lastPointsBlock = block.number;
         } else {
             seasonData.balance = newBalance;
+            seasonData.lastPointsBlock = block.number;
         }
 
         if (!isStaker[user]) {
             stakers.push(user);
             isStaker[user] = true;
         }
-
-        // Hook: 스테이킹 후 처리
-        _afterStake(user, amount, newBalance);
 
         emit Staked(user, amount, newBalance);
     }
@@ -273,16 +297,44 @@ abstract contract StakingPoolBase is IStakingPool, CrossStakingBase {
 
         uint amount = position.balance;
 
-        // Hook: 출금 전 처리
-        _beforeWithdraw(user, amount);
-
         if (currentSeason > 0) {
+            Season storage currentSeasonData = seasons[currentSeason];
             UserSeasonData storage seasonData = userSeasonData[currentSeason][user];
+
+            // 현재 시즌의 집계 업데이트
+            _updateSeasonAggregation(currentSeason);
+
+            // 출금하는 사용자의 현재 시즌 포인트 계산 (몰수될 포인트)
+            uint userForfeitedPoints = 0;
+            if (seasonData.balance > 0) {
+                userForfeitedPoints = seasonData.points;
+
+                uint effectiveStart = seasonData.lastPointsBlock > 0 ? seasonData.lastPointsBlock : seasonData.joinBlock;
+                if (effectiveStart < currentSeasonData.startBlock) effectiveStart = currentSeasonData.startBlock;
+
+                uint additionalPoints = PointsLib.calculatePoints(
+                    seasonData.balance, effectiveStart, block.number, blockTime, pointsTimeUnit
+                );
+                userForfeitedPoints += additionalPoints;
+            } else if (position.balance > 0) {
+                uint lastUpdate = position.lastUpdateBlock;
+                uint effectiveStart =
+                    lastUpdate < currentSeasonData.startBlock ? currentSeasonData.startBlock : lastUpdate;
+                userForfeitedPoints =
+                    PointsLib.calculatePoints(position.balance, effectiveStart, block.number, blockTime, pointsTimeUnit);
+            }
+
+            // 사용자의 시즌 데이터 초기화 (포인트 몰수)
             seasonData.points = 0;
             seasonData.balance = 0;
 
-            Season storage currentSeasonData = seasons[currentSeason];
-            _updateSeasonAggregation(currentSeason);
+            // 몰수된 포인트를 시즌의 forfeitedPoints에 누적
+            if (userForfeitedPoints > 0) {
+                currentSeasonData.forfeitedPoints += userForfeitedPoints;
+                emit PointsForfeited(user, currentSeason, userForfeitedPoints);
+            }
+
+            // seasonTotalStaked 감소
             currentSeasonData.seasonTotalStaked -= amount;
         }
 
@@ -293,9 +345,6 @@ abstract contract StakingPoolBase is IStakingPool, CrossStakingBase {
 
         stakingToken.safeTransfer(recipient, amount);
 
-        // Hook: 출금 후 처리
-        _afterWithdraw(user, amount, recipient);
-
         emit WithdrawnAll(user, amount);
     }
 
@@ -305,21 +354,46 @@ abstract contract StakingPoolBase is IStakingPool, CrossStakingBase {
 
     /**
      * @notice 시즌 자동 전환 체크
+     * @dev 여러 시즌이 지나간 경우 현재 블록에 해당하는 시즌까지 모두 롤오버
+     * @dev 가스 한도를 고려하여 최대 50개 시즌까지 한 번에 처리
      */
     function _ensureSeason() internal virtual {
+        // 풀 종료 체크
         if (poolEndBlock > 0 && (nextSeasonStartBlock == 0 || nextSeasonStartBlock <= poolEndBlock)) {
             if (block.number >= poolEndBlock) return;
         }
 
+        // 첫 시즌 시작
         if (currentSeason == 0) {
             if (block.number >= nextSeasonStartBlock) _startFirstSeason();
-            return;
+            // 첫 시즌 생성 후에도 계속 확인하여 추가 롤오버 필요 여부 체크
+            else return;
         }
 
-        Season storage current = seasons[currentSeason];
-        if (block.number > current.endBlock) {
-            if (nextSeasonStartBlock == 0 || block.number >= nextSeasonStartBlock) _rolloverSeason();
+        // 현재 시즌이 끝났다면 필요한 시즌까지 모두 롤오버
+        // 최대 50개 시즌까지 한 번에 처리 (가스 한도 고려)
+        uint maxRollovers = MAX_AUTO_ROLLOVERS;
+        uint rolloversPerformed = 0;
+
+        while (currentSeason > 0 && rolloversPerformed < maxRollovers) {
+            Season storage current = seasons[currentSeason];
+
+            // 현재 시즌이 아직 진행 중이면 종료
+            if (block.number <= current.endBlock) break;
+
+            // 다음 시즌 시작 블록이 설정되어 있고 아직 도달하지 않았으면 대기
+            if (nextSeasonStartBlock > 0 && block.number < nextSeasonStartBlock) break;
+
+            // 시즌 롤오버 실행
+            _rolloverSeason();
+            unchecked {
+                ++rolloversPerformed;
+            }
         }
+
+        // 50개를 초과하는 시즌이 쌓인 경우 에러 (비정상 상황)
+        // 이 경우 관리자가 manualRolloverSeasons()를 호출하여 처리해야 함
+        require(rolloversPerformed < maxRollovers, StakingPoolBaseTooManySeasons());
     }
 
     /**
@@ -329,23 +403,10 @@ abstract contract StakingPoolBase is IStakingPool, CrossStakingBase {
         require(currentSeason == 0, StakingPoolBaseSeasonNotEnded());
 
         uint startBlock = nextSeasonStartBlock;
-        uint endBlock = startBlock + seasonBlocks;
-
-        if (poolEndBlock > 0 && endBlock > poolEndBlock) endBlock = poolEndBlock;
+        nextSeasonStartBlock = 0;
 
         currentSeason = 1;
-        seasons[1] = Season({
-            seasonNumber: 1,
-            startBlock: startBlock,
-            endBlock: endBlock,
-            isFinalized: false,
-            totalPoints: 0,
-            seasonTotalStaked: totalStaked,
-            lastAggregatedBlock: startBlock,
-            aggregatedPoints: 0
-        });
-
-        nextSeasonStartBlock = 0;
+        _createSeason(1, startBlock);
 
         emit SeasonRolledOver(0, 1, 0);
     }
@@ -359,9 +420,6 @@ abstract contract StakingPoolBase is IStakingPool, CrossStakingBase {
 
         _finalizeSeasonAggregation(oldSeasonNumber);
 
-        // 시즌 종료 애드온 알림
-        _notifySeasonEnd(oldSeasonNumber, oldSeason.seasonTotalStaked, oldSeason.totalPoints);
-
         oldSeason.isFinalized = true;
 
         uint newSeasonNumber = oldSeasonNumber + 1;
@@ -372,25 +430,51 @@ abstract contract StakingPoolBase is IStakingPool, CrossStakingBase {
             nextStart = nextSeasonStartBlock;
             nextSeasonStartBlock = 0;
         } else {
+            // 이전 시즌 endBlock 다음 블록부터 시작 (블록 겹침 없음)
             nextStart = oldSeason.endBlock + 1;
         }
 
-        uint nextEnd = nextStart + seasonBlocks;
+        _createSeason(newSeasonNumber, nextStart);
 
-        if (poolEndBlock > 0 && nextStart <= poolEndBlock) if (nextEnd > poolEndBlock) nextEnd = poolEndBlock;
+        emit SeasonRolledOver(oldSeasonNumber, newSeasonNumber, 0);
+    }
 
-        seasons[newSeasonNumber] = Season({
-            seasonNumber: newSeasonNumber,
-            startBlock: nextStart,
-            endBlock: nextEnd,
+    /**
+     * @notice endBlock 계산 헬퍼 함수 (중복 로직 공통화)
+     * @param startBlock 시작 블록
+     * @return endBlock 계산된 종료 블록
+     */
+    function _calculateEndBlock(uint startBlock) internal view returns (uint) {
+        // endBlock 계산: inclusive이므로 startBlock + seasonBlocks - 1
+        // 예: startBlock=1, seasonBlocks=100 → endBlock=100 (블록 1~100, 총 100개)
+        uint endBlock = startBlock + seasonBlocks - 1;
+
+        // poolEndBlock 제한 적용
+        if (poolEndBlock > 0 && endBlock > poolEndBlock) endBlock = poolEndBlock;
+
+        return endBlock;
+    }
+
+    /**
+     * @notice 시즌 생성 헬퍼 함수 (중복 로직 공통화)
+     * @param seasonNumber 시즌 번호
+     * @param startBlock 시작 블록
+     */
+    function _createSeason(uint seasonNumber, uint startBlock) internal {
+        uint endBlock = _calculateEndBlock(startBlock);
+
+        // 시즌 생성
+        seasons[seasonNumber] = Season({
+            seasonNumber: seasonNumber,
+            startBlock: startBlock,
+            endBlock: endBlock,
             isFinalized: false,
             totalPoints: 0,
             seasonTotalStaked: totalStaked,
-            lastAggregatedBlock: nextStart,
-            aggregatedPoints: 0
+            lastAggregatedBlock: startBlock,
+            aggregatedPoints: 0,
+            forfeitedPoints: 0
         });
-
-        emit SeasonRolledOver(oldSeasonNumber, newSeasonNumber, 0);
     }
 
     // ============================================
@@ -415,6 +499,7 @@ abstract contract StakingPoolBase is IStakingPool, CrossStakingBase {
 
         season.aggregatedPoints += additionalPoints;
         season.lastAggregatedBlock = block.number;
+        emit SeasonAggregationUpdated(seasonNum, season.aggregatedPoints, block.number);
     }
 
     /**
@@ -474,143 +559,119 @@ abstract contract StakingPoolBase is IStakingPool, CrossStakingBase {
         StakePosition storage position = userStakes[user];
         uint lastUpdate = position.lastUpdateBlock;
 
-        if (lastUpdate > season.endBlock) {
-            if (userData.balance == 0) {
-                userData.finalized = true;
-                return;
-            }
-        }
+        // userData.balance가 이미 기록되어 있으면 그것을 사용 (과거 시즌에 참여함)
+        if (userData.balance > 0) {
+            uint userJoinBlock = userData.joinBlock > 0 ? userData.joinBlock : season.startBlock;
 
-        if (position.balance == 0 && userData.balance == 0) {
+            if (userJoinBlock < season.startBlock) {
+                userData.joinBlock = season.startBlock;
+                userData.points = PointsLib.calculatePoints(
+                    userData.balance, season.startBlock, season.endBlock, blockTime, pointsTimeUnit
+                );
+            } else if (userJoinBlock <= season.endBlock) {
+                userData.points = PointsLib.calculatePoints(
+                    userData.balance, userJoinBlock, season.endBlock, blockTime, pointsTimeUnit
+                );
+            }
             userData.finalized = true;
             return;
         }
 
-        uint balanceToUse = userData.balance > 0 ? userData.balance : position.balance;
-        uint joinBlockToUse = userData.joinBlock > 0 ? userData.joinBlock : lastUpdate;
+        // userData.balance가 0인 경우:
+        // - 시즌 시작 전에 스테이킹하고 시즌 종료 전까지 유지한 경우만 position.balance 사용
+        // - 시즌 종료 후에 스테이킹한 경우 참여하지 않은 것으로 처리
+        if (lastUpdate > season.endBlock) {
+            // 시즌 종료 후에 스테이킹 → 이 시즌에 참여하지 않음
+            userData.finalized = true;
+            return;
+        }
 
-        if (joinBlockToUse < season.startBlock) {
-            userData.balance = balanceToUse;
+        if (position.balance == 0) {
+            // 스테이킹이 없었음
+            userData.finalized = true;
+            return;
+        }
+
+        // position.balance 사용 (자동 참여 케이스)
+        // 단, lastUpdate가 시즌 기간 내에 있는 경우만
+        uint positionJoinBlock = lastUpdate;
+
+        if (positionJoinBlock < season.startBlock) {
+            // 시즌 시작 전에 스테이킹 → 전체 시즌 참여
+            userData.balance = position.balance;
             userData.joinBlock = season.startBlock;
-            userData.points =
-                PointsLib.calculatePoints(balanceToUse, season.startBlock, season.endBlock, blockTime, pointsTimeUnit);
-        } else if (joinBlockToUse <= season.endBlock) {
-            userData.balance = balanceToUse;
-            userData.joinBlock = joinBlockToUse;
-            userData.points =
-                PointsLib.calculatePoints(balanceToUse, joinBlockToUse, season.endBlock, blockTime, pointsTimeUnit);
+            userData.points = PointsLib.calculatePoints(
+                position.balance, season.startBlock, season.endBlock, blockTime, pointsTimeUnit
+            );
+        } else if (positionJoinBlock <= season.endBlock) {
+            // 시즌 중에 스테이킹 → joinBlock부터 endBlock까지 참여
+            userData.balance = position.balance;
+            userData.joinBlock = positionJoinBlock;
+            userData.points = PointsLib.calculatePoints(
+                position.balance, positionJoinBlock, season.endBlock, blockTime, pointsTimeUnit
+            );
         }
 
         userData.finalized = true;
     }
 
     // ============================================
-    // Hook Functions (확장 포인트)
+    // Router Approval Check (확장 포인트)
     // ============================================
 
-    function _beforeStake(address user, uint amount, uint oldBalance) internal virtual {}
-
-    function _afterStake(address user, uint amount, uint newBalance) internal virtual {
-        // 애드온이 설정되어 있으면 호출
-        if (address(stakingAddon) != address(0)) {
-            _callAddonSafe(
-                stakingAddon,
-                abi.encodeWithSignature(
-                    "onStake(address,uint256,uint256,uint256,uint256)",
-                    user,
-                    amount,
-                    newBalance - amount, // oldBalance
-                    newBalance,
-                    currentSeason
-                )
-            );
-        }
-    }
-
-    function _beforeWithdraw(address user, uint amount) internal virtual {}
-
-    function _afterWithdraw(address user, uint amount, address /* recipient */ ) internal virtual {
-        // 애드온이 설정되어 있으면 호출
-        if (address(stakingAddon) != address(0)) {
-            _callAddonSafe(
-                stakingAddon,
-                abi.encodeWithSignature("onWithdraw(address,uint256,uint256)", user, amount, currentSeason)
-            );
-        }
-    }
-
     /**
-     * @notice 시즌 종료 시 애드온 호출
+     * @notice Router 승인 여부 확인
+     * @param router Router 주소
+     * @return approved 승인 여부 (로컬 ROUTER_ROLE만 체크, 자식에서 override)
+     * @dev 자식 컨트랙트에서 Protocol 글로벌 승인도 함께 체크하도록 override
      */
-    function _notifySeasonEnd(uint season, uint totalStakedAmount, uint totalPointsAmount) internal {
-        if (address(stakingAddon) != address(0)) {
-            _callAddonSafe(
-                stakingAddon,
-                abi.encodeWithSignature(
-                    "onSeasonEnd(uint256,uint256,uint256)", season, totalStakedAmount, totalPointsAmount
-                )
-            );
-        }
-    }
-
-    /**
-     * @notice 애드온 안전 호출 (실패 시 로그만 남김)
-     */
-    function _callAddonSafe(IStakingAddon addon, bytes memory data) private {
-        try this.callAddon(addon, data) {}
-        catch Error(string memory reason) {
-            emit AddonCallFailed(addon, bytes4(data), reason);
-        } catch {
-            emit AddonCallFailed(addon, bytes4(data), "Unknown error");
-        }
-    }
-
-    /**
-     * @notice 외부 호출용 헬퍼 (try/catch를 위해 external 필요)
-     */
-    function callAddon(IStakingAddon addon, bytes memory data) external {
-        require(msg.sender == address(this), "Only self");
-        (bool success, bytes memory returnData) = address(addon).call(data);
-        if (!success) {
-            if (returnData.length > 0) {
-                assembly {
-                    revert(add(32, returnData), mload(returnData))
-                }
-            } else {
-                revert("Addon call failed");
-            }
-        }
+    function _isApprovedRouter(address router) internal view virtual returns (bool) {
+        return hasRole(ROUTER_ROLE, router);
     }
 
     // ============================================
     // View Functions
     // ============================================
 
+    /**
+     * @notice 현재 시즌이 활성화되어 있는지 확인
+     * @return true면 스테이킹 가능, false면 불가능
+     */
     function isSeasonActive() public view virtual returns (bool) {
-        // 가상 시즌 처리 (nextSeasonStartBlock이 설정되어 있을 때)
-        if (nextSeasonStartBlock > 0) {
-            bool seasonEnded = currentSeason == 0 || seasons[currentSeason].isFinalized
-                || block.number > seasons[currentSeason].endBlock;
+        // 풀 종료 체크
+        if (poolEndBlock > 0 && block.number >= poolEndBlock) return false;
 
-            if (seasonEnded) {
-                if (block.number < nextSeasonStartBlock) return false;
+        // 첫 시즌 시작 전
+        if (currentSeason == 0) {
+            // nextSeasonStartBlock 도달 확인
+            if (block.number < nextSeasonStartBlock) return false;
 
-                uint virtualEndBlock = nextSeasonStartBlock + seasonBlocks;
+            // poolEndBlock 체크
+            if (poolEndBlock > 0 && nextSeasonStartBlock >= poolEndBlock) return false;
 
-                if (poolEndBlock > 0 && poolEndBlock > nextSeasonStartBlock && virtualEndBlock > poolEndBlock) {
-                    virtualEndBlock = poolEndBlock;
-                }
-
-                return block.number <= virtualEndBlock;
-            }
+            // 가상 첫 시즌 활성 기간 계산
+            uint virtualEndBlock = _calculateEndBlock(nextSeasonStartBlock);
+            return block.number <= virtualEndBlock;
         }
-
-        if (currentSeason == 0) return false;
 
         Season storage season = seasons[currentSeason];
 
-        if (poolEndBlock > 0 && season.startBlock <= poolEndBlock) if (block.number >= poolEndBlock) return false;
+        // 현재 시즌이 종료되고 다음 시즌이 아직 롤오버되지 않은 경우
+        if (block.number > season.endBlock) {
+            // nextSeasonStartBlock이 설정되어 있고 아직 도달하지 않았으면 비활성
+            if (nextSeasonStartBlock > 0 && block.number < nextSeasonStartBlock) return false;
 
+            // 가상 다음 시즌 계산
+            uint nextStart = nextSeasonStartBlock > 0 ? nextSeasonStartBlock : season.endBlock + 1;
+
+            // poolEndBlock 체크
+            if (poolEndBlock > 0 && nextStart >= poolEndBlock) return false;
+
+            uint virtualEndBlock = _calculateEndBlock(nextStart);
+            return block.number <= virtualEndBlock;
+        }
+
+        // 일반 시즌 활성 체크
         return !season.isFinalized && block.number >= season.startBlock && block.number <= season.endBlock;
     }
 
@@ -623,31 +684,147 @@ abstract contract StakingPoolBase is IStakingPool, CrossStakingBase {
     }
 
     // ============================================
-    // Addon Management
+    // Manual Season Management (Admin)
     // ============================================
 
     /**
-     * @notice 애드온 승인 상태 변경 (관리자 전용)
-     * @param addon 애드온 주소
-     * @param approved 승인 여부
+     * @notice 수동으로 여러 시즌 롤오버 (관리자 전용)
+     * @param maxRollovers 최대 롤오버 횟수
+     * @return rolloversPerformed 실제로 수행된 롤오버 횟수
+     * @dev 50개 이상의 시즌이 쌓인 경우 관리자가 여러 번 호출하여 처리
      */
-    function setAddonApproved(IStakingAddon addon, bool approved) external virtual onlyRole(DEFAULT_ADMIN_ROLE) {
-        _validateAddress(address(addon));
-        approvedAddons[address(addon)] = approved;
-        emit AddonApprovalChanged(addon, approved);
+    function manualRolloverSeasons(uint maxRollovers)
+        external
+        virtual
+        onlyRole(MANAGER_ROLE)
+        returns (uint rolloversPerformed)
+    {
+        require(maxRollovers > 0 && maxRollovers <= 100, StakingPoolBaseInvalidMaxRollovers());
+
+        uint startSeason = currentSeason;
+
+        // 풀 종료 체크
+        if (poolEndBlock > 0 && block.number >= poolEndBlock) {
+            emit ManualRolloverCompleted(0, startSeason, currentSeason);
+            return 0;
+        }
+
+        // 첫 시즌이 아직 시작 안 됐으면 시작
+        if (currentSeason == 0) {
+            if (block.number >= nextSeasonStartBlock) {
+                _startFirstSeason();
+                rolloversPerformed = 1;
+                emit ManualRolloverCompleted(1, 0, currentSeason);
+            } else {
+                emit ManualRolloverCompleted(0, 0, 0);
+                return 0;
+            }
+        }
+
+        // 여러 시즌 롤오버
+        uint count = 0;
+        while (currentSeason > 0 && count < maxRollovers) {
+            Season storage current = seasons[currentSeason];
+
+            // 현재 시즌이 아직 진행 중이면 종료
+            if (block.number <= current.endBlock) break;
+
+            // 다음 시즌 시작 블록이 설정되어 있고 아직 도달하지 않았으면 대기
+            if (nextSeasonStartBlock > 0 && block.number < nextSeasonStartBlock) break;
+
+            // 시즌 롤오버
+            _rolloverSeason();
+
+            unchecked {
+                ++count;
+                ++rolloversPerformed;
+            }
+        }
+
+        // 실제 처리량 로깅
+        emit ManualRolloverCompleted(rolloversPerformed, startSeason, currentSeason);
+
+        return rolloversPerformed;
     }
 
     /**
-     * @notice 애드온 설정 (관리자 전용)
-     * @param newAddon 새 애드온 주소 (0이면 제거)
-     * @dev 승인된 애드온만 설정 가능 (allowlist)
+     * @notice 롤오버가 필요한 시즌 개수 조회
+     * @return pendingSeasons 롤오버 대기 중인 시즌 수
      */
-    function setStakingAddon(IStakingAddon newAddon) external virtual onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(
-            (address(newAddon) == address(0) || approvedAddons[address(newAddon)]), StakingPoolBaseAddonNotApproved()
-        );
-        IStakingAddon oldAddon = stakingAddon;
-        stakingAddon = newAddon;
-        emit AddonSet(oldAddon, newAddon);
+    function getPendingSeasonRollovers() external view returns (uint pendingSeasons) {
+        // 풀 종료됨
+        if (poolEndBlock > 0 && block.number >= poolEndBlock) return 0;
+
+        // 시즌 0 (첫 시즌 롤오버)
+        if (currentSeason == 0) {
+            if (block.number < nextSeasonStartBlock) return 0;
+
+            // 첫 시즌 롤오버부터 현재 블록까지 필요한 시즌 개수 계산
+            uint currentBlk = block.number;
+            uint startBlock = nextSeasonStartBlock;
+            uint count = 0;
+
+            // 첫 시즌
+            count = 1;
+            uint endBlock = _calculateEndBlock(startBlock);
+
+            // poolEndBlock에 도달하면 종료
+            if (poolEndBlock > 0 && endBlock >= poolEndBlock) return count;
+
+            // 추가 시즌 계산
+            if (currentBlk > endBlock) {
+                uint blocksAfterEnd = currentBlk - endBlock;
+                // 각 시즌은 endBlock + 1부터 시작
+                uint additionalSeasons = (blocksAfterEnd + seasonBlocks - 1) / seasonBlocks;
+
+                // poolEndBlock 고려하여 실제 가능한 시즌만 카운트
+                if (poolEndBlock > 0) {
+                    uint nextStartBlk = endBlock + 1;
+                    for (uint i = 0; i < additionalSeasons; i++) {
+                        if (nextStartBlk >= poolEndBlock) break;
+                        count++;
+                        nextStartBlk += seasonBlocks;
+                    }
+                } else {
+                    count += additionalSeasons;
+                }
+            }
+
+            return count;
+        }
+
+        // 다음 시즌 시작 대기 중 (수동으로 설정된 경우)
+        if (nextSeasonStartBlock > 0 && block.number < nextSeasonStartBlock) return 0;
+
+        Season storage current = seasons[currentSeason];
+
+        // 현재 시즌이 진행 중
+        if (block.number <= current.endBlock) return 0;
+
+        // 현재 시즌 종료 후 롤오버 필요한 개수 계산
+        // nextSeasonStartBlock이 설정되어 있으면 그것을 사용, 아니면 current.endBlock + 1 사용
+        uint nextStart = nextSeasonStartBlock > 0 ? nextSeasonStartBlock : current.endBlock + 1;
+
+        // poolEndBlock 체크
+        if (poolEndBlock > 0 && nextStart >= poolEndBlock) return 0;
+
+        uint rolloverCount = 0;
+        uint currentBlock = block.number;
+
+        // 다음 시즌부터 현재 블록까지 필요한 시즌 개수 계산
+        while (nextStart <= currentBlock) {
+            uint endBlock = _calculateEndBlock(nextStart);
+            rolloverCount++;
+
+            // poolEndBlock에 도달하거나 현재 블록을 커버하면 종료
+            if ((poolEndBlock > 0 && endBlock >= poolEndBlock) || currentBlock <= endBlock) break;
+
+            nextStart = endBlock + 1;
+
+            // 무한 루프 방지 (최대 100개 시즌)
+            if (rolloverCount >= 100) break;
+        }
+
+        return rolloverCount;
     }
 }

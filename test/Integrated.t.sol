@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.13;
+pragma solidity 0.8.28;
 
 import "./BaseTest.sol";
 
@@ -158,7 +158,7 @@ contract IntegratedTest is BaseTest {
         // 새 프로젝트 생성 테스트
         vm.prank(owner);
         (uint projectId, address stakingPoolAddr, address rewardPoolAddr) =
-            protocol.createProject("NewProject", SEASON_BLOCKS * 2, block.number + 1, 0, address(0));
+            protocol.createProject("NewProject", SEASON_BLOCKS * 2, block.number + 1, 0, owner, 0);
 
         assertEq(projectId, 2); // 첫 프로젝트는 setUp에서 생성됨
         assertNotEq(stakingPoolAddr, address(0));
@@ -169,7 +169,7 @@ contract IntegratedTest is BaseTest {
         // Protocol을 통해 새 프로젝트 생성하고 전체 플로우 테스트
         vm.prank(owner);
         (uint projectId, address stakingPoolAddr,) =
-            protocol.createProject("NewProject", SEASON_BLOCKS, block.number, 0, address(0));
+            protocol.createProject("NewProject", SEASON_BLOCKS, block.number, 0, owner, 0);
 
         StakingPool newPool = StakingPool(stakingPoolAddr);
 

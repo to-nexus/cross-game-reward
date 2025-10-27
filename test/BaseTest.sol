@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.13;
+pragma solidity 0.8.28;
 
 import "../src/RewardPool.sol";
+
 import "../src/StakingPool.sol";
 import "../src/StakingProtocol.sol";
 import "../src/StakingRouter.sol";
@@ -61,7 +62,7 @@ contract BaseTest is Test {
         uint firstSeasonStartBlock = block.number; // 현재 블록에서 시작
         uint poolEndBlock = 0; // 무한 진행
         (, address stakingPoolAddr, address rewardPoolAddr) =
-            protocol.createProject("TestProject", SEASON_BLOCKS, firstSeasonStartBlock, poolEndBlock, address(0)); // admin은 msg.sender(owner)로 자동 설정
+            protocol.createProject("TestProject", SEASON_BLOCKS, firstSeasonStartBlock, poolEndBlock, owner, 0);
 
         stakingPool = StakingPool(stakingPoolAddr);
         rewardPool = RewardPool(rewardPoolAddr);

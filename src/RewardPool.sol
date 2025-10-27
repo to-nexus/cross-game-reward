@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.13;
+pragma solidity 0.8.28;
 
 import "./base/RewardPoolBase.sol";
+
 import "./interfaces/IStakingPool.sol";
 import "./interfaces/IStakingProtocol.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -30,6 +31,12 @@ contract RewardPool is RewardPoolBase {
     // ============================================
 
     error RewardPoolOnlyProtocol();
+
+    // ============================================
+    // Events
+    // ============================================
+
+    event TokensSwept(address indexed token, address indexed to, uint amount, uint balanceBefore, uint balanceAfter);
 
     // ============================================
     // State Variables
@@ -91,12 +98,13 @@ contract RewardPool is RewardPoolBase {
     {
         if (hasClaimedSeasonReward[user][season][token]) return 0;
 
-        uint userPoints = stakingPool.getSeasonUserPoints(season, user);
-        uint totalPoints = stakingPool.seasonTotalPointsSnapshot(season);
+        (uint userPoints, uint totalPoints) = stakingPool.getSeasonUserPoints(season, user);
 
         if (userPoints == 0 || totalPoints == 0) return 0;
 
         uint totalReward = seasonRewards[season][token];
+        if (totalReward == 0) return 0;
+
         return (totalReward * userPoints) / totalPoints;
     }
 
@@ -105,16 +113,26 @@ contract RewardPool is RewardPoolBase {
     // ============================================
 
     /**
-     * @notice 현재 시즌에 보상 예치 (간편 함수)
+     * @notice 현재 시즌에 보상 예치 (사전 예치 지원)
+     * @dev 표준 ERC20 토큰만 지원
+     * @dev preDepositStartBlock 이후부터 예치 가능
+     * @dev currentSeason = 0 (시즌 시작 전)이면 시즌 1에 예치
      */
-    function depositReward(address token, uint amount) external nonReentrant {
-        _validateAddress(token);
-        _validateAmount(amount);
-
+    function depositReward(address token, uint amount) external {
         uint currentSeason = stakingPool.currentSeason();
+        uint targetSeason = currentSeason;
 
-        IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
-        seasonRewards[currentSeason][token] += amount;
+        // 시즌 시작 전(currentSeason = 0)이면 시즌 1에 사전 예치
+        if (currentSeason == 0) {
+            targetSeason = 1;
+
+            // preDepositStartBlock 체크
+            uint preDepositStart = stakingPool.preDepositStartBlock();
+            require(preDepositStart == 0 || block.number >= preDepositStart, "Pre-deposit not yet available");
+        }
+
+        // fundSeason을 호출하여 토큰 리스트도 자동으로 업데이트
+        fundSeason(targetSeason, token, amount);
     }
 
     /**
@@ -157,13 +175,17 @@ contract RewardPool is RewardPoolBase {
     // ============================================
 
     /**
-     * @notice 잘못 전송된 토큰 또는 잔여 토큰 회수 (프로토콜 관리자 전용)
+     * @notice 잘못 전송된 토큰 회수
      */
     function sweep(address token, address to, uint amount) external {
         require(msg.sender == address(protocol), RewardPoolOnlyProtocol());
         _validateAddress(to);
         _validateAmount(amount);
 
+        uint balanceBefore = IERC20(token).balanceOf(address(this));
         IERC20(token).safeTransfer(to, amount);
+        uint balanceAfter = IERC20(token).balanceOf(address(this));
+
+        emit TokensSwept(token, to, amount, balanceBefore, balanceAfter);
     }
 }

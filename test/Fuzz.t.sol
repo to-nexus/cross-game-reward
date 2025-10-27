@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.13;
+pragma solidity 0.8.28;
 
 import "./BaseTest.sol";
 
@@ -210,14 +210,16 @@ contract FuzzTest is BaseTest {
         // 블록 진행
         vm.roll(block.number + blocksInSeason);
 
-        // 시즌 롤오버 시도 (endBlock + 1에서 가능)
-        if (blocksInSeason > SEASON_BLOCKS) {
-            // 롤오버 가능
+        // 시즌 롤오버 시도
+        // endBlock = startBlock + SEASON_BLOCKS - 1이므로
+        // blocksInSeason >= SEASON_BLOCKS일 때 롤오버 가능
+        if (blocksInSeason >= SEASON_BLOCKS) {
+            // 롤오버 가능 (endBlock 이후)
             stakingPool.rolloverSeason();
             uint newSeason = stakingPool.currentSeason();
             assertEq(newSeason, initialSeason + 1, "Season should increment");
         } else {
-            // 롤오버 불가능
+            // 롤오버 불가능 (아직 시즌 진행 중)
             vm.expectRevert();
             stakingPool.rolloverSeason();
         }
@@ -239,7 +241,6 @@ contract FuzzTest is BaseTest {
 
         // 시즌 1 포인트 누적
         vm.roll(block.number + blocksBeforeRollover);
-        uint season1Points = stakingPool.getUserPoints(user1);
 
         // 시즌 종료까지 대기
         vm.roll(block.number + (SEASON_BLOCKS - blocksBeforeRollover) + 1);
@@ -249,7 +250,6 @@ contract FuzzTest is BaseTest {
 
         // 시즌 2 포인트 누적
         vm.roll(block.number + blocksAfterRollover);
-        uint season2Points = stakingPool.getUserPoints(user2);
 
         // 검증: 시즌 1 포인트는 스냅샷됨
         uint snapshotPoints = stakingPool.getExpectedSeasonPoints(1, user1);

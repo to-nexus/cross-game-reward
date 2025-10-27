@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.13;
+pragma solidity 0.8.28;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
@@ -7,7 +7,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
  * @title WCROSS
  * @notice Wrapped CROSS - ERC20 wrapper for native CROSS token
  * @dev Native CROSS를 ERC20 토큰으로 래핑
- * @dev Transfer 이벤트는 일반 전송 시에만 발생하고, deposit/withdraw 시에는 발생하지 않음 (explorer 중복 캐치 방지)
+ * @dev Transfer 이벤트는 ERC20 표준을 준수하여 deposit/withdraw 시에도 발생 (address(0) 사용)
  */
 contract WCROSS is IERC20 {
     // ============ 상태 변수 ============
@@ -30,11 +30,10 @@ contract WCROSS is IERC20 {
     /**
      * @notice Native CROSS를 입금하고 WCROSS 발행
      */
-    function deposit() external payable {
+    function deposit() public payable {
         balanceOf[msg.sender] += msg.value;
         totalSupply += msg.value;
         emit Deposit(msg.sender, msg.value);
-        // Transfer 이벤트 발생하지 않음 (explorer 중복 방지)
     }
 
     /**
@@ -48,24 +47,17 @@ contract WCROSS is IERC20 {
         (bool success,) = msg.sender.call{value: amount}("");
         require(success, "Transfer failed");
         emit Withdrawal(msg.sender, amount);
-        // Transfer 이벤트 발생하지 않음 (explorer 중복 방지)
     }
 
     /**
      * @notice Native CROSS를 받을 수 있도록 설정
      */
     receive() external payable {
-        balanceOf[msg.sender] += msg.value;
-        totalSupply += msg.value;
-        emit Deposit(msg.sender, msg.value);
-        // Transfer 이벤트 발생하지 않음 (explorer 중복 방지)
+        deposit();
     }
 
     fallback() external payable {
-        balanceOf[msg.sender] += msg.value;
-        totalSupply += msg.value;
-        emit Deposit(msg.sender, msg.value);
-        // Transfer 이벤트 발생하지 않음 (explorer 중복 방지)
+        revert("Fallback not allowed");
     }
 
     // ============ ERC20 함수 ============

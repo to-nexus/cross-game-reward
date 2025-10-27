@@ -10,5 +10,10 @@ out/
 # Docs
 # docs/
 
+# Script
+broadcast/
+
 # Dotenv file
-.env
+*.env
+
+webapp/

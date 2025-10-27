@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.13;
+pragma solidity 0.8.28;
 
 import "./BaseTest.sol";
 
@@ -176,7 +176,81 @@ contract PointsTest is BaseTest {
         assertGt(season1Points, pointsBeforeAdditional, "Season 1 points should include snapshot + additional period");
 
         // 검증: 스냅샷이 기록되어 있어야 함
-        uint snapshotPoints = stakingPool.getSeasonUserPoints(1, user1);
+        (uint snapshotPoints,) = stakingPool.getSeasonUserPoints(1, user1);
         assertGt(snapshotPoints, 0, "Snapshot points should be recorded");
+    }
+
+    function test_TotalPointsDecreaseOnUnstake() public {
+        // 두 명의 사용자가 스테이킹
+        stakeFor(user1, 10 ether);
+        stakeFor(user2, 20 ether);
+
+        // 100 블록 진행
+        vm.roll(block.number + 100);
+
+        // 현재 시즌의 총 포인트 계산
+        uint totalPointsBefore = stakingPool.seasonTotalPointsSnapshot(1);
+        assertGt(totalPointsBefore, 0, "Total points should be greater than 0");
+
+        // user1의 현재 포인트 확인
+        uint user1PointsBefore = stakingPool.getUserPoints(user1);
+        assertGt(user1PointsBefore, 0, "User1 points should be greater than 0");
+
+        // user1이 unstake
+        withdrawFor(user1);
+
+        // unstake 후 user1의 포인트는 0이어야 함
+        uint user1PointsAfter = stakingPool.getUserPoints(user1);
+        assertEq(user1PointsAfter, 0, "User1 points should be 0 after unstake");
+
+        // unstake 후 총 포인트는 user1의 포인트만큼 감소해야 함
+        uint totalPointsAfter = stakingPool.seasonTotalPointsSnapshot(1);
+        assertLt(totalPointsAfter, totalPointsBefore, "Total points should decrease after unstake");
+    }
+
+    function test_MultipleUnstakesTotalPointsDecrease() public {
+        // 세 명의 사용자가 스테이킹
+        stakeFor(user1, 10 ether);
+        stakeFor(user2, 20 ether);
+        stakeFor(user3, 30 ether);
+
+        // 50 블록 진행 (시즌 중간)
+        vm.roll(block.number + 50);
+
+        // 초기 총 포인트 기록
+        uint initialTotalPoints = stakingPool.seasonTotalPointsSnapshot(1);
+        assertGt(initialTotalPoints, 0, "Initial total points should be greater than 0");
+
+        // user1 unstake (블록 진행 없음)
+        withdrawFor(user1);
+
+        // user1 unstake 직후 총 포인트 (몰수 반영)
+        uint totalAfterUser1 = stakingPool.seasonTotalPointsSnapshot(1);
+        assertLt(totalAfterUser1, initialTotalPoints, "Total should decrease after user1 unstake");
+
+        // user1의 포인트는 0이 되어야 함
+        assertEq(stakingPool.getUserPoints(user1), 0, "User1 should have 0 points");
+
+        // user2 unstake (블록 진행 없음 - 연속 unstake 시나리오)
+        withdrawFor(user2);
+
+        // user2 unstake 직후 총 포인트
+        uint totalAfterUser2 = stakingPool.seasonTotalPointsSnapshot(1);
+        assertLt(totalAfterUser2, totalAfterUser1, "Total should decrease after user2 unstake");
+
+        // user2의 포인트도 0이 되어야 함
+        assertEq(stakingPool.getUserPoints(user2), 0, "User2 should have 0 points");
+
+        // user3만 남아있어야 함
+        uint user3PointsAfter = stakingPool.getUserPoints(user3);
+        assertGt(user3PointsAfter, 0, "User3 should still have points");
+
+        // 최종 총 포인트는 대략 user3의 포인트와 비슷해야 함
+        // (약간의 오차 허용 - withdrawAll이 각각 1블록씩 소비하므로 user3 포인트 약간 증가)
+        uint finalTotalPoints = stakingPool.seasonTotalPointsSnapshot(1);
+        assertGt(finalTotalPoints, 0, "Final total points should still be greater than 0");
+        assertApproxEqAbs(
+            finalTotalPoints, user3PointsAfter, 60 ether, "Final total should be approximately user3's points"
+        );
     }
 }

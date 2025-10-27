@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.13;
+pragma solidity 0.8.28;
 
 import "./base/StakingPoolBase.sol";
+
 import "./interfaces/IRewardPool.sol";
 import "./interfaces/IStakingProtocol.sol";
 import "./libraries/PointsLib.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 
 /**
  * @title StakingPoolCode
@@ -21,7 +23,7 @@ contract StakingPoolCode {
  * @notice 프로젝트별 $CROSS 스테이킹 풀 (Base 상속 버전)
  * @dev StakingPoolBase를 상속하여 추가 기능 구현
  */
-contract StakingPool is StakingPoolBase {
+contract StakingPool is StakingPoolBase, Pausable {
     // ============================================
     // Errors
     // ============================================
@@ -62,10 +64,73 @@ contract StakingPool is StakingPoolBase {
         IStakingProtocol _protocol,
         uint _seasonBlocks,
         uint _firstSeasonStartBlock,
-        uint _poolEndBlock
-    ) StakingPoolBase(_stakingToken, address(_protocol), _seasonBlocks, _firstSeasonStartBlock, _poolEndBlock) {
+        uint _poolEndBlock,
+        uint _preDepositStartBlock
+    )
+        StakingPoolBase(
+            _stakingToken,
+            address(_protocol),
+            _seasonBlocks,
+            _firstSeasonStartBlock,
+            _poolEndBlock,
+            _preDepositStartBlock
+        )
+    {
         projectID = _projectID;
         protocol = _protocol;
+    }
+
+    // ============================================
+    // Pausable Functions
+    // ============================================
+
+    /**
+     * @notice 긴급 중지
+     */
+    function pause() external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _pause();
+    }
+
+    /**
+     * @notice 긴급 중지 해제
+     */
+    function unpause() external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _unpause();
+    }
+
+    // ============================================
+    // Override Functions with Pausable
+    // ============================================
+
+    /**
+     * @notice 스테이킹 (pausable)
+     */
+    function stake(uint amount) external override nonReentrant whenNotPaused {
+        _stakeFor(msg.sender, amount, msg.sender);
+    }
+
+    /**
+     * @notice 대리 스테이킹 (pausable)
+     */
+    function stakeFor(address user, uint amount) external override nonReentrant whenNotPaused {
+        require(_isApprovedRouter(msg.sender), CrossStakingBaseNotAuthorized());
+        _stakeFor(user, amount, msg.sender);
+    }
+
+    /**
+     * @notice 전액 출금 (pausable)
+     */
+    function withdrawAll() external override nonReentrant whenNotPaused {
+        _withdrawAll(msg.sender, msg.sender);
+    }
+
+    /**
+     * @notice 대리 전액 출금 (pausable)
+     * @dev Router가 호출 시 토큰을 router에게 전송 (router가 unwrap 처리)
+     */
+    function withdrawAllFor(address user) external override nonReentrant whenNotPaused {
+        require(_isApprovedRouter(msg.sender), CrossStakingBaseNotAuthorized());
+        _withdrawAll(user, msg.sender); // recipient를 router(msg.sender)로 설정
     }
 
     // ============================================
@@ -75,7 +140,7 @@ contract StakingPool is StakingPoolBase {
     /**
      * @notice 시즌 롤오버
      */
-    function rolloverSeason() external {
+    function rolloverSeason() external override {
         require(currentSeason != 0, StakingPoolBaseNoActiveSeason());
         Season storage current = seasons[currentSeason];
         require(block.number > current.endBlock, StakingPoolBaseSeasonNotEnded());
@@ -87,27 +152,15 @@ contract StakingPool is StakingPoolBase {
      * @notice 시즌 보상 청구
      */
     function claimSeason(uint seasonNumber, address rewardToken) external nonReentrant {
-        Season storage season = seasons[seasonNumber];
-        require(season.isFinalized, StakingPoolBaseSeasonNotEnded());
+        _claimSeasonFor(msg.sender, seasonNumber, rewardToken);
+    }
 
-        _ensureUserSeasonSnapshot(msg.sender, seasonNumber);
-
-        UserSeasonData storage userData = userSeasonData[seasonNumber][msg.sender];
-        require(!userData.claimed, StakingPoolAlreadyClaimed());
-
-        uint userPoints = userData.points;
-
-        uint totalPoints = season.totalPoints;
-        if (totalPoints == 0) {
-            totalPoints = _calculateSeasonTotalPoints(seasonNumber);
-            season.totalPoints = totalPoints;
-        }
-
-        if (userPoints > 0 && totalPoints > 0) {
-            userData.claimed = true;
-            rewardPool.payUser(msg.sender, seasonNumber, rewardToken, userPoints, totalPoints);
-            emit SeasonClaimed(msg.sender, seasonNumber, userPoints);
-        }
+    /**
+     * @notice 라우터가 사용자를 대신해 시즌 보상 청구
+     */
+    function claimSeasonFor(address user, uint seasonNumber, address rewardToken) external nonReentrant {
+        require(_isApprovedRouter(msg.sender), CrossStakingBaseNotAuthorized());
+        _claimSeasonFor(user, seasonNumber, rewardToken);
     }
 
     /**
@@ -146,22 +199,48 @@ contract StakingPool is StakingPoolBase {
             uint joinBlock = lastUpdate < current.startBlock ? current.startBlock : lastUpdate;
             userData.balance = position.balance;
             userData.joinBlock = joinBlock;
+            userData.lastPointsBlock = currentBlock;
         } else {
             userData.balance = position.balance;
         }
 
-        if (lastUpdate < current.startBlock) {
-            uint currentSeasonPoints =
-                PointsLib.calculatePoints(position.balance, current.startBlock, currentBlock, blockTime, pointsTimeUnit);
-            position.points = currentSeasonPoints;
-        } else {
-            uint newPoints =
-                PointsLib.calculatePoints(position.balance, lastUpdate, currentBlock, blockTime, pointsTimeUnit);
-            position.points += newPoints;
+        uint effectiveStart = lastUpdate < current.startBlock ? current.startBlock : lastUpdate;
+        uint newPoints =
+            PointsLib.calculatePoints(position.balance, effectiveStart, currentBlock, blockTime, pointsTimeUnit);
+
+        userData.points += newPoints;
+        userData.lastPointsBlock = currentBlock;
+
+        position.points = 0;
+        position.lastUpdateBlock = currentBlock;
+        emit PointsUpdated(user, userData.points);
+    }
+
+    /**
+     * @notice 내부 공통 로직: 특정 사용자의 시즌 보상 청구 처리
+     */
+    function _claimSeasonFor(address user, uint seasonNumber, address rewardToken) internal {
+        Season storage season = seasons[seasonNumber];
+        require(season.isFinalized, StakingPoolBaseSeasonNotEnded());
+
+        _ensureUserSeasonSnapshot(user, seasonNumber);
+
+        UserSeasonData storage userData = userSeasonData[seasonNumber][user];
+        require(!userData.claimed, StakingPoolAlreadyClaimed());
+
+        uint userPoints = userData.points;
+
+        uint totalPoints = season.totalPoints;
+        if (totalPoints == 0) {
+            totalPoints = _calculateSeasonTotalPoints(seasonNumber);
+            season.totalPoints = totalPoints;
         }
 
-        position.lastUpdateBlock = currentBlock;
-        emit PointsUpdated(user, position.points);
+        if (userPoints > 0 && totalPoints > 0) {
+            userData.claimed = true;
+            rewardPool.payUser(user, seasonNumber, rewardToken, userPoints, totalPoints);
+            emit SeasonClaimed(user, seasonNumber, userPoints);
+        }
     }
 
     /**
@@ -195,7 +274,10 @@ contract StakingPool is StakingPoolBase {
         UserSeasonData storage userData = userSeasonData[currentSeason][user];
 
         if (userData.balance > 0) {
-            uint effectiveStart = userData.joinBlock > current.startBlock ? userData.joinBlock : current.startBlock;
+            // lastPointsBlock부터 추가 포인트 계산 (이중 계산 방지)
+            uint effectiveStart = userData.lastPointsBlock > 0 ? userData.lastPointsBlock : userData.joinBlock;
+            if (effectiveStart < current.startBlock) effectiveStart = current.startBlock;
+
             uint additionalPoints =
                 PointsLib.calculatePoints(userData.balance, effectiveStart, block.number, blockTime, pointsTimeUnit);
             return userData.points + additionalPoints;
@@ -219,22 +301,31 @@ contract StakingPool is StakingPoolBase {
 
         // 종료된 시즌: 캐시된 totalPoints 반환
         if (season.isFinalized) {
-            if (season.totalPoints > 0) return season.totalPoints;
-            return season.aggregatedPoints;
+            if (season.totalPoints > 0) {
+                // forfeitedPoints 차감 (몰수된 포인트 제외)
+                return season.totalPoints > season.forfeitedPoints ? season.totalPoints - season.forfeitedPoints : 0;
+            }
+            // aggregatedPoints에서 forfeitedPoints 차감
+            return
+                season.aggregatedPoints > season.forfeitedPoints ? season.aggregatedPoints - season.forfeitedPoints : 0;
         }
 
-        // 현재 시즌: 집계된 포인트 + 마지막 집계 이후 포인트
+        // 현재 시즌: 집계된 포인트 + 마지막 집계 이후 포인트 - 몰수된 포인트
         if (seasonNum == currentSeason) {
             uint blocksSinceAggregation =
                 block.number > season.lastAggregatedBlock ? block.number - season.lastAggregatedBlock : 0;
 
-            if (blocksSinceAggregation == 0) return season.aggregatedPoints;
+            uint totalAggregated = season.aggregatedPoints;
 
-            uint additionalPoints = PointsLib.calculatePoints(
-                season.seasonTotalStaked, season.lastAggregatedBlock, block.number, blockTime, pointsTimeUnit
-            );
+            if (blocksSinceAggregation > 0) {
+                uint additionalPoints = PointsLib.calculatePoints(
+                    season.seasonTotalStaked, season.lastAggregatedBlock, block.number, blockTime, pointsTimeUnit
+                );
+                totalAggregated += additionalPoints;
+            }
 
-            return season.aggregatedPoints + additionalPoints;
+            // forfeitedPoints 차감
+            return totalAggregated > season.forfeitedPoints ? totalAggregated - season.forfeitedPoints : 0;
         }
 
         return 0;
@@ -255,47 +346,111 @@ contract StakingPool is StakingPoolBase {
         view
         returns (uint season, uint startBlock, uint endBlock, uint blocksElapsed)
     {
-        if (nextSeasonStartBlock > 0 && (currentSeason == 0 || seasons[currentSeason].isFinalized)) {
-            season = currentSeason + 1;
-            startBlock = nextSeasonStartBlock;
-            endBlock = startBlock + seasonBlocks;
-            if (poolEndBlock > 0 && endBlock > poolEndBlock) endBlock = poolEndBlock;
+        // Case 1: No season started yet, but next season is scheduled
+        if (currentSeason == 0 && nextSeasonStartBlock > 0) {
+            if (block.number >= nextSeasonStartBlock) {
+                // Calculate which season we're actually in based on elapsed blocks
+                uint blocksSinceStart = block.number - nextSeasonStartBlock;
+                uint seasonIndex = blocksSinceStart / seasonBlocks; // 0-based index
 
-            if (block.number >= startBlock) blocksElapsed = block.number - startBlock;
+                season = seasonIndex + 1; // Convert to 1-based season number
+                startBlock = nextSeasonStartBlock + (seasonIndex * seasonBlocks);
+                endBlock = _calculateEndBlock(startBlock);
+                blocksElapsed = block.number - startBlock;
+            } else {
+                // Season not started yet
+                return (0, 0, 0, 0);
+            }
             return (season, startBlock, endBlock, blocksElapsed);
         }
 
+        // Case 2: No season at all
         if (currentSeason == 0) return (0, 0, 0, 0);
 
+        // Case 3: Season exists - calculate actual current season based on block number
         Season storage current = seasons[currentSeason];
-        season = currentSeason;
-        startBlock = current.startBlock;
-        endBlock = current.endBlock;
-        blocksElapsed = block.number - current.startBlock;
+
+        // Check if we're still in the current season
+        if (block.number <= current.endBlock) {
+            // Still in current season
+            season = currentSeason;
+            startBlock = current.startBlock;
+            endBlock = current.endBlock;
+            blocksElapsed = block.number - startBlock;
+        } else {
+            // Current season ended, calculate which season we're actually in
+            // Each season starts at: current.startBlock + (n * seasonBlocks)
+            // where n = 0, 1, 2, 3...
+
+            uint blocksSinceFirstSeason = block.number - current.startBlock;
+            uint seasonIndex = blocksSinceFirstSeason / seasonBlocks;
+
+            // Calculate the actual season number
+            season = currentSeason + seasonIndex;
+
+            // Calculate start and end blocks for this season
+            startBlock = current.startBlock + (seasonIndex * seasonBlocks);
+            endBlock = startBlock + seasonBlocks;
+
+            blocksElapsed = block.number - startBlock;
+        }
     }
 
-    function getSeasonUserPoints(uint seasonNumber, address user) external view returns (uint) {
+    function getSeasonUserPoints(uint seasonNumber, address user)
+        external
+        view
+        returns (uint userPoints, uint totalPoints)
+    {
         UserSeasonData storage userData = userSeasonData[seasonNumber][user];
 
-        if (userData.finalized) return userData.points;
+        // 이미 finalize된 유저 데이터가 있으면 반환
+        if (userData.finalized) return (userData.points, this.seasonTotalPointsSnapshot(seasonNumber));
 
+        // 현재 시즌이면 실시간 포인트 반환
+        if (seasonNumber == currentSeason && currentSeason > 0) {
+            return (getUserPoints(user), this.seasonTotalPointsSnapshot(seasonNumber));
+        }
+
+        // 과거 시즌: finalize되지 않았어도 계산해서 반환
         Season storage season = seasons[seasonNumber];
-        if (!season.isFinalized) return 0;
 
+        // 시즌이 존재하지 않으면 getExpectedSeasonPoints 사용 (가상 시즌 계산)
+        if (season.startBlock == 0) return (getExpectedSeasonPoints(seasonNumber, user), 0);
+
+        // 아직 시작하지 않은 경우
+        if (block.number < season.startBlock) return (0, 0);
+
+        // 과거 시즌에서 이미 저장된 포인트가 있으면 사용
+        if (userData.points > 0) return (userData.points, this.seasonTotalPointsSnapshot(seasonNumber));
+
+        // 과거 시즌에서 해당 시즌의 잔액이 있으면 그것으로 계산
+        if (userData.balance > 0) {
+            uint effectiveStart = userData.joinBlock > season.startBlock ? userData.joinBlock : season.startBlock;
+            userPoints =
+                PointsLib.calculatePoints(userData.balance, effectiveStart, season.endBlock, blockTime, pointsTimeUnit);
+            return (userPoints, this.seasonTotalPointsSnapshot(seasonNumber));
+        }
+
+        // userData가 없으면 position으로 계산 (자동 참여 케이스)
         StakePosition storage position = userStakes[user];
-        if (position.balance == 0) return 0;
+        if (position.balance == 0) return (0, this.seasonTotalPointsSnapshot(seasonNumber));
 
         uint lastUpdate = position.lastUpdateBlock;
 
+        // 시즌 종료 후 스테이킹한 경우
+        if (lastUpdate > season.endBlock) return (0, this.seasonTotalPointsSnapshot(seasonNumber));
+
+        // 시즌 시작 전에 스테이킹한 경우: 시즌 전체 기간 계산
         if (lastUpdate < season.startBlock) {
-            return PointsLib.calculatePoints(
+            userPoints = PointsLib.calculatePoints(
                 position.balance, season.startBlock, season.endBlock, blockTime, pointsTimeUnit
             );
-        } else if (lastUpdate <= season.endBlock) {
-            return PointsLib.calculatePoints(position.balance, lastUpdate, season.endBlock, blockTime, pointsTimeUnit);
+            return (userPoints, this.seasonTotalPointsSnapshot(seasonNumber));
         }
 
-        return 0;
+        // 시즌 중간에 스테이킹한 경우: lastUpdate부터 시즌 종료까지 계산
+        userPoints = PointsLib.calculatePoints(position.balance, lastUpdate, season.endBlock, blockTime, pointsTimeUnit);
+        return (userPoints, this.seasonTotalPointsSnapshot(seasonNumber));
     }
 
     function seasonTotalPointsSnapshot(uint seasonNumber) external view returns (uint) {
@@ -311,10 +466,10 @@ contract StakingPool is StakingPoolBase {
         return 0;
     }
 
-    function getExpectedSeasonPoints(uint seasonNumber, address user) external view returns (uint) {
+    function getExpectedSeasonPoints(uint seasonNumber, address user) public view returns (uint) {
         Season storage season = seasons[seasonNumber];
 
-        if (seasonNumber == currentSeason) return this.getUserPoints(user);
+        if (seasonNumber == currentSeason) return getUserPoints(user);
 
         if (!season.isFinalized) return 0;
 
@@ -322,22 +477,47 @@ contract StakingPool is StakingPoolBase {
 
         if (userData.finalized) return userData.points;
 
+        // userData에 잔액이 있으면 그것으로 계산
+        if (userData.balance > 0) {
+            uint basePoints = userData.points;
+            uint effectiveStart = userData.joinBlock > season.startBlock ? userData.joinBlock : season.startBlock;
+
+            // 전체 기간의 포인트 계산
+            uint totalPoints =
+                PointsLib.calculatePoints(userData.balance, effectiveStart, season.endBlock, blockTime, pointsTimeUnit);
+
+            // basePoints는 중간에 스냅샷된 값일 수 있으므로, 더 큰 값을 사용
+            return totalPoints > basePoints ? totalPoints : basePoints;
+        }
+
+        // userData가 없으면 position으로 계산 (자동 참여 케이스)
         StakePosition storage position = userStakes[user];
         if (position.balance == 0) return 0;
 
         uint lastUpdate = position.lastUpdateBlock;
 
+        // 시즌 종료 후 스테이킹한 경우
         if (lastUpdate > season.endBlock) return 0;
 
+        // 시즌 시작 전에 스테이킹한 경우: 시즌 전체 기간 계산
         if (lastUpdate < season.startBlock) {
             return PointsLib.calculatePoints(
                 position.balance, season.startBlock, season.endBlock, blockTime, pointsTimeUnit
             );
-        } else {
-            return PointsLib.calculatePoints(position.balance, lastUpdate, season.endBlock, blockTime, pointsTimeUnit);
         }
+
+        // 시즌 중간에 스테이킹한 경우: lastUpdate부터 시즌 종료까지 계산
+        return PointsLib.calculatePoints(position.balance, lastUpdate, season.endBlock, blockTime, pointsTimeUnit);
     }
 
+    /**
+     * @notice 시즌의 예상 보상 조회
+     * @dev RewardPool의 getExpectedReward를 호출하여 계산
+     * @param seasonNumber 시즌 번호
+     * @param user 사용자 주소
+     * @param rewardToken 보상 토큰 주소
+     * @return 예상 보상 수량
+     */
     function getExpectedSeasonReward(uint seasonNumber, address user, address rewardToken)
         external
         view
@@ -345,41 +525,11 @@ contract StakingPool is StakingPoolBase {
     {
         if (address(rewardPool) == address(0)) return 0;
 
-        Season storage season = seasons[seasonNumber];
-
+        // 현재 시즌은 아직 종료되지 않았으므로 예상 보상 계산 불가
         if (seasonNumber == currentSeason) return 0;
 
-        if (!season.isFinalized) return 0;
-
-        UserSeasonData storage userData = userSeasonData[seasonNumber][user];
-
-        if (userData.claimed) return 0;
-
-        uint userPoints = userData.points;
-        if (userPoints == 0 && !userData.finalized) {
-            StakePosition storage position = userStakes[user];
-            if (position.balance == 0) return 0;
-
-            uint lastUpdate = position.lastUpdateBlock;
-            if (lastUpdate > season.endBlock) return 0;
-
-            if (lastUpdate < season.startBlock) {
-                userPoints = PointsLib.calculatePoints(
-                    position.balance, season.startBlock, season.endBlock, blockTime, pointsTimeUnit
-                );
-            } else {
-                userPoints =
-                    PointsLib.calculatePoints(position.balance, lastUpdate, season.endBlock, blockTime, pointsTimeUnit);
-            }
-        }
-
-        if (userPoints == 0) return 0;
-
-        uint totalPoints = season.totalPoints;
-        if (totalPoints == 0) totalPoints = _calculateSeasonTotalPoints(seasonNumber);
-
-        if (totalPoints == 0) return 0;
-
+        // RewardPool의 getExpectedReward를 직접 호출
+        // RewardPool이 내부적으로 포인트, 총 포인트, 보상 풀 등을 확인하여 계산
         return rewardPool.getExpectedReward(user, seasonNumber, rewardToken);
     }
 
@@ -415,7 +565,7 @@ contract StakingPool is StakingPoolBase {
         UserSeasonData storage userData = userSeasonData[seasonNumber][user];
         alreadyClaimed = userData.claimed;
 
-        userPoints = userData.finalized ? userData.points : this.getExpectedSeasonPoints(seasonNumber, user);
+        userPoints = userData.finalized ? userData.points : getExpectedSeasonPoints(seasonNumber, user);
         totalPoints = season.totalPoints > 0 ? season.totalPoints : this.seasonTotalPointsSnapshot(seasonNumber);
 
         if (userPoints > 0 && totalPoints > 0 && !alreadyClaimed) {
@@ -442,13 +592,8 @@ contract StakingPool is StakingPoolBase {
     }
 
     /**
-     * @notice 유저의 이전 시즌들을 배치 처리 (외부 호출 가능)
-     * @dev 최적화 설명:
-     *      - 각 시즌은 개별적으로 UserSeasonData에 저장되어야 함 (개별 청구를 위해)
-     *      - 연속 시즌 최적화는 불가능: 각 시즌마다 startBlock/endBlock이 다르고 개별 포인트 필요
-     *      - 현재 최적화: lastFinalizedSeason을 루프 후 한 번만 업데이트
-     *      - 완전 지연 평가: 청구하지 않는 시즌은 영원히 처리 안 함
-     *      - 가스 효율: maxSeasons로 가스 한도 내에서 처리
+     * @notice 유저의 이전 시즌들을 배치 처리
+     * @dev 가스 효율을 위해 maxSeasons로 한도 제한
      */
     function finalizeUserSeasonsBatch(address user, uint maxSeasons) external returns (uint processed) {
         if (currentSeason == 0) return 0;
@@ -478,16 +623,24 @@ contract StakingPool is StakingPoolBase {
     }
 
     // ============================================
+    // Router Approval Check (Override)
+    // ============================================
+
+    /**
+     * @notice Router 승인 여부 확인 (Protocol 글로벌 승인 + 로컬 승인)
+     * @param router Router 주소
+     * @return approved 글로벌 또는 로컬에서 승인되면 true
+     */
+    function _isApprovedRouter(address router) internal view override returns (bool) {
+        return protocol.isGlobalApprovedRouter(router) || hasRole(ROUTER_ROLE, router);
+    }
+
+    // ============================================
     // Configuration Functions
     // ============================================
 
     /**
-     * @notice RewardPool 설정 (단 한 번만 가능)
-     * @dev 보안상 이유로 재설정 불가능:
-     *      - 기존 보상 데이터 손실 방지
-     *      - 사용자 청구 기록 보호
-     *      - 악의적인 RewardPool 교체 방지
-     *      ⚠️  신중하게 올바른 RewardPool 주소를 설정해야 함
+     * @notice RewardPool 설정 (단 한 번만 가능, 재설정 불가)
      */
     function setRewardPool(IRewardPool _rewardPool) external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(address(rewardPool) == address(0), CrossStakingBaseAlreadySet());

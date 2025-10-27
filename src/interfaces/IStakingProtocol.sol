@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.13;
+pragma solidity 0.8.28;
 
 import "./IRewardPool.sol";
-import "./IStakingAddon.sol";
 
 /**
  * @title IStakingProtocol
@@ -37,17 +36,15 @@ interface IStakingProtocol {
         uint seasonBlocks,
         uint firstSeasonStartBlock,
         uint poolEndBlock,
-        address projectAdmin
+        address projectAdmin,
+        uint preDepositStartBlock
     ) external returns (uint projectID, address stakingPool, address rewardPool);
-
-    // ============ 보상 관리 ============
-
-    function fundProjectSeason(uint projectID, uint season, address token, uint amount) external;
 
     // ============ 관리 함수 ============
 
     function setProjectAdmin(uint projectID, address newAdmin) external;
     function setProjectStatus(uint projectID, bool isActive) external;
+    function setGlobalApprovedRouter(address router, bool approved) external;
     function setApprovedRouter(uint projectID, address router, bool approved) external;
     function setDefaultSeasonBlocks(uint blocks) external;
     function setPoolPointsTimeUnit(uint projectID, uint timeUnit) external;
@@ -55,13 +52,13 @@ interface IStakingProtocol {
     function setPoolNextSeasonStart(uint projectID, uint startBlock) external;
     function setPoolEndBlock(uint projectID, uint endBlock) external;
     function setPoolRewardPool(uint projectID, IRewardPool rewardPool) external;
-    function setPoolStakingAddon(uint projectID, IStakingAddon addon) external;
-    function setPoolAddonApproved(uint projectID, IStakingAddon addon, bool approved) external;
+    function sweepRewardPool(uint projectID, address token, address to, uint amount) external;
 
     // ============ 조회 함수 ============
 
-    function crossToken() external view returns (address); // IERC20를 address로 반환 (호환성)
+    function crossToken() external view returns (address);
     function projectCount() external view returns (uint);
+    function isGlobalApprovedRouter(address router) external view returns (bool);
     function projects(uint projectID)
         external
         view
@@ -76,7 +73,6 @@ interface IStakingProtocol {
         );
     function projectIDByName(string calldata name) external view returns (uint);
     function getProject(uint projectID) external view returns (ProjectInfo memory);
-    function getProjectsByCreator(address creator) external view returns (uint[] memory);
     function getProjects(uint offset, uint limit)
         external
         view

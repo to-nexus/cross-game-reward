@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.13;
+pragma solidity 0.8.28;
 
 import "./BaseTest.sol";
 
@@ -31,10 +31,13 @@ contract AdvancedTest is BaseTest {
         // 4. 시즌이 활성화되지 않음 확인
         assertFalse(stakingPool.isSeasonActive());
 
-        // 5. 풀 재시작 설정
+        // 5. 풀 재시작 설정 (poolEndBlock을 해제하거나 연장)
         uint restartBlock = block.number + 100;
-        vm.prank(address(protocol));
+        vm.startPrank(address(protocol));
         stakingPool.setNextSeasonStart(restartBlock);
+        // poolEndBlock을 재시작 이후로 연장하여 재시작 허용
+        stakingPool.setPoolEndBlock(restartBlock + SEASON_BLOCKS * 2);
+        vm.stopPrank();
 
         // 6. restartBlock에 도달
         vm.roll(restartBlock);
@@ -57,7 +60,7 @@ contract AdvancedTest is BaseTest {
         uint futureStartBlock = block.number + 100;
 
         vm.prank(owner);
-        (, address poolAddr,) = protocol.createProject("FutureProject", SEASON_BLOCKS, futureStartBlock, 0, address(0));
+        (, address poolAddr,) = protocol.createProject("FutureProject", SEASON_BLOCKS, futureStartBlock, 0, owner, 0);
 
         StakingPool newPool = StakingPool(poolAddr);
 
@@ -75,7 +78,7 @@ contract AdvancedTest is BaseTest {
         assertEq(newPool.currentSeason(), 0); // 아직 구조체는 생성 안됨
 
         // 4. Virtual Season 정보 조회
-        (uint season, uint startBlock, uint endBlock,) = newPool.getCurrentSeasonInfo();
+        (uint season, uint startBlock,,) = newPool.getCurrentSeasonInfo();
         assertEq(season, 1); // Virtual season 1
         assertEq(startBlock, futureStartBlock);
 
@@ -167,9 +170,9 @@ contract AdvancedTest is BaseTest {
         // Season 1 정보
         (,, uint season1End,) = stakingPool.getCurrentSeasonInfo();
 
-        // Rollover
+        // Rollover - NOTE: rolloverSeason() helper moves block forward significantly
         vm.roll(season1End + 1);
-        rolloverSeason();
+        stakingPool.rolloverSeason(); // Don't use helper, just call directly
 
         // Season 2 정보
         (, uint season2Start,,) = stakingPool.getCurrentSeasonInfo();
@@ -242,7 +245,7 @@ contract AdvancedTest is BaseTest {
         stakeFor(user1, 10 ether);
 
         // poolEndBlock을 현재 시즌 종료 전으로 설정
-        (, uint startBlock, uint endBlock,) = stakingPool.getCurrentSeasonInfo();
+        (,, uint endBlock,) = stakingPool.getCurrentSeasonInfo();
 
         // 시즌 종료 10블록 전으로 설정
         uint earlyEndBlock = endBlock - 10;
@@ -260,5 +263,104 @@ contract AdvancedTest is BaseTest {
         // Rollover 불가
         vm.expectRevert();
         stakingPool.rolloverSeason();
+    }
+
+    /**
+     * @notice 가상 시즌 - poolEndBlock이 시즌 중간에 오는 경우
+     */
+    function test_VirtualSeason_EarlyPoolEnd() public {
+        // 새 프로젝트 생성 (정상적으로 시작)
+        vm.startPrank(owner);
+        uint futureStart = block.number + 100;
+
+        (, address newPoolAddr,) = protocol.createProject("EarlyEnd", SEASON_BLOCKS, futureStart, 0, owner, 0);
+
+        StakingPool newPool = StakingPool(newPoolAddr);
+        vm.stopPrank();
+
+        // 시작 블록 이후 poolEndBlock을 시즌 중간으로 설정
+        vm.roll(futureStart);
+        assertTrue(newPool.isSeasonActive());
+
+        // poolEndBlock을 현재부터 50블록 후로 설정 (시즌 길이보다 짧음)
+        uint earlyEnd = block.number + 50;
+        vm.prank(address(protocol));
+        newPool.setPoolEndBlock(earlyEnd);
+
+        // earlyEnd + 1 도달 (poolEndBlock은 해당 블록까지 활성)
+        vm.roll(earlyEnd + 1);
+        assertFalse(newPool.isSeasonActive());
+
+        // 그 이후도 비활성
+        vm.roll(earlyEnd + 10);
+        assertFalse(newPool.isSeasonActive());
+    }
+
+    /**
+     * @notice 가상 시즌 - nextSeasonStart가 poolEndBlock 이후인 경우
+     */
+    function test_VirtualSeason_NextSeasonAfterPoolEnd() public {
+        stakeFor(user1, 10 ether);
+
+        // 시즌 1 종료
+        vm.roll(block.number + SEASON_BLOCKS + 1);
+        rolloverSeason();
+
+        // poolEndBlock 설정
+        uint poolEnd = block.number + 50;
+        vm.prank(address(protocol));
+        stakingPool.setPoolEndBlock(poolEnd);
+
+        // nextSeasonStart를 poolEnd 이후로 설정
+        vm.prank(address(protocol));
+        stakingPool.setNextSeasonStart(poolEnd + 100);
+
+        // poolEnd + 1 도달 - 비활성
+        vm.roll(poolEnd + 1);
+        assertFalse(stakingPool.isSeasonActive());
+
+        // nextSeasonStart 도달해도 poolEnd가 지났으므로 비활성
+        vm.roll(poolEnd + 100);
+        assertFalse(stakingPool.isSeasonActive());
+    }
+
+    /**
+     * @notice 가상 시즌 - poolEndBlock이 정확히 다음 시즌 시작 블록인 경우
+     * @dev poolEndBlock이 nextSeasonStart와 같거나 작으면 가상 시즌은 시작할 수 없음
+     */
+    function test_VirtualSeason_PoolEndAtNextSeasonStart() public {
+        stakeFor(user1, 10 ether);
+
+        // 시즌 1 종료
+        (,, uint season1End,) = stakingPool.getCurrentSeasonInfo();
+        vm.roll(season1End + 1);
+        rolloverSeason();
+
+        // 시즌 2의 endBlock 확인
+        (,, uint season2End,) = stakingPool.getCurrentSeasonInfo();
+
+        // poolEndBlock을 다음 시즌 시작 블록으로 설정
+        uint nextSeasonStart = season2End + 100;
+        vm.prank(address(protocol));
+        stakingPool.setNextSeasonStart(nextSeasonStart);
+
+        vm.prank(address(protocol));
+        stakingPool.setPoolEndBlock(nextSeasonStart);
+
+        // 시즌 2 종료 이후로 이동
+        vm.roll(season2End + 1);
+        assertFalse(stakingPool.isSeasonActive());
+
+        // nextSeasonStart - 1 블록: 시즌 2 종료됨, 가상 시즌 미시작
+        vm.roll(nextSeasonStart - 1);
+        assertFalse(stakingPool.isSeasonActive());
+
+        // nextSeasonStart 블록: poolEndBlock = nextSeasonStart이므로 가상 시즌 시작 불가
+        vm.roll(nextSeasonStart);
+        assertFalse(stakingPool.isSeasonActive());
+
+        // nextSeasonStart + 1: 비활성 유지
+        vm.roll(nextSeasonStart + 1);
+        assertFalse(stakingPool.isSeasonActive());
     }
 }

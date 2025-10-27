@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.13;
+pragma solidity 0.8.28;
 
 import "../interfaces/IRewardPool.sol";
+
 import "../libraries/PointsLib.sol";
 import "./CrossStakingBase.sol";
 
@@ -42,6 +43,12 @@ abstract contract RewardPoolBase is IRewardPool, CrossStakingBase {
     /// @notice 사용자별 시즌별 토큰별 청구 여부
     mapping(address => mapping(uint => mapping(address => bool))) public hasClaimedSeasonReward;
 
+    /// @notice 시즌별 보상 토큰 리스트 (season => token[])
+    mapping(uint => address[]) private seasonRewardTokens;
+
+    /// @notice 시즌별 토큰별 인덱스 (season => token => index+1, 0이면 없음)
+    mapping(uint => mapping(address => uint)) private seasonTokenIndex;
+
     // ============================================
     // Events
     // ============================================
@@ -63,8 +70,9 @@ abstract contract RewardPoolBase is IRewardPool, CrossStakingBase {
      * @param season 시즌 번호
      * @param token 보상 토큰 주소
      * @param amount 예치할 수량
+     * @dev 표준 ERC20 토큰만 지원 (수수료형/리베이스형 토큰 미지원)
      */
-    function fundSeason(uint season, address token, uint amount) external virtual nonReentrant {
+    function fundSeason(uint season, address token, uint amount) public virtual nonReentrant {
         _validateAddress(token);
         _validateAmount(amount);
 
@@ -74,8 +82,17 @@ abstract contract RewardPoolBase is IRewardPool, CrossStakingBase {
         // 토큰 전송
         IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
 
+        // 토큰이 처음 예치되는 경우 리스트에 추가
+        if (seasonTokenIndex[season][token] == 0) {
+            seasonRewardTokens[season].push(token);
+            seasonTokenIndex[season][token] = seasonRewardTokens[season].length; // index + 1
+        }
+
         // 보상 누적
         seasonRewards[season][token] += amount;
+
+        // 이벤트 발생
+        emit SeasonFunded(season, token, amount, amount);
 
         // Hook: 예치 후 처리
         _afterFundSeason(season, token, amount);
@@ -190,4 +207,59 @@ abstract contract RewardPoolBase is IRewardPool, CrossStakingBase {
         view
         virtual
         returns (uint expectedReward);
+
+    /**
+     * @notice 시즌의 보상 토큰 리스트 조회
+     * @param season 시즌 번호
+     * @return tokens 해당 시즌에 예치된 토큰 주소 배열
+     */
+    function getSeasonRewardTokens(uint season) external view returns (address[] memory tokens) {
+        return seasonRewardTokens[season];
+    }
+
+    /**
+     * @notice 시즌의 특정 토큰 보상 상세 정보
+     * @param season 시즌 번호
+     * @param token 토큰 주소
+     * @return total 총 예치된 보상
+     * @return claimed 청구된 보상
+     * @return remaining 남은 보상
+     */
+    function getSeasonTokenInfo(uint season, address token)
+        external
+        view
+        returns (uint total, uint claimed, uint remaining)
+    {
+        total = seasonRewards[season][token];
+        claimed = seasonClaimed[season][token];
+        remaining = total > claimed ? total - claimed : 0;
+    }
+
+    /**
+     * @notice 시즌의 모든 보상 토큰 정보 일괄 조회
+     * @param season 시즌 번호
+     * @return tokens 토큰 주소 배열
+     * @return totals 각 토큰의 총 보상
+     * @return claimeds 각 토큰의 청구된 보상
+     * @return remainings 각 토큰의 남은 보상
+     */
+    function getSeasonAllRewards(uint season)
+        external
+        view
+        returns (address[] memory tokens, uint[] memory totals, uint[] memory claimeds, uint[] memory remainings)
+    {
+        tokens = seasonRewardTokens[season];
+        uint length = tokens.length;
+
+        totals = new uint[](length);
+        claimeds = new uint[](length);
+        remainings = new uint[](length);
+
+        for (uint i = 0; i < length; i++) {
+            address token = tokens[i];
+            totals[i] = seasonRewards[season][token];
+            claimeds[i] = seasonClaimed[season][token];
+            remainings[i] = totals[i] > claimeds[i] ? totals[i] - claimeds[i] : 0;
+        }
+    }
 }
