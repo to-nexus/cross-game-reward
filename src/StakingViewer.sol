@@ -521,7 +521,8 @@ contract StakingViewer {
             if (projectIDs[i] > 0 && projectIDs[i] <= protocol.projectCount()) {
                 (address stakingPool,,,,,,) = protocol.projects(projectIDs[i]);
                 (balances[i], points[i],) = IStakingPool(stakingPool).getStakePosition(user);
-                currentSeasons[i] = IStakingPool(stakingPool).currentSeason();
+                // Use getCurrentSeasonInfo to get calculated season (supports virtual seasons)
+                (currentSeasons[i],,,) = IStakingPool(stakingPool).getCurrentSeasonInfo();
             }
             unchecked {
                 ++i;
@@ -711,7 +712,8 @@ contract StakingViewer {
         pointsTimeUnit = pool.pointsTimeUnit();
         seasonBlocks = pool.seasonBlocks();
         poolEndBlock = pool.poolEndBlock();
-        currentSeason = pool.currentSeason();
+        // Use getCurrentSeasonInfo to get calculated season (supports virtual seasons)
+        (currentSeason,,,) = pool.getCurrentSeasonInfo();
         preDepositStartBlock = pool.preDepositStartBlock();
 
         // firstSeasonStartBlock 계산

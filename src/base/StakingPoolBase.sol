@@ -652,18 +652,25 @@ abstract contract StakingPoolBase is IStakingPool, CrossStakingBase {
         Season storage season = seasons[seasonNum];
 
         if (season.lastAggregatedBlock >= block.number) return;
+
+        // Cap at endBlock to prevent overshooting when season has ended
+        uint targetBlock = block.number;
+        if (season.endBlock > 0 && targetBlock > season.endBlock) targetBlock = season.endBlock;
+
+        if (season.lastAggregatedBlock >= targetBlock) return;
+
         if (season.seasonTotalStaked == 0) {
-            season.lastAggregatedBlock = block.number;
+            season.lastAggregatedBlock = targetBlock;
             return;
         }
 
         uint additionalPoints = PointsLib.calculatePoints(
-            season.seasonTotalStaked, season.lastAggregatedBlock, block.number, blockTime, pointsTimeUnit
+            season.seasonTotalStaked, season.lastAggregatedBlock, targetBlock, blockTime, pointsTimeUnit
         );
 
         season.aggregatedPoints += additionalPoints;
-        season.lastAggregatedBlock = block.number;
-        emit SeasonAggregationUpdated(seasonNum, season.aggregatedPoints, block.number);
+        season.lastAggregatedBlock = targetBlock;
+        emit SeasonAggregationUpdated(seasonNum, season.aggregatedPoints, targetBlock);
     }
 
     /**
@@ -673,6 +680,11 @@ abstract contract StakingPoolBase is IStakingPool, CrossStakingBase {
      *      - Copies aggregatedPoints to totalPoints (immutable cache)
      *      - Called during rollover to lock in final total
      *
+     *      Handles edge cases:
+     *      - lastAggregatedBlock > endBlock (bug recovery)
+     *      - seasonTotalStaked = 0 (no stakers)
+     *      - Season already finalized (idempotent)
+     *
      *      After finalization:
      *      - totalPoints becomes the source of truth
      *      - Used for all reward calculations
@@ -681,11 +693,24 @@ abstract contract StakingPoolBase is IStakingPool, CrossStakingBase {
     function _finalizeSeasonAggregation(uint seasonNum) internal {
         Season storage season = seasons[seasonNum];
 
-        if (season.endBlock == 0 || season.lastAggregatedBlock >= season.endBlock) return;
+        if (season.endBlock == 0) return;
+
+        // If already properly finalized, skip
+        if (season.totalPoints > 0 && season.lastAggregatedBlock >= season.endBlock) return;
 
         uint finalBlock = season.endBlock < block.number ? season.endBlock : block.number;
 
-        if (season.seasonTotalStaked > 0) {
+        // Handle case where lastAggregatedBlock exceeded endBlock (bug recovery)
+        if (season.lastAggregatedBlock > season.endBlock) {
+            // aggregatedPoints may be overcounted, but we keep it for consistency
+            // The overcounted portion will be beyond endBlock
+            season.totalPoints = season.aggregatedPoints;
+            season.lastAggregatedBlock = finalBlock;
+            return;
+        }
+
+        // Normal case: aggregate from lastAggregatedBlock to endBlock
+        if (season.lastAggregatedBlock < finalBlock && season.seasonTotalStaked > 0) {
             uint additionalPoints = PointsLib.calculatePoints(
                 season.seasonTotalStaked, season.lastAggregatedBlock, finalBlock, blockTime, pointsTimeUnit
             );

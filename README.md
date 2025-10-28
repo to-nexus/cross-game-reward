@@ -1,21 +1,21 @@
 # Cross Staking Protocol v1.0
 
-> 블록체인 기반 시즌제 스테이킹 프로토콜
+> Season-based blockchain staking protocol
 
-## 개요
+## Overview
 
-Cross Staking Protocol은 시즌 기반의 분산형 스테이킹 플랫폼입니다. 프로젝트별로 독립적인 스테이킹 풀을 생성하고, 시즌마다 공정한 보상 분배를 제공합니다.
+Cross Staking Protocol is a decentralized staking platform with a season-based reward distribution system. It enables creation of independent staking pools for each project, providing fair reward distribution per season.
 
-### 주요 특징
+### Key Features
 
-- ⏱️ **시즌 기반 시스템**: 블록 기반 시즌으로 명확한 보상 구간
-- 🎯 **포인트 시스템**: 스테이킹 금액 × 시간으로 공정한 보상 계산
-- 🏭 **프로젝트별 독립**: Factory 패턴으로 프로젝트마다 독립적인 풀
-- 🔄 **Native Token 지원**: WCROSS 자동 래핑으로 편리한 사용성
-- 🔐 **보안 강화**: Reentrancy Guard, Access Control, Pausable 패턴
-- ⚡ **가스 최적화**: Custom Error, Storage 최적화로 10-15% 절감
+- ⏱️ **Season-based System**: Clear reward periods defined by block ranges
+- 🎯 **Points System**: Fair reward calculation based on staking amount × time
+- 🏭 **Project Independence**: Factory pattern creates isolated pools per project
+- 🔄 **Native Token Support**: Automatic WCROSS wrapping for user convenience
+- 🔐 **Enhanced Security**: Reentrancy Guard, Access Control, Pausable patterns
+- ⚡ **Gas Optimized**: Custom errors, storage optimization, transient storage (EIP-1153)
 
-## 아키텍처
+## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -41,254 +41,339 @@ Cross Staking Protocol은 시즌 기반의 분산형 스테이킹 플랫폼입�
 └──────────────┘    └──────────────┘
 ```
 
-## 핵심 컨트랙트
+## Core Contracts
 
 ### StakingProtocol (Factory)
-프로젝트별 스테이킹 풀 생성 및 전역 설정 관리
+Creates project-specific staking pools and manages global settings using CREATE2 for deterministic addresses.
 
 ### StakingPool
-- 토큰 스테이킹 및 출금
-- 시즌 자동 롤오버
-- 포인트 계산 및 집계
-- 보상 청구
+- Token staking and withdrawal
+- Automatic season rollover
+- Points calculation and aggregation
+- Reward claims
 
 ### RewardPool
-- 보상 토큰 예치
-- 보상 분배
-- 시즌별 토큰 관리
+- Reward token deposits
+- Reward distribution
+- Season-based token management
 
 ### StakingRouter
-- Native CROSS ↔ WCROSS 자동 변환
-- 편의 함수 제공
+- Native CROSS ↔ WCROSS automatic conversion
+- User-friendly interface for native token operations
 
 ### StakingViewer
-- 모든 조회 함수 통합
-- 가상 시즌 계산
-- Batch 조회 지원
+- Unified view functions
+- Virtual season calculations
+- Batch query support
 
-## 설치 및 실행
+### WCROSS
+- ERC20 wrapper for native CROSS token
+- 1:1 wrapping ratio
+- Standard WETH-style implementation
 
-### Prerequisites
-```bash
-# Foundry 설치
-curl -L https://foundry.paradigm.xyz | bash
-foundryup
+## Technical Implementation
 
-# 의존성 설치
-forge install
-```
+### Season System
 
-### 컴파일
-```bash
-forge build
-```
+**Block-based Seasons**
+- Each season has fixed block duration
+- Automatic rollover support (up to 50 seasons)
+- Lazy snapshot for gas efficiency
 
-### 테스트
-```bash
-# 전체 테스트
-forge test
-
-# 가스 리포트
-forge test --gas-report
-
-# 커버리지
-forge coverage
-```
-
-## 배포
-
-### Testnet 배포
-```bash
-# 환경변수 설정
-cp script/DeployWithFirstProject.env .env
-# .env 파일 수정 후
-
-# 배포 실행
-forge script script/DeployWithFirstProject.s.sol:DeployWithFirstProjectScript \
-    --rpc-url $RPC_URL \
-    --sender $DEPLOYER \
-    --keystore $KEYSTORE_PATH \
-    --broadcast \
-    --slow -vv
-```
-
-### 배포된 컨트랙트 (Testnet)
-```
-WCROSS: 0x494DC6816D77a77eBd7E3a28f6671Ab15586d577
-StakingProtocol: 0x5404C56dC66Cf685A9b85F0B131Aa27e55828fF5
-StakingRouter: 0xd87030275A699D4D301E31e89f9D43657dB19000
-StakingViewer: 0x1cb1941c0452c844FFD2c4F446e2B06325219338
-
-Project ID 1:
-  StakingPool: 0xa862629377933063954E2e814667208b5B95f477
-  RewardPool: 0xC07C614ebDB17e438cb3d7CC9566c4015F2BF09D
-```
-
-## 사용 예시
-
-### 스테이킹
+**Season Lifecycle**
 ```solidity
-// Native CROSS로 스테이킹
+Season 1: [startBlock, endBlock]
+- Users stake and earn points
+- Points = balance × time × PRECISION / timeUnit
+- At endBlock: Season can be finalized
+- After finalize: Rewards claimable
+
+Season 2: Auto-starts after Season 1 ends
+```
+
+### Points System
+
+**Calculation Formula**
+```solidity
+points = (balance × timeElapsed × POINTS_PRECISION) / timeUnit
+
+Where:
+- balance: Staked amount
+- timeElapsed: (currentBlock - lastUpdateBlock) × blockTime
+- POINTS_PRECISION: 1e6 (6 decimal places)
+- timeUnit: Configurable (default: 1 hour)
+```
+
+**O(1) Aggregation**
+- Incremental total points update
+- No iteration over all users
+- Gas-efficient design
+
+**Lazy Snapshot**
+- User points finalized only when needed
+- Reduces gas costs during rollovers
+- Maintains accuracy for reward distribution
+
+### Pre-deposit Feature
+
+Allows users to stake before Season 1 starts:
+
+```solidity
+Timeline:
+[preDepositStartBlock] → [firstSeasonStartBlock] → [Season 1 End]
+     |                        |                         |
+   Staking allowed      Points start accumulating   Season ends
+```
+
+**Key Points**
+- Only applicable to Season 1
+- Points accumulate from season start block
+- Optional feature (disabled if preDepositStartBlock = 0)
+
+### Reward Distribution
+
+**Proportional Distribution**
+```solidity
+userReward = (totalReward × userPoints) / totalPoints
+```
+
+**Multi-token Support**
+- Multiple reward tokens per season
+- Independent tracking per token
+- Prevents double-claiming
+
+### Security Patterns
+
+**Reentrancy Protection**
+- `ReentrancyGuardTransient` (EIP-1153)
+- Transient storage for 30% gas savings
+- Protects all state-changing functions
+
+**Access Control**
+- `AccessControlDefaultAdminRules`
+- 3-day timelock for admin role transfers
+- Role-based permissions:
+  - `DEFAULT_ADMIN_ROLE`: Protocol admin
+  - `STAKING_POOL_ROLE`: StakingPool contract
+  - `REWARD_POOL_ROLE`: RewardPool contract
+
+**Pausable**
+- Emergency stop mechanism
+- Only admin can pause/unpause
+- Protects staking/unstaking functions
+
+**Safe ERC20**
+- Uses OpenZeppelin's `SafeERC20`
+- Handles non-standard ERC20 tokens
+- Prevents transfer failures
+
+## Usage Examples
+
+### Staking
+
+```solidity
+// Stake with Native CROSS (via Router)
 stakingRouter.stake{value: 5 ether}(projectID);
 
-// WCROSS로 직접 스테이킹
+// Stake with WCROSS directly
 wcross.approve(address(stakingPool), 5 ether);
 stakingPool.stake(5 ether);
 ```
 
-### 출금
+### Withdrawal
+
 ```solidity
-// Native CROSS로 출금
+// Withdraw to Native CROSS (via Router)
 stakingRouter.unstake(projectID);
 
-// WCROSS로 직접 출금
+// Withdraw WCROSS directly
 stakingPool.withdrawAll();
 ```
 
-### 보상 청구
+### Reward Claims
+
 ```solidity
-// 단일 시즌 청구
+// Claim single season
 stakingPool.claimSeason(seasonNumber, rewardTokenAddress);
 
-// 다중 시즌 청구
+// Claim multiple seasons (via Router)
 uint[] memory seasons = [1, 2, 3];
 address[] memory tokens = [token1, token2, token3];
 stakingRouter.claimMultipleRewards(projectID, seasons, tokens);
 ```
 
-### 조회
+### View Functions
+
 ```solidity
-// 현재 포인트 조회
+// Get current points
 uint points = stakingViewer.getUserPoints(projectID, userAddress);
 
-// 시즌 정보 조회
+// Get season information
 (uint season, uint startBlock, uint endBlock, uint blocksElapsed) = 
     stakingViewer.getSeasonInfo(projectID);
 
-// 예상 보상 조회
+// Get expected reward
 uint expectedReward = stakingViewer.getClaimableReward(
     projectID, userAddress, seasonNumber, rewardTokenAddress
 );
 ```
 
-## 보안
+## Project Structure
 
-### 적용된 보안 패턴
-- ✅ ReentrancyGuardTransient (EIP-1153)
-- ✅ AccessControlDefaultAdminRules (3-day timelock)
-- ✅ Pausable Pattern
-- ✅ SafeERC20
-- ✅ Custom Error (가스 효율)
-- ✅ Checks-Effects-Interactions Pattern
-
-### 테스트 커버리지
-- 총 테스트: 94개 (Security 테스트 포함)
-- 통과율: 89/94 (94.7%)
-- 주요 시나리오 커버리지: 100%
-
-### 감사 상태
-- ⏳ 내부 감사: 완료
-- ⏳ 외부 감사: 진행 예정
-
-## 가스 최적화
-
-### 적용된 최적화 기법
-1. **Custom Error**: 문자열 대비 15-20% 절감
-2. **Named Import**: 컴파일 효율 향상
-3. **Unchecked Arithmetic**: 안전한 연산에 5-10% 절감
-4. **ReentrancyGuardTransient**: 기존 대비 30% 절감
-5. **Immutable Variables**: Storage 접근 비용 절감
-
-### 예상 가스 비용
-| 작업 | 가스 비용 | 비고 |
-|------|-----------|------|
-| Stake | ~130k gas | Native CROSS 사용 시 |
-| Unstake | ~155k gas | Native CROSS 수령 시 |
-| Claim Reward | ~105k gas | 단일 시즌 |
-| Season Rollover | ~260k gas | 자동 롤오버 |
-
-## 개발 가이드
-
-### 프로젝트 구조
 ```
 src/
-├── base/                  # 추상 컨트랙트
-│   ├── CrossStakingBase.sol
-│   ├── StakingPoolBase.sol
-│   └── RewardPoolBase.sol
-├── interfaces/            # 인터페이스
+├── base/                    # Abstract contracts
+│   ├── CrossStakingBase.sol     # Common base with access control
+│   ├── StakingPoolBase.sol      # Core staking logic
+│   └── RewardPoolBase.sol       # Core reward logic
+├── interfaces/              # Contract interfaces
 │   ├── IStakingPool.sol
 │   ├── IRewardPool.sol
 │   └── IStakingProtocol.sol
-├── libraries/             # 라이브러리
-│   ├── PointsLib.sol
-│   └── SeasonLib.sol
-├── StakingProtocol.sol    # Factory
-├── StakingPool.sol        # 스테이킹 풀
-├── RewardPool.sol         # 보상 풀
-├── StakingRouter.sol      # Native Token 라우터
-├── StakingViewer.sol      # View 함수 통합
-└── WCROSS.sol            # Wrapped Token
+├── libraries/               # Pure logic libraries
+│   ├── PointsLib.sol           # Points calculation
+│   └── SeasonLib.sol           # Season validation
+├── StakingProtocol.sol      # Factory contract
+├── StakingPool.sol          # Staking pool implementation
+├── RewardPool.sol           # Reward pool implementation
+├── StakingRouter.sol        # Native token router
+├── StakingViewer.sol        # View functions aggregator
+└── WCROSS.sol              # Wrapped CROSS token
 
 test/
-├── BaseTest.sol          # 기본 설정
-├── Security.t.sol        # 보안 테스트
-├── Staking.t.sol         # 스테이킹 테스트
-├── Season.t.sol          # 시즌 테스트
-├── Points.t.sol          # 포인트 테스트
-├── Rewards.t.sol         # 보상 테스트
-└── ...
+├── BaseTest.sol            # Test base setup
+├── Staking.t.sol           # Staking tests
+├── Season.t.sol            # Season tests
+├── Points.t.sol            # Points tests
+├── Rewards.t.sol           # Reward tests
+├── MultiPool.t.sol         # Multi-project tests
+├── Advanced.t.sol          # Advanced scenarios
+├── Integrated.t.sol        # Integration tests
+└── Fuzz.t.sol              # Fuzz tests
 ```
 
-### 코딩 규칙
-1. Solidity 0.8.28 사용
-2. Named Import 패턴
-3. Custom Error 사용
-4. NatSpec 주석 작성
-5. 100자 줄 길이 제한
+## Testing
 
-### 테스트 작성
-```solidity
-// test/MyFeature.t.sol
-contract MyFeatureTest is BaseTest {
-    function test_MyFeature() public {
-        // Arrange
-        vm.startPrank(user1);
-        
-        // Act
-        uint result = contract.myFunction();
-        
-        // Assert
-        assertEq(result, expectedValue);
-        vm.stopPrank();
-    }
-}
+### Test Coverage
+
+- **Total Tests**: 68
+- **Pass Rate**: 100%
+- **Core Logic Coverage**: 100%
+
+### Test Categories
+
+1. **Staking Tests** (9 tests)
+   - Basic stake/unstake operations
+   - Multiple users and stakes
+   - Minimum stake requirements
+   - Edge cases
+
+2. **Season Tests** (7 tests)
+   - Season rollover
+   - Points snapshots
+   - Multiple seasons
+   - Season information queries
+
+3. **Points Tests** (9 tests)
+   - Points calculation accuracy
+   - Time-based accumulation
+   - Proportional distribution
+   - Snapshot mechanisms
+
+4. **Reward Tests** (8 tests)
+   - Proportional distribution
+   - Multi-season rewards
+   - Claim prevention
+   - Token recovery
+
+5. **Fuzz Tests** (13 tests)
+   - Random input validation
+   - Overflow protection
+   - Edge case handling
+
+### Running Tests
+
+```bash
+# Run all tests
+forge test
+
+# Run with gas report
+forge test --gas-report
+
+# Run specific test file
+forge test --match-contract StakingTest
 ```
 
-## 문서
+## Security
 
-- [상세 문서](docs/project-info/README.md)
-- [배포 가이드](DEPLOYMENT.md)
-- [테스트 가이드](TESTS.md)
-- [최적화 보고서](OPTIMIZATION_REPORT.md)
-- [웹앱 연동](WEBAPP_INTEGRATION_META.md)
+### Applied Security Patterns
 
-## 라이센스
+- ✅ **ReentrancyGuardTransient** (EIP-1153)
+- ✅ **AccessControlDefaultAdminRules** (3-day timelock)
+- ✅ **Pausable Pattern**
+- ✅ **SafeERC20**
+- ✅ **Custom Errors** (gas efficient)
+- ✅ **Checks-Effects-Interactions Pattern**
+
+### Gas Optimizations
+
+1. **Custom Errors**: 15-20% savings vs string errors
+2. **Transient Storage**: 30% savings in reentrancy guard
+3. **Unchecked Arithmetic**: 5-10% savings where safe
+4. **Immutable Variables**: Reduces storage access costs
+5. **O(1) Aggregation**: Constant-time operations
+
+### Audit Status
+
+- ⏳ Internal audit: Completed
+- ⏳ External audit: Pending
+
+## Documentation
+
+- [Architecture Overview](overview/architecture.md)
+- [Core Concepts](overview/concepts.md)
+- [Contract Details](overview/contracts.md)
+- [Workflows](overview/workflows.md)
+- [Technical Implementation](overview/technical.md)
+- [Pre-deposit Guide](overview/predeposit.md)
+- [Test Documentation](overview/tests.md)
+
+## Development
+
+### Prerequisites
+
+```bash
+# Install Foundry
+curl -L https://foundry.paradigm.xyz | bash
+foundryup
+
+# Install dependencies
+forge install
+```
+
+### Compile
+
+```bash
+forge build
+```
+
+### Test
+
+```bash
+# Run all tests
+forge test
+
+# With gas report
+forge test --gas-report
+
+# With coverage
+forge coverage
+```
+
+## License
 
 MIT License
 
-## 기여
-
-기여를 환영합니다! PR을 제출하기 전에:
-1. 모든 테스트 통과 확인
-2. 코딩 규칙 준수
-3. 상세한 커밋 메시지 작성
-
-## 연락처
-
-- GitHub: [to-nexus/cross-staking](https://github.com/to-nexus/cross-staking)
-- Documentation: [docs/](docs/)
-
 ---
 
-**v1.0.0** - Production Ready
+**v1.0.0** - Ready for Audit

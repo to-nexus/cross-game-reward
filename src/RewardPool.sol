@@ -152,7 +152,8 @@ contract RewardPool is RewardPoolBase {
      *      - Otherwise deposits for current season
      */
     function depositReward(address token, uint amount) external {
-        uint currentSeason = stakingPool.currentSeason();
+        // Use getCurrentSeasonInfo to get calculated season (not storage value)
+        (uint currentSeason,,,) = stakingPool.getCurrentSeasonInfo();
         uint targetSeason = currentSeason;
 
         if (currentSeason == 0) {
@@ -172,7 +173,8 @@ contract RewardPool is RewardPoolBase {
      * @return Pending reward amount
      */
     function getUserPendingReward(address user, address token) external view returns (uint) {
-        uint currentSeason = stakingPool.currentSeason();
+        // Use getCurrentSeasonInfo to get calculated season (not storage value)
+        (uint currentSeason,,,) = stakingPool.getCurrentSeasonInfo();
         return getExpectedReward(user, currentSeason, token);
     }
 

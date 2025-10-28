@@ -212,8 +212,10 @@ contract StakingPool is StakingPoolBase, Pausable {
      * @param seasonNumber Season to claim from
      * @param rewardToken Reward token address
      * @dev Calls internal _claimSeasonFor for msg.sender
+     *      Ensures season rollover before claim (auto-finalizes ended seasons)
      */
     function claimSeason(uint seasonNumber, address rewardToken) external nonReentrant {
+        _ensureSeason(); // Auto-rollover to finalize ended seasons
         _claimSeasonFor(msg.sender, seasonNumber, rewardToken);
     }
 
@@ -222,9 +224,11 @@ contract StakingPool is StakingPoolBase, Pausable {
      * @param user User to claim for
      * @param seasonNumber Season to claim from
      * @param rewardToken Reward token address
+     * @dev Ensures season rollover before claim (auto-finalizes ended seasons)
      */
     function claimSeasonFor(address user, uint seasonNumber, address rewardToken) external nonReentrant {
         require(_isApprovedRouter(msg.sender), CrossStakingBaseNotAuthorized());
+        _ensureSeason(); // Auto-rollover to finalize ended seasons
         _claimSeasonFor(user, seasonNumber, rewardToken);
     }
 
@@ -299,7 +303,7 @@ contract StakingPool is StakingPoolBase, Pausable {
      * @param seasonNumber Season to claim from
      * @param rewardToken Reward token address
      * @dev Process:
-     *      1. Validates season is finalized (ended)
+     *      1. Validates season exists and has ended
      *      2. Ensures user's season snapshot exists (lazy finalization)
      *      3. Validates not already claimed
      *      4. Gets user points from snapshot
@@ -308,12 +312,28 @@ contract StakingPool is StakingPoolBase, Pausable {
      *      7. Calls RewardPool.payUser() to transfer rewards
      *      8. Emits SeasonClaimed event
      *
+     *      Season End Validation:
+     *      - Accepts if season.isFinalized (rolled over on-chain)
+     *      - OR if season ended AND (past season OR pool ended)
+     *      This enables claims for last season when pool ends
+     *
      *      Lazy snapshot ensures user's points are accurately calculated
      *      even if they didn't interact during the season
      */
     function _claimSeasonFor(address user, uint seasonNumber, address rewardToken) internal {
         Season storage season = seasons[seasonNumber];
-        require(season.isFinalized, StakingPoolBaseSeasonNotEnded());
+        require(seasonNumber > 0 && season.seasonNumber == seasonNumber, StakingPoolBaseSeasonNotEnded());
+
+        // Check if season has ended:
+        // 1. Season is finalized (rolled over) OR
+        // 2. Season ended AND (it's a past season OR pool ended)
+        bool seasonEnded = season.isFinalized
+            || (
+                block.number > season.endBlock
+                    && (seasonNumber < currentSeason || (poolEndBlock > 0 && block.number >= poolEndBlock))
+            );
+
+        require(seasonEnded, StakingPoolBaseSeasonNotEnded());
 
         _ensureUserSeasonSnapshot(user, seasonNumber);
 
@@ -427,8 +447,23 @@ contract StakingPool is StakingPoolBase, Pausable {
             if (season.totalPoints > 0) {
                 return season.totalPoints > season.forfeitedPoints ? season.totalPoints - season.forfeitedPoints : 0;
             }
-            return
-                season.aggregatedPoints > season.forfeitedPoints ? season.aggregatedPoints - season.forfeitedPoints : 0;
+            if (season.aggregatedPoints > 0) {
+                return season.aggregatedPoints > season.forfeitedPoints
+                    ? season.aggregatedPoints - season.forfeitedPoints
+                    : 0;
+            }
+
+            // Edge case: finalized but totalPoints/aggregatedPoints = 0
+            // This can happen if season was rolled over without proper aggregation
+            // Calculate properly using seasonTotalStaked
+            if (season.startBlock > 0 && season.endBlock > 0 && season.seasonTotalStaked > 0) {
+                uint calculatedPoints = PointsLib.calculatePoints(
+                    season.seasonTotalStaked, season.startBlock, season.endBlock, blockTime, pointsTimeUnit
+                );
+                return calculatedPoints > season.forfeitedPoints ? calculatedPoints - season.forfeitedPoints : 0;
+            }
+
+            return 0;
         }
 
         // Current season: aggregated + additional since last update
