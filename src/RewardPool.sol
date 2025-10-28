@@ -1,18 +1,22 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import "./base/RewardPoolBase.sol";
-
-import "./interfaces/IStakingPool.sol";
-import "./interfaces/IStakingProtocol.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {RewardPoolBase} from "./base/RewardPoolBase.sol";
+import {IStakingPool} from "./interfaces/IStakingPool.sol";
+import {IStakingProtocol} from "./interfaces/IStakingProtocol.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /**
  * @title RewardPoolCode
- * @notice RewardPool의 creation code를 반환하는 컨트랙트
+ * @notice Code contract that returns RewardPool's creation bytecode
+ * @dev Part of Code Contract pattern for gas-efficient factory deployments
  */
 contract RewardPoolCode {
+    /**
+     * @notice Returns the creation bytecode of RewardPool
+     * @return Creation bytecode for RewardPool contract
+     */
     function code() external pure returns (bytes memory) {
         return type(RewardPool).creationCode;
     }
@@ -20,8 +24,21 @@ contract RewardPoolCode {
 
 /**
  * @title RewardPool
- * @notice 시즌 기반 보상 토큰 관리 및 유저 클레임 처리 (Base 상속 버전)
- * @dev RewardPoolBase를 상속하여 기본 보상 구조 구현
+ * @notice Season-based reward token management and user claim processing
+ * @dev Inherits from RewardPoolBase and implements:
+ *      - Connection to StakingPool for points queries
+ *      - Proportional reward distribution
+ *      - Multi-token support per season
+ *      - Double-claim prevention
+ *      - Emergency token recovery (sweep)
+ *
+ *      Reward Flow:
+ *      1. Project creator funds seasons via fundSeason()
+ *      2. Users stake and earn points in StakingPool
+ *      3. Season ends and is finalized
+ *      4. Users claim via StakingPool.claimSeason()
+ *      5. StakingPool calls RewardPool.payUser()
+ *      6. Rewards transferred to user
  */
 contract RewardPool is RewardPoolBase {
     using SafeERC20 for IERC20;
@@ -30,28 +47,41 @@ contract RewardPool is RewardPoolBase {
     // Errors
     // ============================================
 
+    /// @notice Thrown when caller is not the protocol contract
     error RewardPoolOnlyProtocol();
+
+    /// @notice Thrown when attempting to deposit before pre-deposit period
+    error RewardPoolPreDepositNotAvailable();
 
     // ============================================
     // Events
     // ============================================
 
+    /// @notice Emitted when tokens are swept (emergency recovery)
     event TokensSwept(address indexed token, address indexed to, uint amount, uint balanceBefore, uint balanceAfter);
 
     // ============================================
-    // State Variables
+    // Immutable State
     // ============================================
 
-    /// @notice 연결된 StakingPool
+    /// @notice Connected StakingPool (source of points data)
     IStakingPool public immutable stakingPool;
 
-    /// @notice 프로토콜 컨트랙트
+    /// @notice Protocol contract (for access control)
     IStakingProtocol public immutable protocol;
 
     // ============================================
     // Constructor
     // ============================================
 
+    /**
+     * @notice Initializes the reward pool
+     * @param _stakingPool Address of the connected StakingPool
+     * @param _protocol Address of the StakingProtocol factory
+     * @dev - Validates both addresses
+     *      - Grants STAKING_POOL_ROLE to the staking pool
+     *      - Sets both as immutable (cannot be changed)
+     */
     constructor(address _stakingPool, address _protocol) RewardPoolBase(_protocol) {
         _validateAddress(_stakingPool);
         _validateAddress(_protocol);
@@ -59,17 +89,17 @@ contract RewardPool is RewardPoolBase {
         stakingPool = IStakingPool(_stakingPool);
         protocol = IStakingProtocol(_protocol);
 
-        // StakingPool에 STAKING_POOL_ROLE 부여
         _grantRole(STAKING_POOL_ROLE, _stakingPool);
     }
 
     // ============================================
-    // Override Hooks (추가보상 없는 기본 구현)
+    // Hook Implementations
     // ============================================
 
     /**
-     * @notice 추가 보상 계산 (기본 구현: 보너스 없음)
-     * @dev 자식 컨트랙트에서 오버라이드하여 추가보상 구현 가능
+     * @notice Calculates bonus rewards (currently returns 0)
+     * @dev Override this in a derived contract to implement bonus logic
+     *      Example: 10% bonus for users who staked the entire season
      */
     function _calculateBonusReward(
         address, /*user*/
@@ -79,7 +109,6 @@ contract RewardPool is RewardPoolBase {
         uint, /*totalPoints*/
         uint /*baseReward*/
     ) internal virtual override returns (uint bonusAmount) {
-        // 기본 구현: 추가 보상 없음
         return 0;
     }
 
@@ -88,10 +117,16 @@ contract RewardPool is RewardPoolBase {
     // ============================================
 
     /**
-     * @notice 사용자가 받을 수 있는 예상 보상량
+     * @notice Calculates expected reward for a user in a season
+     * @param user User address
+     * @param season Season number
+     * @param token Reward token address
+     * @return expectedReward Calculated reward amount
+     * @dev Formula: (totalReward × userPoints) / totalPoints
+     *      Returns 0 if already claimed or no points
      */
     function getExpectedReward(address user, uint season, address token)
-        external
+        public
         view
         override
         returns (uint expectedReward)
@@ -108,43 +143,46 @@ contract RewardPool is RewardPoolBase {
         return (totalReward * userPoints) / totalPoints;
     }
 
-    // ============================================
-    // 편의 함수
-    // ============================================
-
     /**
-     * @notice 현재 시즌에 보상 예치 (사전 예치 지원)
-     * @dev 표준 ERC20 토큰만 지원
-     * @dev preDepositStartBlock 이후부터 예치 가능
-     * @dev currentSeason = 0 (시즌 시작 전)이면 시즌 1에 예치
+     * @notice Convenience function to deposit rewards for current/next season
+     * @param token Reward token address
+     * @param amount Amount to deposit
+     * @dev - If season 0 (not started): deposits for season 1
+     *      - Validates pre-deposit period if applicable
+     *      - Otherwise deposits for current season
      */
     function depositReward(address token, uint amount) external {
         uint currentSeason = stakingPool.currentSeason();
         uint targetSeason = currentSeason;
 
-        // 시즌 시작 전(currentSeason = 0)이면 시즌 1에 사전 예치
         if (currentSeason == 0) {
             targetSeason = 1;
 
-            // preDepositStartBlock 체크
             uint preDepositStart = stakingPool.preDepositStartBlock();
-            require(preDepositStart == 0 || block.number >= preDepositStart, "Pre-deposit not yet available");
+            require(preDepositStart == 0 || block.number >= preDepositStart, RewardPoolPreDepositNotAvailable());
         }
 
-        // fundSeason을 호출하여 토큰 리스트도 자동으로 업데이트
         fundSeason(targetSeason, token, amount);
     }
 
     /**
-     * @notice 사용자의 현재 시즌 예상 보상 조회
+     * @notice Returns pending rewards for user in current season
+     * @param user User address
+     * @param token Reward token address
+     * @return Pending reward amount
      */
     function getUserPendingReward(address user, address token) external view returns (uint) {
         uint currentSeason = stakingPool.currentSeason();
-        return this.getExpectedReward(user, currentSeason, token);
+        return getExpectedReward(user, currentSeason, token);
     }
 
     /**
-     * @notice 시즌별 토큰 요약 정보 조회
+     * @notice Returns summary of rewards for multiple tokens in a season
+     * @param season Season number
+     * @param tokens Array of token addresses
+     * @return totals Total rewards per token
+     * @return claimed Claimed rewards per token
+     * @return remaining Remaining rewards per token
      */
     function getSeasonSummary(uint season, address[] calldata tokens)
         external
@@ -164,18 +202,30 @@ contract RewardPool is RewardPoolBase {
     }
 
     /**
-     * @notice 사용자의 시즌별 토큰 청구 여부 조회
+     * @notice Checks if user has claimed rewards for a season/token
+     * @param user User address
+     * @param season Season number
+     * @param token Reward token address
+     * @return True if already claimed
      */
     function getUserClaimed(address user, uint season, address token) external view returns (bool) {
         return hasClaimedSeasonReward[user][season][token];
     }
 
     // ============================================
-    // 관리 함수
+    // Emergency Functions
     // ============================================
 
     /**
-     * @notice 잘못 전송된 토큰 회수
+     * @notice Emergency function to recover tokens (protocol only)
+     * @param token Token address to recover
+     * @param to Recipient address
+     * @param amount Amount to recover
+     * @dev Only callable by protocol contract
+     *      Use cases:
+     *      - Recovering accidentally sent tokens
+     *      - Recovering unclaimed rewards after extended period
+     *      - Emergency fund recovery
      */
     function sweep(address token, address to, uint amount) external {
         require(msg.sender == address(protocol), RewardPoolOnlyProtocol());

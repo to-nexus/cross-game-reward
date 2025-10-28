@@ -252,7 +252,7 @@ contract FuzzTest is BaseTest {
         vm.roll(block.number + blocksAfterRollover);
 
         // 검증: 시즌 1 포인트는 스냅샷됨
-        uint snapshotPoints = stakingPool.getExpectedSeasonPoints(1, user1);
+        (uint snapshotPoints,) = stakingPool.getSeasonUserPoints(1, user1);
         assertGt(snapshotPoints, 0, "Season 1 points should be snapshotted");
 
         // 검증: 스테이킹은 유지됨

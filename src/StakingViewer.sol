@@ -8,38 +8,91 @@ import "./libraries/PointsLib.sol";
 
 /**
  * @title StakingViewer
- * @notice Router 등에서 사용하던 조회 전용 기능을 모은 뷰어 컨트랙트
+ * @notice Unified view contract for querying staking and reward data across all projects
+ * @dev Provides gas-free read-only functions for:
+ *      - User staking positions and points
+ *      - Season information and history
+ *      - Reward calculations and previews
+ *      - Virtual season data (before rollover)
+ *      - Batch queries for multiple projects
+ *
+ *      Key Features:
+ *      - No state changes (all view/pure functions)
+ *      - Supports virtual seasons (calculates data for seasons not yet rolled over)
+ *      - Batch operations for efficient multi-project queries
+ *      - Comprehensive reward preview before claiming
+ *
+ *      Virtual Season Support:
+ *      When multiple seasons have passed without rollover on-chain,
+ *      this contract calculates what the data would be if rollovers had occurred.
+ *      This allows frontends to show accurate information without requiring
+ *      expensive rollover transactions.
+ *
+ *      Use Cases:
+ *      - Frontend dashboards
+ *      - Reward calculators
+ *      - Analytics and reporting
+ *      - User position tracking
  */
 contract StakingViewer {
     using PointsLib for *;
 
+    /// @notice StakingProtocol factory contract
     IStakingProtocol public immutable protocol;
 
+    /**
+     * @notice Initializes the viewer contract
+     * @param _protocol StakingProtocol address
+     */
     constructor(address _protocol) {
         require(_protocol != address(0), "Invalid protocol");
         protocol = IStakingProtocol(_protocol);
     }
 
+    // ============ Internal Helpers ============
+
+    /**
+     * @notice Gets pool addresses for a project
+     * @param projectID Project ID
+     * @return pool StakingPool interface
+     * @return rewardPool RewardPool interface
+     */
     function _getPools(uint projectID) internal view returns (IStakingPool pool, IRewardPool rewardPool) {
         (address stakingPool, address rewardPoolAddr,,,,,) = protocol.projects(projectID);
         pool = IStakingPool(stakingPool);
         rewardPool = IRewardPool(rewardPoolAddr);
     }
 
+    /**
+     * @notice Calculates the first season's start block
+     * @param pool StakingPool contract
+     * @return ok True if calculation succeeded
+     * @return firstStart First season start block
+     * @dev Attempts to derive from current season or nextSeasonStartBlock
+     */
     function _calcFirstSeasonStart(IStakingPool pool) internal view returns (bool ok, uint firstStart) {
         (uint season, uint startBlock,,) = pool.getCurrentSeasonInfo();
         if (season > 0 && startBlock > 0) {
             uint sb = pool.seasonBlocks();
-            // season은 1-based
+            // Reverse calculate: season is 1-based
             firstStart = startBlock - ((season - 1) * sb);
             return (true, firstStart);
         }
-        // 시즌이 아직 시작 전인 경우(nextSeasonStartBlock 기반)
+        // Season not started yet - use nextSeasonStartBlock
         uint nextStart = pool.nextSeasonStartBlock();
         if (nextStart > 0) return (true, nextStart);
         return (false, 0);
     }
 
+    /**
+     * @notice Calculates block range for any season number
+     * @param pool StakingPool contract
+     * @param season Season number
+     * @return ok True if calculation succeeded
+     * @return startBlock Season start block
+     * @return endBlock Season end block
+     * @dev Calculates virtual season ranges even if seasons haven't been rolled over on-chain
+     */
     function _calcSeasonRange(IStakingPool pool, uint season)
         internal
         view
@@ -61,12 +114,22 @@ contract StakingViewer {
     }
 
     /**
-     * @notice 가상 시즌 데이터 계산 (온체인에 없는 시즌)
-     * @param pool StakingPool 컨트랙트
-     * @param season 시즌 번호
-     * @param user 사용자 주소 (address(0)이면 totalPoints만 계산)
-     * @return userPoints 유저 포인트
-     * @return totalPoints 토탈 포인트
+     * @notice Calculates virtual season data for seasons not yet rolled over on-chain
+     * @param pool StakingPool contract
+     * @param season Season number
+     * @param user User address (address(0) calculates only totalPoints)
+     * @return userPoints User's points in the virtual season
+     * @return totalPoints Total points in the virtual season
+     * @dev Virtual calculation allows view functions to work without requiring rollover
+     *
+     *      Process:
+     *      1. Calculate season's block range
+     *      2. Determine effective end block (past vs current/future seasons)
+     *      3. Calculate user points from their position
+     *      4. Calculate total points from totalStaked
+     *
+     *      Use case: User wants to see their points for season 5, but only seasons 1-3
+     *      have been rolled over. This calculates season 4-5 data virtually.
      */
     function _calculateVirtualSeasonData(IStakingPool pool, uint season, address user)
         internal
@@ -111,10 +174,16 @@ contract StakingViewer {
         return (userPoints, totalPoints);
     }
 
-    // =====================
-    // 조회 함수
-    // =====================
+    // ============ Public View Functions ============
 
+    /**
+     * @notice Returns user's stake information for a project
+     * @param projectID Project ID
+     * @param user User address
+     * @return balance Staked amount
+     * @return points Current season points
+     * @return lastUpdateBlock Last update block
+     */
     function getStakeInfo(uint projectID, address user)
         external
         view
@@ -124,26 +193,56 @@ contract StakingViewer {
         return pool.getStakePosition(user);
     }
 
+    /**
+     * @notice Returns current season number for a project
+     * @param projectID Project ID
+     * @return season Current season number
+     */
     function getCurrentSeason(uint projectID) external view returns (uint season) {
         (IStakingPool pool,) = _getPools(projectID);
-        return pool.currentSeason();
+        (season,,,) = pool.getCurrentSeasonInfo();
     }
 
+    /**
+     * @notice Returns user's current season points
+     * @param projectID Project ID
+     * @param user User address
+     * @return points Current season points
+     */
     function getUserPoints(uint projectID, address user) external view returns (uint points) {
         (IStakingPool pool,) = _getPools(projectID);
         return pool.getUserPoints(user);
     }
 
+    /**
+     * @notice Returns user's staking power (same as balance)
+     * @param projectID Project ID
+     * @param user User address
+     * @return stakingPower Staking power
+     */
     function getStakingPower(uint projectID, address user) external view returns (uint stakingPower) {
         (IStakingPool pool,) = _getPools(projectID);
         return pool.getStakingPower(user);
     }
 
+    /**
+     * @notice Returns total staking power for a project
+     * @param projectID Project ID
+     * @return totalPower Total staking power
+     */
     function getTotalStakingPower(uint projectID) external view returns (uint totalPower) {
         (IStakingPool pool,) = _getPools(projectID);
         return pool.getTotalStakingPower();
     }
 
+    /**
+     * @notice Returns current season information
+     * @param projectID Project ID
+     * @return currentSeason Current season number
+     * @return seasonStartBlock Season start block
+     * @return seasonEndBlock Season end block
+     * @return blocksElapsed Blocks elapsed in current season
+     */
     function getSeasonInfo(uint projectID)
         external
         view
@@ -153,6 +252,15 @@ contract StakingViewer {
         return pool.getCurrentSeasonInfo();
     }
 
+    /**
+     * @notice Returns project information
+     * @param projectID Project ID
+     * @return stakingPool StakingPool address
+     * @return rewardPool RewardPool address
+     * @return name Project name
+     * @return isActive Whether project is active
+     * @return createdAt Creation timestamp
+     */
     function getProjectInfo(uint projectID)
         external
         view
@@ -162,6 +270,14 @@ contract StakingViewer {
         (stakingPool, rewardPool, name, isActive, createdAt,,) = protocol.projects(projectID);
     }
 
+    /**
+     * @notice Returns claimable reward for a user
+     * @param projectID Project ID
+     * @param user User address
+     * @param season Season number
+     * @param rewardToken Reward token address
+     * @return claimableAmount Claimable reward amount
+     */
     function getClaimableReward(uint projectID, address user, uint season, address rewardToken)
         external
         view
@@ -171,25 +287,37 @@ contract StakingViewer {
         return rewardPool.getExpectedReward(user, season, rewardToken);
     }
 
+    /**
+     * @notice Returns total amount staked in a project
+     * @param projectID Project ID
+     * @return totalStaked Total staked amount
+     */
     function getTotalStaked(uint projectID) external view returns (uint totalStaked) {
         (IStakingPool pool,) = _getPools(projectID);
         return pool.totalStaked();
     }
 
+    /**
+     * @notice Returns total points for a season (supports virtual seasons)
+     * @param projectID Project ID
+     * @param season Season number
+     * @return totalPoints Total points in the season
+     * @dev For virtual seasons (not rolled over), calculates points as if rolled over
+     */
     function getSeasonTotalPoints(uint projectID, uint season) external view returns (uint totalPoints) {
         (IStakingPool pool,) = _getPools(projectID);
         uint currentSeason = pool.currentSeason();
 
-        // 가상 시즌인 경우 직접 계산
+        // Virtual season - calculate directly
         if (season > currentSeason) {
             (, totalPoints) = _calculateVirtualSeasonData(pool, season, address(0));
             return totalPoints;
         }
 
-        // 온체인 시즌
+        // On-chain season
         totalPoints = pool.seasonTotalPointsSnapshot(season);
 
-        // totalPoints가 0이고 과거 시즌이면 계산 시도
+        // If 0 and past season, try virtual calculation
         if (totalPoints == 0 && season < currentSeason) {
             (, totalPoints) = _calculateVirtualSeasonData(pool, season, address(0));
         }
@@ -197,6 +325,15 @@ contract StakingViewer {
         return totalPoints;
     }
 
+    /**
+     * @notice Returns user points for a specific season (supports virtual seasons)
+     * @param projectID Project ID
+     * @param season Season number
+     * @param user User address
+     * @return userPoints User's points
+     * @return totalPoints Total points
+     * @dev Handles both on-chain and virtual seasons transparently
+     */
     function getSeasonUserPoints(uint projectID, uint season, address user)
         external
         view
@@ -205,62 +342,98 @@ contract StakingViewer {
         (IStakingPool pool,) = _getPools(projectID);
         uint currentSeason = pool.currentSeason();
 
-        // 가상 시즌 (아직 온체인에 없는 미래 시즌)인 경우 직접 계산
+        // Virtual season - calculate directly
         if (season > currentSeason) return _calculateVirtualSeasonData(pool, season, user);
 
-        // 온체인 시즌은 pool에 위임
+        // On-chain season - delegate to pool
         (userPoints, totalPoints) = pool.getSeasonUserPoints(season, user);
 
-        // totalPoints가 0인 경우에도 가상 계산 시도 (시즌은 있지만 finalize 안된 경우)
+        // If totalPoints = 0, try virtual calculation
         if (totalPoints == 0 && season < currentSeason) {
-            // 과거 시즌인데 totalPoints가 0이면 계산
             (, totalPoints) = _calculateVirtualSeasonData(pool, season, address(0));
         }
     }
 
+    /**
+     * @notice Checks if a season is currently active
+     * @param projectID Project ID
+     * @return isActive True if season is active
+     */
     function isSeasonActive(uint projectID) external view returns (bool isActive) {
         (IStakingPool pool,) = _getPools(projectID);
         return pool.isSeasonActive();
     }
 
+    /**
+     * @notice Returns pool end block
+     * @param projectID Project ID
+     * @return endBlock Pool end block (0 = infinite)
+     */
     function getPoolEndBlock(uint projectID) external view returns (uint endBlock) {
         (IStakingPool pool,) = _getPools(projectID);
         return pool.poolEndBlock();
     }
 
+    /**
+     * @notice Returns next season start block
+     * @param projectID Project ID
+     * @return startBlock Next season start block
+     */
     function getNextSeasonStartBlock(uint projectID) external view returns (uint startBlock) {
         (IStakingPool pool,) = _getPools(projectID);
         return pool.nextSeasonStartBlock();
     }
 
+    /**
+     * @notice Returns detailed user season data
+     * @param projectID Project ID
+     * @param user User address
+     * @param season Season number
+     * @return points User's points
+     * @return balance User's balance
+     * @return joinBlock Join block
+     * @return claimed Whether claimed
+     * @return finalized Whether finalized
+     */
     function getUserSeasonData(uint projectID, address user, uint season)
         external
         view
         returns (uint points, uint balance, uint joinBlock, bool claimed, bool finalized)
     {
         (IStakingPool pool,) = _getPools(projectID);
-        // StakingPool의 getUserSeasonData 호출 (low-level staticcall과 동일 인터페이스)
-        (bool success, bytes memory data) =
-            address(pool).staticcall(abi.encodeWithSignature("getUserSeasonData(uint256,address)", season, user));
-        if (success && data.length >= 160) {
-            (points, balance, joinBlock, claimed, finalized) = abi.decode(data, (uint, uint, uint, bool, bool));
-        }
+        return pool.getUserSeasonData(season, user);
     }
 
+    /**
+     * @notice Previews claim information
+     * @param projectID Project ID
+     * @param user User address
+     * @param season Season number
+     * @param rewardToken Reward token address
+     * @return userPoints User's points
+     * @return totalPoints Total points
+     * @return expectedReward Expected reward
+     * @return alreadyClaimed Whether already claimed
+     * @return canClaim Whether can claim
+     */
     function previewClaim(uint projectID, address user, uint season, address rewardToken)
         external
         view
-        returns (uint expectedReward, uint userPoints, uint totalPoints, bool alreadyClaimed)
+        returns (uint userPoints, uint totalPoints, uint expectedReward, bool alreadyClaimed, bool canClaim)
     {
         (IStakingPool pool,) = _getPools(projectID);
-        (bool success, bytes memory data) = address(pool).staticcall(
-            abi.encodeWithSignature("previewClaim(uint256,address,address)", season, user, rewardToken)
-        );
-        if (success && data.length >= 128) {
-            (expectedReward, userPoints, totalPoints, alreadyClaimed) = abi.decode(data, (uint, uint, uint, bool));
-        }
+        return pool.previewClaim(season, user, rewardToken);
     }
 
+    /**
+     * @notice Returns expected rewards for multiple seasons (batch query)
+     * @param projectID Project ID
+     * @param user User address
+     * @param seasons Array of season numbers
+     * @param rewardToken Reward token address
+     * @return expectedRewards Array of expected reward amounts
+     * @dev Gas-efficient batch query for multiple seasons at once
+     */
     function getExpectedRewardsBatch(uint projectID, address user, uint[] calldata seasons, address rewardToken)
         external
         view
@@ -276,6 +449,15 @@ contract StakingViewer {
         }
     }
 
+    /**
+     * @notice Returns paginated list of active projects
+     * @param offset Starting index
+     * @param limit Maximum number to return
+     * @return projectIDs Array of project IDs
+     * @return stakingPools Array of StakingPool addresses
+     * @return names Array of project names
+     * @dev Filters only active projects from the full list
+     */
     function getActiveProjects(uint offset, uint limit)
         external
         view
@@ -317,6 +499,15 @@ contract StakingViewer {
         }
     }
 
+    /**
+     * @notice Returns staking summary for a user across multiple projects
+     * @param user User address
+     * @param projectIDs Array of project IDs to query
+     * @return balances Array of staked balances
+     * @return points Array of current season points
+     * @return currentSeasons Array of current season numbers
+     * @dev Efficient batch query for dashboard displays
+     */
     function getUserStakingSummary(address user, uint[] calldata projectIDs)
         external
         view
@@ -338,6 +529,15 @@ contract StakingViewer {
         }
     }
 
+    /**
+     * @notice Returns historical season data
+     * @param projectID Project ID
+     * @param fromSeason Starting season number
+     * @param toSeason Ending season number
+     * @return seasons Array of season numbers
+     * @return totalPoints Array of total points per season
+     * @dev Useful for analytics and trend analysis
+     */
     function getSeasonHistory(uint projectID, uint fromSeason, uint toSeason)
         external
         view
@@ -364,11 +564,26 @@ contract StakingViewer {
         }
     }
 
+    /**
+     * @notice Returns all reward tokens used in a season
+     * @param projectID Project ID
+     * @param season Season number
+     * @return tokens Array of token addresses
+     */
     function getSeasonRewardTokens(uint projectID, uint season) external view returns (address[] memory tokens) {
         (, IRewardPool rewardPool) = _getPools(projectID);
         return rewardPool.getSeasonRewardTokens(season);
     }
 
+    /**
+     * @notice Returns reward token information for a season
+     * @param projectID Project ID
+     * @param season Season number
+     * @param token Token address
+     * @return total Total rewards
+     * @return claimed Claimed rewards
+     * @return remaining Remaining rewards
+     */
     function getSeasonTokenInfo(uint projectID, uint season, address token)
         external
         view
@@ -378,6 +593,15 @@ contract StakingViewer {
         return rewardPool.getSeasonTokenInfo(season, token);
     }
 
+    /**
+     * @notice Returns all reward information for a season
+     * @param projectID Project ID
+     * @param season Season number
+     * @return tokens Array of token addresses
+     * @return totals Array of total rewards
+     * @return claimeds Array of claimed rewards
+     * @return remainings Array of remaining rewards
+     */
     function getSeasonAllRewards(uint projectID, uint season)
         external
         view
@@ -388,7 +612,14 @@ contract StakingViewer {
     }
 
     /**
-     * @notice 시즌별 예상 포인트(Virtual). 풀에서 finalize되지 않은 시즌도 계산하여 반환
+     * @notice Returns expected points for a season (supports virtual/unfinalized seasons)
+     * @param projectID Project ID
+     * @param season Season number
+     * @param user User address
+     * @return userPoints User's expected points
+     * @return totalPoints Total expected points
+     * @dev Calculates points even for seasons not finalized or rolled over
+     *      Useful for showing estimated data to users
      */
     function getExpectedSeasonPoints(uint projectID, uint season, address user)
         external
@@ -430,26 +661,36 @@ contract StakingViewer {
         return (userPoints, totalPoints);
     }
 
+    /**
+     * @notice Returns expected reward for a user in a season
+     * @param projectID Project ID
+     * @param season Season number
+     * @param user User address
+     * @param rewardToken Reward token address
+     * @return expectedReward Expected reward amount
+     * @dev Delegates to StakingPool for calculation
+     */
     function getExpectedSeasonReward(uint projectID, uint season, address user, address rewardToken)
         external
         view
         returns (uint expectedReward)
     {
         (IStakingPool pool,) = _getPools(projectID);
-        // StakingPool의 getExpectedSeasonReward를 호출
         return pool.getExpectedSeasonReward(season, user, rewardToken);
     }
 
     /**
-     * @notice 풀의 기본 정보 조회 (predeposit 정보 포함)
-     * @param projectID 프로젝트 ID
-     * @return blockTime 블록 타임
-     * @return pointsTimeUnit 포인트 계산 시간 단위
-     * @return seasonBlocks 시즌 블록 수
-     * @return poolEndBlock 풀 종료 블록
-     * @return currentSeason 현재 시즌
-     * @return preDepositStartBlock Pre-deposit 시작 블록
-     * @return firstSeasonStartBlock 첫 시즌 시작 블록
+     * @notice Returns comprehensive pool configuration and state
+     * @param projectID Project ID
+     * @return blockTime Block time in seconds
+     * @return pointsTimeUnit Points calculation time unit in seconds
+     * @return seasonBlocks Number of blocks per season
+     * @return poolEndBlock Pool end block (0 = infinite)
+     * @return currentSeason Current season number
+     * @return preDepositStartBlock Pre-deposit start block (0 = disabled)
+     * @return firstSeasonStartBlock First season start block
+     * @dev Includes pre-deposit information for frontend UI
+     *      firstSeasonStartBlock is calculated from current season or nextSeasonStartBlock
      */
     function getPoolInfo(uint projectID)
         external

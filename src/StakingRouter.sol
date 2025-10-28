@@ -1,63 +1,112 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import "./WCROSS.sol";
-
-import "./interfaces/IRewardPool.sol";
-import "./interfaces/IStakingPool.sol";
-import "./interfaces/IStakingProtocol.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
+import {WCROSS} from "./WCROSS.sol";
+import {IStakingPool} from "./interfaces/IStakingPool.sol";
+import {IStakingProtocol} from "./interfaces/IStakingProtocol.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 
 /**
  * @title StakingRouter
- * @notice StakingProtocol 전체를 지원하는 Native CROSS 스테이킹 라우터
- * @dev 사용자는 Native CROSS만 보내면 자동으로 wrap/unwrap 처리됨
+ * @notice User-friendly router for native CROSS staking operations
+ * @dev Provides convenient functions that automatically handle WCROSS wrapping/unwrapping
+ *
+ *      Key Features:
+ *      - Stake with native CROSS (auto-wraps to WCROSS)
+ *      - Unstake to native CROSS (auto-unwraps from WCROSS)
+ *      - Batch claim operations
+ *      - Proxy staking/withdrawing on behalf of users
+ *
+ *      User Flow:
+ *      1. User sends native CROSS to stake()
+ *      2. Router wraps to WCROSS
+ *      3. Router approves and calls StakingPool.stakeFor()
+ *      4. User's stake is recorded
+ *
+ *      Withdrawal Flow:
+ *      1. Router calls StakingPool.withdrawAllFor(user)
+ *      2. Router receives WCROSS
+ *      3. Router unwraps to native CROSS
+ *      4. Router sends native CROSS to user
+ *
+ *      Security:
+ *      - Uses ReentrancyGuardTransient (EIP-1153)
+ *      - Validates all project IDs
+ *      - Safe ERC20 operations
  */
 contract StakingRouter is ReentrancyGuardTransient {
     using SafeERC20 for IERC20;
 
-    // ============ 에러 ============
+    // ============ Errors ============
 
+    /// @notice Thrown when zero address provided
     error StakingRouterCanNotZeroAddress();
+
+    /// @notice Thrown when zero amount provided
     error StakingRouterAmountMustBeGreaterThanZero();
+
+    /// @notice Thrown when user has no stake to withdraw
     error StakingRouterNoStake();
+
+    /// @notice Thrown when project ID is invalid
     error StakingRouterInvalidProjectID();
+
+    /// @notice Thrown when native CROSS transfer fails
     error StakingRouterTransferFailed();
+
+    /// @notice Thrown when receive() called by non-WCROSS address
     error StakingRouterOnlyWCROSS();
+
+    /// @notice Thrown when array length mismatch in batch operations
     error StakingRouterLengthMismatch();
+
+    /// @notice Thrown when invalid offset provided
     error StakingRouterInvalidOffset();
+
+    /// @notice Thrown when invalid range provided
     error StakingRouterInvalidRange();
 
     // ============ Modifiers ============
 
     /**
-     * @notice projectID 검증 modifier
+     * @notice Validates that a project ID exists
+     * @param projectID Project ID to validate
      */
     modifier validProject(uint projectID) {
         require(projectID > 0 && projectID <= protocol.projectCount(), StakingRouterInvalidProjectID());
         _;
     }
 
-    // ============ 상태 변수 ============
+    // ============ Immutable State ============
 
-    /// @notice WCROSS 토큰 주소
+    /// @notice WCROSS token contract
     WCROSS public immutable wcross;
 
-    /// @notice StakingProtocol 주소
+    /// @notice StakingProtocol factory contract
     IStakingProtocol public immutable protocol;
 
-    // ============ 이벤트 ============
+    // ============ Events ============
 
+    /// @notice Emitted when user stakes with native CROSS
     event StakedWithNative(address indexed user, uint indexed projectID, uint amount);
+
+    /// @notice Emitted when user unstakes to native CROSS
     event UnstakedToNative(address indexed user, uint indexed projectID, uint amount);
+
+    /// @notice Emitted when user claims rewards
     event RewardClaimed(
         address indexed user, uint indexed projectID, uint indexed season, address rewardToken, uint amount
     );
 
-    // ============ 생성자 ============
+    // ============ Constructor ============
 
+    /**
+     * @notice Initializes the staking router
+     * @param _wcross WCROSS token address
+     * @param _protocol StakingProtocol factory address
+     */
     constructor(address _wcross, address _protocol) {
         require(_wcross != address(0), StakingRouterCanNotZeroAddress());
         require(_protocol != address(0), StakingRouterCanNotZeroAddress());
@@ -69,10 +118,10 @@ contract StakingRouter is ReentrancyGuardTransient {
     // ============ Internal Helpers ============
 
     /**
-     * @notice 프로젝트 정보 조회 헬퍼 (중복 로직 공통화)
-     * @param projectID 프로젝트 ID
-     * @return stakingPool StakingPool 주소
-     * @return rewardPool RewardPool 주소
+     * @notice Gets pool addresses for a project
+     * @param projectID Project ID
+     * @return stakingPool StakingPool address
+     * @return rewardPool RewardPool address
      */
     function _getProjectPools(uint projectID)
         internal
@@ -83,52 +132,55 @@ contract StakingRouter is ReentrancyGuardTransient {
         (stakingPool, rewardPool,,,,,) = protocol.projects(projectID);
     }
 
-    // ============ 스테이킹 함수 (Native CROSS 사용) ============
+    // ============ Staking Functions ============
 
     /**
-     * @notice Native CROSS로 스테이킹 (자동 wrap)
-     * @param projectID 프로젝트 ID
-     * @dev msg.value를 WCROSS로 변환 후 StakingPool.stakeFor() 호출
+     * @notice Stakes native CROSS tokens for a project
+     * @param projectID Project ID to stake in
+     * @dev Process:
+     *      1. Validates msg.value > 0
+     *      2. Wraps native CROSS to WCROSS
+     *      3. Approves StakingPool to spend WCROSS
+     *      4. Calls StakingPool.stakeFor() on behalf of msg.sender
+     *      5. Emits StakedWithNative event
+     *
+     *      Example: router.stake{value: 100 ether}(1)
      */
     function stake(uint projectID) external payable nonReentrant validProject(projectID) {
         uint amount = msg.value;
         require(amount > 0, StakingRouterAmountMustBeGreaterThanZero());
 
-        // 프로젝트 정보 조회
         (address stakingPool,) = _getProjectPools(projectID);
 
-        // 1. Native CROSS를 WCROSS로 변환
         wcross.deposit{value: amount}();
-
-        // 2. WCROSS를 StakingPool에 approve
         IERC20(address(wcross)).safeIncreaseAllowance(stakingPool, amount);
-
-        // 3. 사용자를 위해 스테이킹 (stakeFor 사용)
         IStakingPool(stakingPool).stakeFor(msg.sender, amount);
 
         emit StakedWithNative(msg.sender, projectID, amount);
     }
 
     /**
-     * @notice StakingPool에서 출금 후 Native CROSS로 자동 변환
-     * @param projectID 프로젝트 ID
-     * @dev 1회 요청으로 withdraw + unwrap 처리
+     * @notice Withdraws all staked tokens as native CROSS
+     * @param projectID Project ID to withdraw from
+     * @dev Process:
+     *      1. Calls StakingPool.withdrawAllFor() (router receives WCROSS)
+     *      2. Unwraps WCROSS to native CROSS
+     *      3. Sends native CROSS to msg.sender
+     *      4. Emits UnstakedToNative event
+     *
+     *      Warning: Current season points are forfeited!
+     *      Previous season rewards can still be claimed.
      */
     function unstake(uint projectID) external nonReentrant validProject(projectID) {
-        // 프로젝트 정보 조회
         (address stakingPool,) = _getProjectPools(projectID);
 
-        // 1. StakingPool에서 사용자를 대신해 출금 (WCROSS를 router가 받음)
         IStakingPool(stakingPool).withdrawAllFor(msg.sender);
 
-        // 2. Router가 받은 WCROSS 수량 확인
         uint wcrossBalance = IERC20(address(wcross)).balanceOf(address(this));
         require(wcrossBalance > 0, StakingRouterNoStake());
 
-        // 3. WCROSS를 Native CROSS로 변환
         wcross.withdraw(wcrossBalance);
 
-        // 4. Native CROSS를 사용자에게 전송
         (bool success,) = msg.sender.call{value: wcrossBalance}("");
         require(success, StakingRouterTransferFailed());
 
@@ -136,36 +188,40 @@ contract StakingRouter is ReentrancyGuardTransient {
     }
 
     /**
-     * @notice WCROSS withdraw 시에만 Native CROSS 수신 가능
+     * @notice Receives native CROSS from WCROSS contract only
+     * @dev Only accepts native CROSS from WCROSS.withdraw()
      */
     receive() external payable {
         require(msg.sender == address(wcross), StakingRouterOnlyWCROSS());
     }
 
-    // ============ 리워드 청구 함수 ============
+    // ============ Reward Claim Functions ============
 
     /**
-     * @notice 특정 시즌의 리워드 청구
-     * @param projectID 프로젝트 ID
-     * @param season 시즌 번호
-     * @param rewardToken 리워드 토큰 주소
+     * @notice Claims rewards for a single season
+     * @param projectID Project ID
+     * @param season Season number
+     * @param rewardToken Reward token address
+     * @dev Calls StakingPool.claimSeasonFor() which handles the actual claim logic
      */
     function claimReward(uint projectID, uint season, address rewardToken) external nonReentrant {
         require(projectID > 0 && projectID <= protocol.projectCount(), StakingRouterInvalidProjectID());
 
         (address stakingPool,,,,,,) = protocol.projects(projectID);
-
-        // 사용자를 대신해 리워드 청구 (Router 승인 필요)
         IStakingPool(stakingPool).claimSeasonFor(msg.sender, season, rewardToken);
 
         emit RewardClaimed(msg.sender, projectID, season, rewardToken, 0);
     }
 
     /**
-     * @notice 여러 시즌의 리워드 일괄 청구
-     * @param projectID 프로젝트 ID
-     * @param seasons 시즌 번호 배열
-     * @param rewardTokens 리워드 토큰 주소 배열
+     * @notice Claims rewards for multiple seasons in one transaction (gas efficient)
+     * @param projectID Project ID
+     * @param seasons Array of season numbers
+     * @param rewardTokens Array of reward token addresses (must match seasons length)
+     * @dev Example:
+     *      seasons = [1, 2, 3]
+     *      tokens = [tokenA, tokenA, tokenB]
+     *      Claims season 1 and 2 for tokenA, season 3 for tokenB
      */
     function claimMultipleRewards(uint projectID, uint[] calldata seasons, address[] calldata rewardTokens)
         external
@@ -185,14 +241,14 @@ contract StakingRouter is ReentrancyGuardTransient {
         }
     }
 
-    // ============ 시즌 최적화 함수 ============
-
     /**
-     * @notice 유저의 이전 시즌 데이터를 배치로 finalize
-     * @param projectID 프로젝트 ID
-     * @param user 사용자 주소
-     * @param maxSeasons 최대 처리 시즌 수
-     * @return processed 처리된 시즌 수
+     * @notice Finalizes user's season snapshots in batch (gas optimization)
+     * @param projectID Project ID
+     * @param user User address
+     * @param maxSeasons Maximum seasons to process
+     * @return processed Number of seasons actually processed
+     * @dev Useful for users who haven't interacted for many seasons
+     *      Allows pre-processing snapshots to reduce gas on subsequent claims
      */
     function finalizeUserSeasonsBatch(uint projectID, address user, uint maxSeasons)
         external
@@ -201,8 +257,6 @@ contract StakingRouter is ReentrancyGuardTransient {
         require(projectID > 0 && projectID <= protocol.projectCount(), StakingRouterInvalidProjectID());
         (address stakingPool,,,,,,) = protocol.projects(projectID);
 
-        // StakingPool의 finalizeUserSeasonsBatch 호출 (존재하는 경우)
-        // 하드코딩된 시그니처로 호출
         (bool success, bytes memory data) =
             stakingPool.call(abi.encodeWithSignature("finalizeUserSeasonsBatch(address,uint256)", user, maxSeasons));
 
@@ -210,6 +264,4 @@ contract StakingRouter is ReentrancyGuardTransient {
 
         return processed;
     }
-
-    // (조회 전용 함수들은 StakingViewer로 이전)
 }

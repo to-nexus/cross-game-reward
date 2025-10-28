@@ -167,7 +167,7 @@ contract PointsTest is BaseTest {
         rolloverSeason();
 
         // 5. 과거 시즌 (시즌 1) 포인트 조회 (스냅샷 + 추가 기간 포함되어야 함)
-        uint season1Points = stakingPool.getExpectedSeasonPoints(1, user1);
+        (uint season1Points,) = stakingPool.getSeasonUserPoints(1, user1);
 
         // 검증: 시즌 1의 포인트는 0보다 커야 함
         assertGt(season1Points, 0, "Season 1 points should be greater than 0");

@@ -255,7 +255,7 @@ contract RewardsTest is BaseTest {
         rewardToken.approve(newRewardPoolAddr, 1000 ether);
 
         // preDepositBlock 이전에 예치 시도 (실패해야 함)
-        vm.expectRevert("Pre-deposit not yet available");
+        vm.expectRevert(RewardPool.RewardPoolPreDepositNotAvailable.selector);
         newRewardPool.depositReward(address(rewardToken), 100 ether);
 
         // preDepositBlock으로 이동

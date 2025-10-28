@@ -121,7 +121,7 @@ contract AdvancedTest is BaseTest {
             assertGt(snapshot, 0, "Season should have points");
 
             // 각 시즌의 예상 포인트 확인
-            uint userSeasonPoints = stakingPool.getExpectedSeasonPoints(season, user1);
+            (uint userSeasonPoints,) = stakingPool.getSeasonUserPoints(season, user1);
             assertGt(userSeasonPoints, 0, "User should have points in season");
         }
 
@@ -196,7 +196,7 @@ contract AdvancedTest is BaseTest {
         rolloverSeason();
 
         // 다음 시즌에서 이전 시즌 포인트 조회
-        uint expectedPoints = stakingPool.getExpectedSeasonPoints(season1, user1);
+        (uint expectedPoints,) = stakingPool.getSeasonUserPoints(season1, user1);
         assertGt(expectedPoints, 0);
 
         // 보상 추가
@@ -231,8 +231,8 @@ contract AdvancedTest is BaseTest {
         uint snapshot = stakingPool.seasonTotalPointsSnapshot(1);
         assertGt(snapshot, 0);
 
-        uint user1Points = stakingPool.getExpectedSeasonPoints(1, user1);
-        uint user2Points = stakingPool.getExpectedSeasonPoints(1, user2);
+        (uint user1Points,) = stakingPool.getSeasonUserPoints(1, user1);
+        (uint user2Points,) = stakingPool.getSeasonUserPoints(1, user2);
 
         assertGt(user1Points, 0);
         assertEq(user2Points, 0);

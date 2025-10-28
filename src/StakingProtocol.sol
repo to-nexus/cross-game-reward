@@ -1,78 +1,133 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import "./interfaces/IRewardPool.sol";
-
-import "./interfaces/IStakingPool.sol";
-import "./interfaces/IStakingProtocol.sol";
-import "@openzeppelin/contracts/access/extensions/AccessControlDefaultAdminRules.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
-
-import "./RewardPool.sol";
-import "./StakingPool.sol";
+import {RewardPool} from "./RewardPool.sol";
+import {StakingPool} from "./StakingPool.sol";
+import {IRewardPool} from "./interfaces/IRewardPool.sol";
+import {IStakingPool} from "./interfaces/IStakingPool.sol";
+import {IRewardPoolCode, IStakingPoolCode, IStakingProtocol} from "./interfaces/IStakingProtocol.sol";
+import {AccessControlDefaultAdminRules} from
+    "@openzeppelin/contracts/access/extensions/AccessControlDefaultAdminRules.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 /**
  * @title StakingProtocol
- * @notice Factory 컨트랙트 - 프로젝트별 Pool 생성 및 관리
- * @dev Code 컨트랙트 패턴 사용으로 코드 사이즈 최소화
+ * @notice Central factory contract for creating and managing project-specific staking pools
+ * @dev Implements the Code Contract pattern with CREATE2 for gas-efficient deployments
+ *
+ *      Architecture:
+ *      - Acts as factory for StakingPool and RewardPool instances
+ *      - Uses Code Contracts to store creation bytecode separately
+ *      - Deploys pools via CREATE2 for deterministic addresses
+ *      - Manages global settings and project metadata
+ *
+ *      Code Contract Pattern:
+ *      1. StakingPoolCode and RewardPoolCode store creation bytecode
+ *      2. Factory retrieves bytecode via code() function
+ *      3. Combines with constructor args
+ *      4. Deploys using CREATE2 with deterministic salt
+ *
+ *      Benefits:
+ *      - Reduces factory contract size (avoids 24KB limit)
+ *      - Predictable pool addresses (useful for frontends)
+ *      - Cross-chain deployment with same addresses
+ *      - Upgradeable pool logic (by deploying new Code contracts)
+ *
+ *      CREATE2 Salt Structure:
+ *      - StakingPool: keccak256(projectName, "StakingPool")
+ *      - RewardPool: keccak256(projectName, "RewardPool")
+ *
+ *      Access Control:
+ *      - DEFAULT_ADMIN_ROLE: Protocol-level admin (3-day timelock)
+ *      - Project creators: Can fund their own projects
+ *      - Project admins: Can modify their project's pool settings
  */
 
 contract StakingProtocol is IStakingProtocol, AccessControlDefaultAdminRules, ReentrancyGuardTransient {
     using SafeERC20 for IERC20;
 
-    // ============ Role 정의 ============
+    // ============ Constants ============
 
+    /// @notice Role for pool managers
     bytes32 public constant MANAGER_ROLE = keccak256("MANAGER_ROLE");
 
-    // ============ 이벤트 ============
+    // ============ Events ============
 
+    /// @notice Emitted when global router approval changes
     event GlobalRouterApprovalUpdated(address indexed router, bool approved);
 
-    // ============ 에러 ============
+    // ============ Errors ============
 
+    /// @notice Thrown when zero address provided
     error StakingProtocolCanNotZeroAddress();
+
+    /// @notice Thrown when project name is empty
     error StakingProtocolEmptyProjectName();
+
+    /// @notice Thrown when project name already exists
     error StakingProtocolProjectNameExists();
+
+    /// @notice Thrown when project ID is invalid
     error StakingProtocolInvalidProjectID();
+
+    /// @notice Thrown when season blocks parameter is invalid
     error StakingProtocolInvalidSeasonBlocks();
+
+    /// @notice Thrown when pool deployment fails
     error StakingProtocolDeploymentFailed();
+
+    /// @notice Thrown when caller is not authorized
     error StakingProtocolNotAuthorized();
+
+    /// @notice Thrown when amount is zero
     error StakingProtocolAmountMustBeGreaterThanZero();
+
+    /// @notice Thrown when reward pool not found
     error StakingProtocolRewardPoolNotFound();
+
+    /// @notice Thrown when code retrieval from Code contract fails
     error StakingProtocolCodeRetrievalFailed();
 
-    // ============ 상태 변수 ============
+    // ============ Immutable State ============
 
-    /// @notice $CROSS 토큰 주소 (내부용)
+    /// @notice CROSS token address (WCROSS)
     address public immutable crossToken;
 
-    /// @notice 각 Code 컨트랙트 주소들
+    /// @notice Code contract for StakingPool deployments
     IStakingPoolCode public immutable stakingPoolCodeContract;
+
+    /// @notice Code contract for RewardPool deployments
     IRewardPoolCode public immutable rewardPoolCodeContract;
 
-    /// @notice 프로젝트 목록
+    // ============ State Variables ============
+
+    /// @notice Mapping of project ID to project information
     mapping(uint => IStakingProtocol.ProjectInfo) public projects;
 
-    /// @notice 총 프로젝트 수
+    /// @notice Total number of projects created
     uint public projectCount;
 
-    /// @notice 프로젝트 이름으로 ID 조회
+    /// @notice Mapping of project name to project ID (ensures uniqueness)
     mapping(string => uint) public projectIDByName;
 
-    /// @notice 관리자 주소로 프로젝트 ID 조회
+    /// @notice Mapping of admin address to their project IDs
     mapping(address => uint[]) public projectsByAdmin;
 
-    /// @notice 기본 시즌 길이 (블록 수)
-    uint public defaultSeasonBlocks = 2592000; // 약 30일 (1초/블록 기준)
+    /// @notice Default season length in blocks (≈30 days at 1 sec/block)
+    uint public defaultSeasonBlocks = 2592000;
 
-    /// @notice 글로벌 승인 Router 목록
+    /// @notice Mapping of globally approved routers (can interact with any project)
     mapping(address => bool) public globalApprovedRouters;
 
     // ============ Modifiers ============
 
     /**
-     * @notice 프로젝트 admin 또는 프로토콜 admin만 호출 가능
+     * @notice Restricts access to project admin or protocol admin
+     * @param projectID Project ID to check
+     * @dev Allows either:
+     *      - The project's admin address
+     *      - An address with DEFAULT_ADMIN_ROLE
      */
     modifier onlyProjectAdminOrProtocolAdmin(uint projectID) {
         require(projectID > 0 && projectID <= projectCount, StakingProtocolInvalidProjectID());
@@ -83,8 +138,19 @@ contract StakingProtocol is IStakingProtocol, AccessControlDefaultAdminRules, Re
         _;
     }
 
-    // ============ 생성자 ============
+    // ============ Constructor ============
 
+    /**
+     * @notice Initializes the StakingProtocol factory
+     * @param crossTokenAddr Address of CROSS token (WCROSS)
+     * @param _stakingPoolCodeContract Address of StakingPoolCode contract
+     * @param _rewardPoolCodeContract Address of RewardPoolCode contract
+     * @param _admin Initial protocol admin address
+     * @dev - Validates all addresses are non-zero
+     *      - Validates Code contracts can return bytecode
+     *      - Sets up 3-day timelock for admin role
+     *      - Stores immutable references
+     */
     constructor(
         address crossTokenAddr,
         address _stakingPoolCodeContract,
@@ -96,7 +162,6 @@ contract StakingProtocol is IStakingProtocol, AccessControlDefaultAdminRules, Re
         require(_rewardPoolCodeContract != address(0), StakingProtocolCanNotZeroAddress());
         require(_admin != address(0), StakingProtocolCanNotZeroAddress());
 
-        // Code 컨트랙트가 실제로 code() 함수를 가지고 있는지 검증
         (bool success1, bytes memory data1) = _stakingPoolCodeContract.staticcall(abi.encodeWithSignature("code()"));
         require(success1 && data1.length > 0, StakingProtocolCodeRetrievalFailed());
 
@@ -108,17 +173,33 @@ contract StakingProtocol is IStakingProtocol, AccessControlDefaultAdminRules, Re
         rewardPoolCodeContract = IRewardPoolCode(_rewardPoolCodeContract);
     }
 
-    // ============ 프로젝트 생성 ============
+    // ============ Project Creation ============
 
     /**
-     * @notice 새 프로젝트 풀 생성
-     * @param projectName 프로젝트 이름
-     * @param seasonBlocks 시즌 길이 (블록 수, 0이면 기본값 사용)
-     * @param firstSeasonStartBlock 첫 시즌 시작 블록
-     * @param poolEndBlock 풀 종료 블록 (0이면 무한)
-     * @param projectAdmin 프로젝트 관리자 (0이면 msg.sender)
-     * @param preDepositStartBlock 사전 예치 시작 블록 (0이면 즉시 가능)
-     * @dev CREATE2를 사용하여 주소 예측 가능. salt = keccak256(abi.encode(projectName, {Pool Type}))
+     * @notice Creates a new staking project with dedicated pools
+     * @param projectName Unique project name
+     * @param seasonBlocks Number of blocks per season (0 = use default)
+     * @param firstSeasonStartBlock Block when season 1 starts
+     * @param poolEndBlock Block when pool ends (0 = infinite)
+     * @param projectAdmin Admin address for the project
+     * @param preDepositStartBlock Block when pre-deposit starts (0 = disabled)
+     * @return projectID Newly created project ID
+     * @return stakingPool Address of deployed StakingPool
+     * @return rewardPool Address of deployed RewardPool
+     * @dev Process:
+     *      1. Validates project name is unique and non-empty
+     *      2. Uses default season blocks if 0 provided
+     *      3. Increments project counter
+     *      4. Deploys StakingPool via CREATE2 (deterministic address)
+     *      5. Deploys RewardPool via CREATE2 (deterministic address)
+     *      6. Connects pools to each other
+     *      7. Saves project metadata
+     *      8. Emits ProjectCreated event
+     *
+     *      CREATE2 ensures:
+     *      - Address predictable before deployment
+     *      - Same project name = same addresses across chains
+     *      - Useful for frontend pre-display and cross-chain consistency
      */
     function createProject(
         string calldata projectName,
@@ -138,26 +219,34 @@ contract StakingProtocol is IStakingProtocol, AccessControlDefaultAdminRules, Re
         projectCount++;
         projectID = projectCount;
 
-        // 각 풀 배포
+        // Deploy both pools
         stakingPool = _deployStakingPool(
             projectID, projectName, seasonBlocks, firstSeasonStartBlock, poolEndBlock, preDepositStartBlock
         );
         rewardPool = _deployRewardPool(projectID, projectName, stakingPool);
 
-        // 연결 설정
+        // Connect pools
         _setupPools(stakingPool, rewardPool);
 
-        // 프로젝트 정보 저장
+        // Save project info
         _saveProjectInfo(projectID, projectName, stakingPool, rewardPool, projectAdmin);
 
         emit ProjectCreated(projectID, projectName, stakingPool, rewardPool, msg.sender, projectAdmin);
     }
 
-    // ============ 배포 헬퍼 함수 ============
+    // ============ Deployment Helpers ============
 
     /**
-     * @notice StakingPool 배포 (CREATE2)
-     * @dev salt = keccak256(abi.encode(projectName, "StakingPool"))
+     * @notice Deploys StakingPool using CREATE2 for deterministic address
+     * @param projectID Project ID
+     * @param projectName Project name (used in salt)
+     * @param seasonBlocks Blocks per season
+     * @param firstSeasonStartBlock First season start block
+     * @param poolEndBlock Pool end block
+     * @param preDepositStartBlock Pre-deposit start block
+     * @return pool Deployed StakingPool address
+     * @dev Salt: keccak256(abi.encode(projectName, "StakingPool"))
+     *      This makes addresses predictable based on project name
      */
     function _deployStakingPool(
         uint projectID,
@@ -190,8 +279,12 @@ contract StakingProtocol is IStakingProtocol, AccessControlDefaultAdminRules, Re
     }
 
     /**
-     * @notice RewardPool 배포 (CREATE2)
-     * @dev salt = keccak256(abi.encode(projectName, "RewardPool"))
+     * @notice Deploys RewardPool using CREATE2 for deterministic address
+     * @param projectName Project name (used in salt)
+     * @param stakingPool Address of already-deployed StakingPool
+     * @return pool Deployed RewardPool address
+     * @dev Salt: keccak256(abi.encode(projectName, "RewardPool"))
+     *      This makes addresses predictable based on project name
      */
     function _deployRewardPool(uint, /* projectID */ string calldata projectName, address stakingPool)
         internal
@@ -208,10 +301,28 @@ contract StakingProtocol is IStakingProtocol, AccessControlDefaultAdminRules, Re
         require(pool != address(0), StakingProtocolDeploymentFailed());
     }
 
+    /**
+     * @notice Connects StakingPool and RewardPool
+     * @param stakingPool StakingPool address
+     * @param rewardPool RewardPool address
+     * @dev Calls StakingPool.setRewardPool() to establish connection
+     */
     function _setupPools(address stakingPool, address rewardPool) internal {
         IStakingPool(stakingPool).setRewardPool(IRewardPool(rewardPool));
     }
 
+    /**
+     * @notice Saves project information to storage
+     * @param projectID Project ID
+     * @param projectName Project name
+     * @param stakingPool StakingPool address
+     * @param rewardPool RewardPool address
+     * @param projectAdmin Project admin address
+     * @dev Updates three mappings:
+     *      - projects[projectID] = full project info
+     *      - projectIDByName[name] = projectID
+     *      - projectsByAdmin[admin] += projectID
+     */
     function _saveProjectInfo(
         uint projectID,
         string calldata projectName,
@@ -233,20 +344,31 @@ contract StakingProtocol is IStakingProtocol, AccessControlDefaultAdminRules, Re
         projectsByAdmin[projectAdmin].push(projectID);
     }
 
-    // ============ Code 가져오기 함수 ============
+    // ============ Code Retrieval Functions ============
 
+    /**
+     * @notice Retrieves StakingPool creation bytecode from Code contract
+     * @return Creation bytecode for StakingPool
+     */
     function _getStakingPoolCode() internal view returns (bytes memory) {
         return stakingPoolCodeContract.code();
     }
 
+    /**
+     * @notice Retrieves RewardPool creation bytecode from Code contract
+     * @return Creation bytecode for RewardPool
+     */
     function _getRewardPoolCode() internal view returns (bytes memory) {
         return rewardPoolCodeContract.code();
     }
 
-    // ============ 관리 함수 ============
+    // ============ Admin Functions ============
 
     /**
-     * @notice 프로젝트 admin 변경 (현재 admin만 가능)
+     * @notice Changes project admin (current admin only)
+     * @param projectID Project ID
+     * @param newAdmin New admin address
+     * @dev Only the current project admin can transfer admin rights
      */
     function setProjectAdmin(uint projectID, address newAdmin) external {
         _checkProjectID(projectID);
@@ -259,7 +381,10 @@ contract StakingProtocol is IStakingProtocol, AccessControlDefaultAdminRules, Re
     }
 
     /**
-     * @notice 프로젝트 상태 변경 (프로토콜 admin만 가능)
+     * @notice Sets project active status (protocol admin only)
+     * @param projectID Project ID
+     * @param isActive New active status
+     * @dev Allows protocol admin to pause/unpause projects
      */
     function setProjectStatus(uint projectID, bool isActive) external onlyRole(DEFAULT_ADMIN_ROLE) {
         _checkProjectID(projectID);
@@ -268,10 +393,10 @@ contract StakingProtocol is IStakingProtocol, AccessControlDefaultAdminRules, Re
     }
 
     /**
-     * @notice 글로벌 Router 승인 (프로토콜 admin 전용)
-     * @param router Router 주소
-     * @param approved 승인 여부
-     * @dev 글로벌로 승인된 Router는 모든 프로젝트에서 사용 가능
+     * @notice Sets globally approved router (protocol admin only)
+     * @param router Router address
+     * @param approved Approval status
+     * @dev Global routers can interact with any project without per-project approval
      */
     function setGlobalApprovedRouter(address router, bool approved) external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(router != address(0), StakingProtocolCanNotZeroAddress());
@@ -280,11 +405,11 @@ contract StakingProtocol is IStakingProtocol, AccessControlDefaultAdminRules, Re
     }
 
     /**
-     * @notice 프로젝트별 Router 승인 (프로젝트 admin 또는 프로토콜 admin)
-     * @param projectID 프로젝트 ID
-     * @param router Router 주소
-     * @param approved 승인 여부
-     * @dev 프로젝트별 승인은 해당 프로젝트에서만 유효
+     * @notice Approves router for a specific project
+     * @param projectID Project ID
+     * @param router Router address
+     * @param approved Approval status
+     * @dev Can be called by project admin or protocol admin
      */
     function setApprovedRouter(uint projectID, address router, bool approved)
         external
@@ -294,7 +419,9 @@ contract StakingProtocol is IStakingProtocol, AccessControlDefaultAdminRules, Re
     }
 
     /**
-     * @notice 기본 시즌 길이 설정
+     * @notice Sets default season blocks for new projects
+     * @param blocks Number of blocks per season
+     * @dev Only affects newly created projects
      */
     function setDefaultSeasonBlocks(uint blocks) external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(blocks > 0, StakingProtocolInvalidSeasonBlocks());
@@ -304,21 +431,27 @@ contract StakingProtocol is IStakingProtocol, AccessControlDefaultAdminRules, Re
     }
 
     /**
-     * @notice 프로젝트별 포인트 계산 시간 단위 설정 (프로젝트 admin 또는 프로토콜 admin)
+     * @notice Sets points time unit for a project's pool
+     * @param projectID Project ID
+     * @param timeUnit Time unit in seconds
      */
     function setPoolPointsTimeUnit(uint projectID, uint timeUnit) external onlyProjectAdminOrProtocolAdmin(projectID) {
         IStakingPool(projects[projectID].stakingPool).setPointsTimeUnit(timeUnit);
     }
 
     /**
-     * @notice 프로젝트별 블록 시간 설정 (프로젝트 admin 또는 프로토콜 admin)
+     * @notice Sets block time for a project's pool
+     * @param projectID Project ID
+     * @param blockTime Block time in seconds
      */
     function setPoolBlockTime(uint projectID, uint blockTime) external onlyProjectAdminOrProtocolAdmin(projectID) {
         IStakingPool(projects[projectID].stakingPool).setBlockTime(blockTime);
     }
 
     /**
-     * @notice 프로젝트별 다음 시즌 시작 블록 설정 (프로젝트 admin 또는 프로토콜 admin)
+     * @notice Sets next season start block for a project's pool
+     * @param projectID Project ID
+     * @param startBlock Start block number
      */
     function setPoolNextSeasonStart(uint projectID, uint startBlock)
         external
@@ -328,14 +461,19 @@ contract StakingProtocol is IStakingProtocol, AccessControlDefaultAdminRules, Re
     }
 
     /**
-     * @notice 프로젝트별 풀 종료 블록 설정 (프로젝트 admin 또는 프로토콜 admin)
+     * @notice Sets pool end block for a project
+     * @param projectID Project ID
+     * @param endBlock End block number (0 = infinite)
      */
     function setPoolEndBlock(uint projectID, uint endBlock) external onlyProjectAdminOrProtocolAdmin(projectID) {
         IStakingPool(projects[projectID].stakingPool).setPoolEndBlock(endBlock);
     }
 
     /**
-     * @notice 프로젝트별 RewardPool 설정 (프로토콜 admin만 가능 - 보안 중요)
+     * @notice Changes reward pool for a project (emergency only)
+     * @param projectID Project ID
+     * @param rewardPool New RewardPool address
+     * @dev Protocol admin only, should rarely be used
      */
     function setPoolRewardPool(uint projectID, IRewardPool rewardPool) external onlyRole(DEFAULT_ADMIN_ROLE) {
         _checkProjectID(projectID);
@@ -343,11 +481,11 @@ contract StakingProtocol is IStakingProtocol, AccessControlDefaultAdminRules, Re
     }
 
     /**
-     * @notice 프로젝트별 수동 시즌 롤오버 (프로젝트 admin 또는 프로토콜 admin)
-     * @param projectID 프로젝트 ID
-     * @param maxRollovers 최대 롤오버 횟수
-     * @return rolloversPerformed 실제로 수행된 롤오버 횟수
-     * @dev 50개 이상의 시즌이 쌓인 경우 사용
+     * @notice Manually rolls over seasons for a project
+     * @param projectID Project ID
+     * @param maxRollovers Maximum seasons to rollover
+     * @return rolloversPerformed Number of seasons actually rolled over
+     * @dev Used when >50 seasons are pending
      */
     function manualRolloverSeasons(uint projectID, uint maxRollovers)
         external
@@ -358,12 +496,12 @@ contract StakingProtocol is IStakingProtocol, AccessControlDefaultAdminRules, Re
     }
 
     /**
-     * @notice RewardPool에서 토큰 회수 (프로토콜 admin 전용)
-     * @param projectID 프로젝트 ID
-     * @param token 회수할 토큰 주소
-     * @param to 수신자 주소
-     * @param amount 회수할 수량
-     * @dev RewardPool.sweep()는 protocol 주소만 호출 가능하므로 이 함수를 통해 실행
+     * @notice Emergency function to recover tokens from reward pool
+     * @param projectID Project ID
+     * @param token Token address
+     * @param to Recipient address
+     * @param amount Amount to recover
+     * @dev Protocol admin only
      */
     function sweepRewardPool(uint projectID, address token, address to, uint amount)
         external
@@ -380,37 +518,55 @@ contract StakingProtocol is IStakingProtocol, AccessControlDefaultAdminRules, Re
     }
 
     /**
-     * @notice 프로젝트별 롤오버 대기 중인 시즌 개수 조회
-     * @param projectID 프로젝트 ID
-     * @return pendingSeasons 롤오버가 필요한 시즌 수
+     * @notice Returns number of pending season rollovers for a project
+     * @param projectID Project ID
+     * @return pendingSeasons Number of pending rollovers
      */
     function getPendingSeasonRollovers(uint projectID) external view returns (uint pendingSeasons) {
         _checkProjectID(projectID);
         return IStakingPool(projects[projectID].stakingPool).getPendingSeasonRollovers();
     }
 
-    // ============ 조회 함수 ============
+    // ============ View Functions ============
+
+    /**
+     * @notice Checks if a router is globally approved
+     * @param router Router address
+     * @return True if globally approved
+     */
     function isGlobalApprovedRouter(address router) external view returns (bool) {
         return globalApprovedRouters[router];
     }
 
+    /**
+     * @notice Returns project information
+     * @param projectID Project ID
+     * @return Project information struct
+     */
     function getProject(uint projectID) external view returns (IStakingProtocol.ProjectInfo memory) {
         _checkProjectID(projectID);
         return projects[projectID];
     }
 
+    /**
+     * @notice Returns all projects managed by an admin
+     * @param admin Admin address
+     * @return Array of project IDs
+     */
     function getProjectsByAdmin(address admin) external view returns (uint[] memory) {
         return projectsByAdmin[admin];
     }
 
     /**
-     * @notice StakingPool 주소 계산 (CREATE2 예측)
-     * @param projectName 프로젝트 이름
-     * @param projectID 프로젝트 ID
-     * @param seasonBlocks 시즌 길이
-     * @param firstSeasonStartBlock 첫 시즌 시작 블록
-     * @param poolEndBlock 풀 종료 블록
-     * @return 예측된 StakingPool 주소
+     * @notice Computes StakingPool address before deployment (CREATE2 prediction)
+     * @param projectName Project name
+     * @param projectID Project ID
+     * @param seasonBlocks Season length in blocks
+     * @param firstSeasonStartBlock First season start block
+     * @param poolEndBlock Pool end block
+     * @return Predicted StakingPool address
+     * @dev Uses CREATE2 formula with deterministic salt
+     *      Useful for frontends to display address before creation
      */
     function computeStakingPoolAddress(
         string calldata projectName,
@@ -431,10 +587,10 @@ contract StakingProtocol is IStakingProtocol, AccessControlDefaultAdminRules, Re
     }
 
     /**
-     * @notice RewardPool 주소 계산 (CREATE2 예측)
-     * @param projectName 프로젝트 이름
-     * @param stakingPool StakingPool 주소
-     * @return 예측된 RewardPool 주소
+     * @notice Computes RewardPool address before deployment (CREATE2 prediction)
+     * @param projectName Project name
+     * @param stakingPool StakingPool address (must compute StakingPool address first)
+     * @return Predicted RewardPool address
      */
     function computeRewardPoolAddress(string calldata projectName, uint, /* projectID */ address stakingPool)
         external
@@ -451,9 +607,13 @@ contract StakingProtocol is IStakingProtocol, AccessControlDefaultAdminRules, Re
     }
 
     /**
-     * @notice 프로젝트 목록 페이지네이션 조회 (AUDIT 권장)
-     * @param offset 시작 ID (1부터 시작)
-     * @param limit 최대 개수
+     * @notice Returns paginated list of projects
+     * @param offset Starting project ID (1-indexed)
+     * @param limit Maximum number of projects to return
+     * @return projectList Array of project information
+     * @return total Total number of projects
+     * @dev Supports pagination for frontend display
+     *      offset is 1-indexed (project IDs start at 1)
      */
     function getProjects(uint offset, uint limit)
         external
@@ -474,6 +634,11 @@ contract StakingProtocol is IStakingProtocol, AccessControlDefaultAdminRules, Re
         }
     }
 
+    /**
+     * @notice Validates project ID is within valid range
+     * @param projectID Project ID to check
+     * @dev Reverts if project ID is 0 or greater than projectCount
+     */
     function _checkProjectID(uint projectID) internal view {
         require(projectID > 0 && projectID <= projectCount, StakingProtocolInvalidProjectID());
     }

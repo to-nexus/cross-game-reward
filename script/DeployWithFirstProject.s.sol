@@ -109,7 +109,7 @@ contract DeployWithFirstProjectScript is Script {
         console.log("Project Admin:", projectAdmin);
 
         (uint projectID, address stakingPool, address rewardPool) = protocol.createProject(
-            projectName, seasonBlocks, firstSeasonStartBlock, poolEndBlock, projectAdmin, 12105615
+            projectName, seasonBlocks, firstSeasonStartBlock, poolEndBlock, projectAdmin, 12127843
         );
 
         console.log("Project ID:", projectID);
