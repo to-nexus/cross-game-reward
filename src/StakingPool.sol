@@ -85,10 +85,8 @@ contract StakingPool is StakingPoolBase, Pausable {
     event RouterApprovalSet(address indexed router, bool approved);
 
     /// @notice Emitted when points time unit is updated
-    event PointsTimeUnitUpdated(uint oldValue, uint newValue);
 
     /// @notice Emitted when block time is updated
-    event BlockTimeUpdated(uint oldValue, uint newValue);
 
     /// @notice Emitted when next season start is updated
     event NextSeasonStartUpdated(uint oldValue, uint newValue);
@@ -105,28 +103,28 @@ contract StakingPool is StakingPoolBase, Pausable {
      * @param _projectID Project ID this pool belongs to
      * @param _stakingToken Staking token address (WCROSS)
      * @param _protocol StakingProtocol factory address
-     * @param _seasonBlocks Number of blocks per season
-     * @param _firstSeasonStartBlock Block when first season starts
-     * @param _poolEndBlock Block when pool ends (0 = infinite)
-     * @param _preDepositStartBlock Block when pre-deposit starts (0 = disabled)
+     * @param _seasonDuration Number of blocks per season
+     * @param _firstSeasonStartTime Block when first season starts
+     * @param _poolEndTime Block when pool ends (0 = infinite)
+     * @param _preDepositStartTime Block when pre-deposit starts (0 = disabled)
      * @dev Calls StakingPoolBase constructor with all parameters
      */
     constructor(
         uint _projectID,
         IERC20 _stakingToken,
         IStakingProtocol _protocol,
-        uint _seasonBlocks,
-        uint _firstSeasonStartBlock,
-        uint _poolEndBlock,
-        uint _preDepositStartBlock
+        uint _seasonDuration,
+        uint _firstSeasonStartTime,
+        uint _poolEndTime,
+        uint _preDepositStartTime
     )
         StakingPoolBase(
             _stakingToken,
             address(_protocol),
-            _seasonBlocks,
-            _firstSeasonStartBlock,
-            _poolEndBlock,
-            _preDepositStartBlock
+            _seasonDuration,
+            _firstSeasonStartTime,
+            _poolEndTime,
+            _preDepositStartTime
         )
     {
         projectID = _projectID;
@@ -202,8 +200,8 @@ contract StakingPool is StakingPoolBase, Pausable {
     function rolloverSeason() external override {
         require(currentSeason != 0, StakingPoolBaseNoActiveSeason());
         Season storage current = seasons[currentSeason];
-        require(block.number > current.endBlock, StakingPoolBaseSeasonNotEnded());
-        require(nextSeasonStartBlock == 0 || block.number >= nextSeasonStartBlock, StakingPoolBaseSeasonNotEnded());
+        require(block.timestamp > current.endTime, StakingPoolBaseSeasonNotEnded());
+        require(nextSeasonStartTime == 0 || block.timestamp >= nextSeasonStartTime, StakingPoolBaseSeasonNotEnded());
         _rolloverSeason();
     }
 
@@ -266,8 +264,8 @@ contract StakingPool is StakingPoolBase, Pausable {
         StakePosition storage position = userStakes[user];
         if (position.balance == 0) return;
 
-        uint lastUpdate = position.lastUpdateBlock;
-        uint currentBlock = block.number;
+        uint lastUpdate = position.lastUpdateTime;
+        uint currentBlock = block.timestamp;
 
         if (lastUpdate >= currentBlock) return;
 
@@ -277,23 +275,22 @@ contract StakingPool is StakingPoolBase, Pausable {
 
         UserSeasonData storage userData = userSeasonData[currentSeason][user];
         if (userData.balance == 0) {
-            uint joinBlock = lastUpdate < current.startBlock ? current.startBlock : lastUpdate;
+            uint joinTime = lastUpdate < current.startTime ? current.startTime : lastUpdate;
             userData.balance = position.balance;
-            userData.joinBlock = joinBlock;
-            userData.lastPointsBlock = currentBlock;
+            userData.joinTime = joinTime;
+            userData.lastPointsTime = currentBlock;
         } else {
             userData.balance = position.balance;
         }
 
-        uint effectiveStart = lastUpdate < current.startBlock ? current.startBlock : lastUpdate;
-        uint newPoints =
-            PointsLib.calculatePoints(position.balance, effectiveStart, currentBlock, blockTime, pointsTimeUnit);
+        uint effectiveStart = lastUpdate < current.startTime ? current.startTime : lastUpdate;
+        uint newPoints = PointsLib.calculatePoints(position.balance, effectiveStart, currentBlock);
 
         userData.points += newPoints;
-        userData.lastPointsBlock = currentBlock;
+        userData.lastPointsTime = currentBlock;
 
         position.points = 0;
-        position.lastUpdateBlock = currentBlock;
+        position.lastUpdateTime = currentBlock;
         emit PointsUpdated(user, userData.points);
     }
 
@@ -329,8 +326,8 @@ contract StakingPool is StakingPoolBase, Pausable {
         // 2. Season ended AND (it's a past season OR pool ended)
         bool seasonEnded = season.isFinalized
             || (
-                block.number > season.endBlock
-                    && (seasonNumber < currentSeason || (poolEndBlock > 0 && block.number >= poolEndBlock))
+                block.timestamp > season.endTime
+                    && (seasonNumber < currentSeason || (poolEndTime > 0 && block.timestamp >= poolEndTime))
             );
 
         require(seasonEnded, StakingPoolBaseSeasonNotEnded());
@@ -338,7 +335,7 @@ contract StakingPool is StakingPoolBase, Pausable {
         _ensureUserSeasonSnapshot(user, seasonNumber);
 
         UserSeasonData storage userData = userSeasonData[seasonNumber][user];
-        require(!userData.claimed, StakingPoolAlreadyClaimed());
+        // Note: claimed check is now in RewardPool.payUser (per-token basis)
 
         uint userPoints = userData.points;
 
@@ -349,9 +346,9 @@ contract StakingPool is StakingPoolBase, Pausable {
         }
 
         if (userPoints > 0 && totalPoints > 0) {
-            userData.claimed = true;
+            // RewardPool will check hasClaimedSeasonReward[user][season][token] and revert if already claimed
             rewardPool.payUser(user, seasonNumber, rewardToken, userPoints, totalPoints);
-            emit SeasonClaimed(user, seasonNumber, userPoints);
+            emit SeasonClaimed(user, seasonNumber, rewardToken, userPoints);
         }
     }
 
@@ -369,27 +366,25 @@ contract StakingPool is StakingPoolBase, Pausable {
      *      - Current season with only position data
      *      - Pre-deposit period
      *
-     *      Uses lastPointsBlock to prevent double-counting
+     *      Uses lastPointsTime to prevent double-counting
      */
     function _calculateCurrentSeasonPoints(address user) internal view returns (uint) {
         StakePosition storage position = userStakes[user];
         if (position.balance == 0) return 0;
 
-        if (nextSeasonStartBlock > 0 && (currentSeason == 0 || seasons[currentSeason].isFinalized)) {
-            if (block.number < nextSeasonStartBlock) return 0;
+        if (nextSeasonStartTime > 0 && (currentSeason == 0 || seasons[currentSeason].isFinalized)) {
+            if (block.timestamp < nextSeasonStartTime) return 0;
 
-            uint posLastUpdate = position.lastUpdateBlock;
-            uint seasonStart = nextSeasonStartBlock;
+            uint posLastUpdate = position.lastUpdateTime;
+            uint seasonStart = nextSeasonStartTime;
 
             uint virtualSeasonNum = currentSeason + 1;
             UserSeasonData storage virtualData = userSeasonData[virtualSeasonNum][user];
 
             if (posLastUpdate < seasonStart) {
-                return virtualData.points
-                    + PointsLib.calculatePoints(position.balance, seasonStart, block.number, blockTime, pointsTimeUnit);
+                return virtualData.points + PointsLib.calculatePoints(position.balance, seasonStart, block.timestamp);
             } else {
-                return virtualData.points
-                    + PointsLib.calculatePoints(position.balance, posLastUpdate, block.number, blockTime, pointsTimeUnit);
+                return virtualData.points + PointsLib.calculatePoints(position.balance, posLastUpdate, block.timestamp);
             }
         }
 
@@ -399,19 +394,17 @@ contract StakingPool is StakingPoolBase, Pausable {
         UserSeasonData storage userData = userSeasonData[currentSeason][user];
 
         if (userData.balance > 0) {
-            // lastPointsBlock부터 추가 포인트 계산 (이중 계산 방지)
-            uint effectiveStart = userData.lastPointsBlock > 0 ? userData.lastPointsBlock : userData.joinBlock;
-            if (effectiveStart < current.startBlock) effectiveStart = current.startBlock;
+            // lastPointsTime부터 추가 포인트 계산 (이중 계산 방지)
+            uint effectiveStart = userData.lastPointsTime > 0 ? userData.lastPointsTime : userData.joinTime;
+            if (effectiveStart < current.startTime) effectiveStart = current.startTime;
 
-            uint additionalPoints =
-                PointsLib.calculatePoints(userData.balance, effectiveStart, block.number, blockTime, pointsTimeUnit);
+            uint additionalPoints = PointsLib.calculatePoints(userData.balance, effectiveStart, block.timestamp);
             return userData.points + additionalPoints;
         }
 
-        uint lastUpdate = position.lastUpdateBlock;
-        if (lastUpdate < current.startBlock && position.balance > 0) {
-            return
-                PointsLib.calculatePoints(position.balance, current.startBlock, block.number, blockTime, pointsTimeUnit);
+        uint lastUpdate = position.lastUpdateTime;
+        if (lastUpdate < current.startTime && position.balance > 0) {
+            return PointsLib.calculatePoints(position.balance, current.startTime, block.timestamp);
         }
 
         return 0;
@@ -434,7 +427,7 @@ contract StakingPool is StakingPoolBase, Pausable {
      *         - Subtract: forfeitedPoints
      *
      *      3. Past season (not finalized yet):
-     *         - Calculate up to season.endBlock
+     *         - Calculate up to season.endTime
      *         - Subtract forfeitedPoints
      *
      *      Forfeited points: Points lost when users withdraw during a season
@@ -442,11 +435,12 @@ contract StakingPool is StakingPoolBase, Pausable {
     function _calculateSeasonTotalPoints(uint seasonNum) internal view returns (uint) {
         Season storage season = seasons[seasonNum];
 
-        // Finalized season: return cached totalPoints
+        // Finalized season: return cached totalPoints (forfeited 제외)
         if (season.isFinalized) {
-            if (season.totalPoints > 0) {
-                return season.totalPoints > season.forfeitedPoints ? season.totalPoints - season.forfeitedPoints : 0;
-            }
+            // totalPoints가 있으면 그것 사용 (forfeited 이미 제외됨)
+            if (season.totalPoints > 0) return season.totalPoints;
+
+            // totalPoints가 0이면 aggregatedPoints 사용 (forfeited 제외)
             if (season.aggregatedPoints > 0) {
                 return season.aggregatedPoints > season.forfeitedPoints
                     ? season.aggregatedPoints - season.forfeitedPoints
@@ -456,44 +450,39 @@ contract StakingPool is StakingPoolBase, Pausable {
             // Edge case: finalized but totalPoints/aggregatedPoints = 0
             // This can happen if season was rolled over without proper aggregation
             // Calculate properly using seasonTotalStaked
-            if (season.startBlock > 0 && season.endBlock > 0 && season.seasonTotalStaked > 0) {
-                uint calculatedPoints = PointsLib.calculatePoints(
-                    season.seasonTotalStaked, season.startBlock, season.endBlock, blockTime, pointsTimeUnit
-                );
+            if (season.startTime > 0 && season.endTime > 0 && season.seasonTotalStaked > 0) {
+                uint calculatedPoints =
+                    PointsLib.calculatePoints(season.seasonTotalStaked, season.startTime, season.endTime);
                 return calculatedPoints > season.forfeitedPoints ? calculatedPoints - season.forfeitedPoints : 0;
             }
 
             return 0;
         }
 
-        // Current season: aggregated + additional since last update
-        if (seasonNum == currentSeason) {
-            uint blocksSinceAggregation =
-                block.number > season.lastAggregatedBlock ? block.number - season.lastAggregatedBlock : 0;
+        // 시즌이 생성되었으면 (startTime > 0) 계산
+        if (season.startTime > 0) {
+            // 실제 현재 시즌 확인 (가상 롤오버 포함)
+            (uint actualCurrentSeason,,,) = getCurrentSeasonInfo();
 
             uint totalAggregated = season.aggregatedPoints;
 
-            if (blocksSinceAggregation > 0) {
-                uint additionalPoints = PointsLib.calculatePoints(
-                    season.seasonTotalStaked, season.lastAggregatedBlock, block.number, blockTime, pointsTimeUnit
-                );
-                totalAggregated += additionalPoints;
+            // 계산 종료 시간 결정
+            uint calculationEndTime;
+            if (seasonNum < actualCurrentSeason) {
+                // 과거 시즌: endTime 사용
+                calculationEndTime = season.endTime;
+            } else if (seasonNum == actualCurrentSeason) {
+                // 현재 시즌: min(block.timestamp, endTime)
+                calculationEndTime = block.timestamp < season.endTime ? block.timestamp : season.endTime;
+            } else {
+                // 미래 시즌: 아직 시작 안됨
+                return 0;
             }
 
-            return totalAggregated > season.forfeitedPoints ? totalAggregated - season.forfeitedPoints : 0;
-        }
-
-        // 과거 시즌인데 finalize 안된 경우: 시즌 종료까지 계산
-        if (seasonNum < currentSeason && season.startBlock > 0) {
-            uint blocksSinceAggregation =
-                season.endBlock > season.lastAggregatedBlock ? season.endBlock - season.lastAggregatedBlock : 0;
-
-            uint totalAggregated = season.aggregatedPoints;
-
-            if (blocksSinceAggregation > 0) {
-                uint additionalPoints = PointsLib.calculatePoints(
-                    season.seasonTotalStaked, season.lastAggregatedBlock, season.endBlock, blockTime, pointsTimeUnit
-                );
+            // lastAggregatedTime부터 calculationEndTime까지 추가 포인트 계산
+            if (calculationEndTime > season.lastAggregatedTime) {
+                uint additionalPoints =
+                    PointsLib.calculatePoints(season.seasonTotalStaked, season.lastAggregatedTime, calculationEndTime);
                 totalAggregated += additionalPoints;
             }
 
@@ -512,82 +501,98 @@ contract StakingPool is StakingPoolBase, Pausable {
      * @param user User address
      * @return balance Current staked amount
      * @return points Real-time points in current season
-     * @return lastUpdateBlock Last block when position was updated
+     * @return lastUpdateTime Last block when position was updated
      */
-    function getStakePosition(address user) external view returns (uint balance, uint points, uint lastUpdateBlock) {
+    function getStakePosition(address user) external view returns (uint balance, uint points, uint lastUpdateTime) {
         StakePosition storage position = userStakes[user];
         uint currentPoints = getUserPoints(user);
-        return (position.balance, currentPoints, position.lastUpdateBlock);
+        return (position.balance, currentPoints, position.lastUpdateTime);
     }
 
     /**
      * @notice Returns current season information (handles virtual seasons)
      * @return season Current season number (may be virtual if not rolled over)
-     * @return startBlock Season start block
-     * @return endBlock Season end block
-     * @return blocksElapsed Blocks elapsed since season start
+     * @return startTime Season start block
+     * @return endTime Season end block
+     * @return timeElapsed Blocks elapsed since season start
      * @dev Virtual season calculation:
      *      - If many seasons passed without rollover, calculates which season we're in
-     *      - Based on: (blocks since first season) / seasonBlocks
+     *      - Based on: (blocks since first season) / seasonDuration
      *      - Allows view functions to work even with pending rollovers
+     *      - poolEndTime takes priority over all calculations (checked once at start)
      *
      *      Three cases handled:
      *      1. No season started yet (currentSeason = 0)
      *      2. Current season active
      *      3. Current season ended (calculates virtual next season)
      */
-    function getCurrentSeasonInfo()
-        public
-        view
-        returns (uint season, uint startBlock, uint endBlock, uint blocksElapsed)
-    {
-        // Case 1: No season started yet, but next season is scheduled
-        if (currentSeason == 0 && nextSeasonStartBlock > 0) {
-            if (block.number >= nextSeasonStartBlock) {
-                // Calculate which season we're actually in based on elapsed blocks
-                uint blocksSinceStart = block.number - nextSeasonStartBlock;
-                uint seasonIndex = blocksSinceStart / seasonBlocks; // 0-based index
+    function getCurrentSeasonInfo() public view returns (uint season, uint startTime, uint endTime, uint timeElapsed) {
+        // OPTIMIZATION: Check poolEndTime once at the start
+        bool isPoolEnded = poolEndTime > 0 && block.timestamp >= poolEndTime;
+
+        // Early return for pool ended with on-chain season
+        if (isPoolEnded && currentSeason > 0) {
+            Season storage poolEndedSeason = seasons[currentSeason];
+            return (
+                currentSeason,
+                poolEndedSeason.startTime,
+                poolEndedSeason.endTime,
+                poolEndedSeason.endTime - poolEndedSeason.startTime + 1
+            );
+        }
+
+        // Handle virtual season case (currentSeason == 0)
+        if (currentSeason == 0 && nextSeasonStartTime > 0) {
+            if (block.timestamp >= nextSeasonStartTime) {
+                // Calculate which virtual season we're in
+                uint timeSinceStart = block.timestamp - nextSeasonStartTime;
+                uint seasonIndex = timeSinceStart / seasonDuration; // 0-based index
 
                 season = seasonIndex + 1; // Convert to 1-based season number
-                startBlock = nextSeasonStartBlock + (seasonIndex * seasonBlocks);
-                endBlock = _calculateEndBlock(startBlock);
-                blocksElapsed = block.number - startBlock;
+                startTime = nextSeasonStartTime + (seasonIndex * seasonDuration);
+                endTime = _calculateEndTime(startTime);
+
+                // Pool ended: clamp timeElapsed to season length
+                if (isPoolEnded) timeElapsed = endTime >= startTime ? endTime - startTime + 1 : 0;
+                else timeElapsed = block.timestamp - startTime;
             } else {
                 // Season not started yet
                 return (0, 0, 0, 0);
             }
-            return (season, startBlock, endBlock, blocksElapsed);
+            return (season, startTime, endTime, timeElapsed);
         }
 
-        // Case 2: No season at all
+        // No season at all
         if (currentSeason == 0) return (0, 0, 0, 0);
 
-        // Case 3: Season exists - calculate actual current season based on block number
+        // Case: On-chain season exists - calculate actual current season
         Season storage current = seasons[currentSeason];
 
         // Check if we're still in the current season
-        if (block.number <= current.endBlock) {
+        if (block.timestamp <= current.endTime) {
             // Still in current season
             season = currentSeason;
-            startBlock = current.startBlock;
-            endBlock = current.endBlock;
-            blocksElapsed = block.number - startBlock;
+            startTime = current.startTime;
+            endTime = current.endTime;
+            timeElapsed = block.timestamp - startTime;
         } else {
             // Current season ended, calculate which season we're actually in
-            // Each season starts at: current.startBlock + (n * seasonBlocks)
+            // Each season starts at: current.startTime + (n * seasonDuration)
             // where n = 0, 1, 2, 3...
 
-            uint blocksSinceFirstSeason = block.number - current.startBlock;
-            uint seasonIndex = blocksSinceFirstSeason / seasonBlocks;
+            uint timeSinceFirstSeason = block.timestamp - current.startTime;
+            uint seasonIndex = timeSinceFirstSeason / seasonDuration;
 
             // Calculate the actual season number
             season = currentSeason + seasonIndex;
 
             // Calculate start and end blocks for this season
-            startBlock = current.startBlock + (seasonIndex * seasonBlocks);
-            endBlock = startBlock + seasonBlocks;
+            startTime = current.startTime + (seasonIndex * seasonDuration);
 
-            blocksElapsed = block.number - startBlock;
+            // Use _calculateEndTime to respect poolEndTime
+            endTime = _calculateEndTime(startTime);
+
+            timeElapsed = block.timestamp - startTime;
         }
     }
 
@@ -610,49 +615,53 @@ contract StakingPool is StakingPoolBase, Pausable {
         // Return finalized data if available
         if (userData.finalized) return (userData.points, seasonTotalPointsSnapshot(seasonNumber));
 
-        // 현재 시즌이면 실시간 포인트 반환
-        if (seasonNumber == currentSeason && currentSeason > 0) {
-            return (getUserPoints(user), seasonTotalPointsSnapshot(seasonNumber));
-        }
-
         // 과거 시즌: finalize되지 않았어도 계산해서 반환
         Season storage season = seasons[seasonNumber];
 
+        // 현재 시즌이면서 아직 종료되지 않은 경우만 실시간 포인트 반환
+        if (seasonNumber == currentSeason && currentSeason > 0 && block.timestamp <= season.endTime) {
+            return (getUserPoints(user), seasonTotalPointsSnapshot(seasonNumber));
+        }
+
         // 시즌이 존재하지 않으면 가상 시즌 계산
-        if (season.startBlock == 0) {
-            // 가상 시즌의 endBlock 계산
-            uint virtualStartBlock = nextSeasonStartBlock + ((seasonNumber - 1) * seasonBlocks);
-            uint virtualEndBlock = virtualStartBlock + seasonBlocks;
+        if (season.startTime == 0) {
+            // 가상 시즌의 endTime 계산
+            uint virtualStartTime = nextSeasonStartTime + ((seasonNumber - 1) * seasonDuration);
+            uint virtualEndTime = _calculateEndTime(virtualStartTime);
 
             // 현재 블록이 가상 시즌 범위 내인지 확인
-            if (block.number < virtualStartBlock) return (0, 0);
+            if (block.timestamp < virtualStartTime) return (0, 0);
 
             StakePosition storage pos = userStakes[user];
-            if (pos.balance == 0) return (0, seasonTotalPointsSnapshot(seasonNumber));
+            if (pos.balance == 0) {
+                userPoints = 0;
+            } else {
+                uint posLastUpdate = pos.lastUpdateTime;
+                if (posLastUpdate <= virtualEndTime) {
+                    uint fromTime = posLastUpdate > virtualStartTime ? posLastUpdate : virtualStartTime;
+                    // 과거 가상 시즌: virtualEndTime 사용, 현재/미래 가상 시즌: min(block.timestamp, virtualEndTime) 사용
+                    // 중요: currentSeason이 아닌 actualCurrentSeason과 비교해야 함 (가상 시즌 고려)
+                    (uint actualCurrentSeason,,,) = getCurrentSeasonInfo();
+                    uint toTime = (seasonNumber < actualCurrentSeason || block.timestamp >= virtualEndTime)
+                        ? virtualEndTime
+                        : block.timestamp;
 
-            uint posLastUpdate = pos.lastUpdateBlock;
-            if (posLastUpdate > virtualEndBlock) return (0, seasonTotalPointsSnapshot(seasonNumber));
-
-            uint fromBlock = posLastUpdate > virtualStartBlock ? posLastUpdate : virtualStartBlock;
-            // 과거 가상 시즌: virtualEndBlock 사용, 현재/미래 가상 시즌: min(block.number, virtualEndBlock) 사용
-            uint toBlock =
-                (seasonNumber < currentSeason || block.number >= virtualEndBlock) ? virtualEndBlock : block.number;
-
-            userPoints = PointsLib.calculatePoints(pos.balance, fromBlock, toBlock, blockTime, pointsTimeUnit);
+                    userPoints = PointsLib.calculatePoints(pos.balance, fromTime, toTime);
+                }
+            }
             return (userPoints, seasonTotalPointsSnapshot(seasonNumber));
         }
 
         // 아직 시작하지 않은 경우
-        if (block.number < season.startBlock) return (0, 0);
+        if (block.timestamp < season.startTime) return (0, 0);
 
         // 과거 시즌에서 해당 시즌의 잔액이 있으면 그것으로 계산
         if (userData.balance > 0) {
             uint basePoints = userData.points;
-            uint effectiveStart = userData.joinBlock > season.startBlock ? userData.joinBlock : season.startBlock;
+            uint effectiveStart = userData.joinTime > season.startTime ? userData.joinTime : season.startTime;
 
             // 전체 기간 계산
-            uint calculatedPoints =
-                PointsLib.calculatePoints(userData.balance, effectiveStart, season.endBlock, blockTime, pointsTimeUnit);
+            uint calculatedPoints = PointsLib.calculatePoints(userData.balance, effectiveStart, season.endTime);
 
             // basePoints는 중간 스냅샷일 수 있으므로, 더 큰 값 사용
             userPoints = calculatedPoints > basePoints ? calculatedPoints : basePoints;
@@ -661,29 +670,32 @@ contract StakingPool is StakingPoolBase, Pausable {
 
         // userData가 없으면 position으로 계산 (자동 참여 케이스)
         StakePosition storage position = userStakes[user];
-        if (position.balance == 0) return (0, seasonTotalPointsSnapshot(seasonNumber));
+        if (position.balance == 0) {
+            userPoints = 0;
+        } else {
+            uint lastUpdate = position.lastUpdateTime;
 
-        uint lastUpdate = position.lastUpdateBlock;
+            // 시즌 종료 후 스테이킹한 경우
+            if (lastUpdate > season.endTime) {
+                userPoints = 0;
+            } else {
+                // 과거 시즌인지 확인 (롤오버 되었지만 finalize 안된 경우)
+                // 과거 시즌이면 endTime 사용, 현재 시즌이면 현재 블록 사용
+                // 중요: currentSeason이 아닌 actualCurrentSeason과 비교해야 함 (가상 시즌 고려)
+                (uint actualCurrentSeason,,,) = getCurrentSeasonInfo();
+                uint calculationEndBlock = (seasonNumber < actualCurrentSeason) ? season.endTime : block.timestamp;
+                if (calculationEndBlock > season.endTime) calculationEndBlock = season.endTime;
 
-        // 시즌 종료 후 스테이킹한 경우
-        if (lastUpdate > season.endBlock) return (0, seasonTotalPointsSnapshot(seasonNumber));
-
-        // 과거 시즌인지 확인 (롤오버 되었지만 finalize 안된 경우)
-        // 과거 시즌이면 endBlock 사용, 현재 시즌이면 현재 블록 사용
-        uint calculationEndBlock = (seasonNumber < currentSeason) ? season.endBlock : block.number;
-        if (calculationEndBlock > season.endBlock) calculationEndBlock = season.endBlock;
-
-        // 시즌 시작 전에 스테이킹한 경우: 시즌 전체 기간 계산
-        if (lastUpdate < season.startBlock) {
-            userPoints = PointsLib.calculatePoints(
-                position.balance, season.startBlock, calculationEndBlock, blockTime, pointsTimeUnit
-            );
-            return (userPoints, seasonTotalPointsSnapshot(seasonNumber));
+                // 시즌 시작 전에 스테이킹한 경우: 시즌 전체 기간 계산
+                if (lastUpdate < season.startTime) {
+                    userPoints = PointsLib.calculatePoints(position.balance, season.startTime, calculationEndBlock);
+                } else {
+                    // 시즌 중간에 스테이킹한 경우: lastUpdate부터 계산
+                    userPoints = PointsLib.calculatePoints(position.balance, lastUpdate, calculationEndBlock);
+                }
+            }
         }
 
-        // 시즌 중간에 스테이킹한 경우: lastUpdate부터 계산
-        userPoints =
-            PointsLib.calculatePoints(position.balance, lastUpdate, calculationEndBlock, blockTime, pointsTimeUnit);
         return (userPoints, seasonTotalPointsSnapshot(seasonNumber));
     }
 
@@ -705,27 +717,20 @@ contract StakingPool is StakingPoolBase, Pausable {
             return season.totalPoints;
         }
 
-        if (seasonNumber == currentSeason) return _calculateSeasonTotalPoints(seasonNumber);
-
-        // 시즌이 생성되었으면 해당 데이터로 계산
-        if (season.startBlock > 0) {
-            // 과거 시즌인데 finalize 안된 경우
-            if (seasonNumber < currentSeason) return _calculateSeasonTotalPoints(seasonNumber);
-            // 현재 시즌
-            return _calculateSeasonTotalPoints(seasonNumber);
-        }
+        // 시즌이 생성되었으면 해당 데이터로 계산 (현재 또는 과거 시즌)
+        if (season.startTime > 0) return _calculateSeasonTotalPoints(seasonNumber);
 
         // 가상 시즌 계산 (시즌이 생성 안됨)
-        uint virtualStartBlock = nextSeasonStartBlock + ((seasonNumber - 1) * seasonBlocks);
-        uint virtualEndBlock = virtualStartBlock + seasonBlocks;
+        uint virtualStartTime = nextSeasonStartTime + ((seasonNumber - 1) * seasonDuration);
+        uint virtualEndTime = _calculateEndTime(virtualStartTime);
 
         if (totalStaked == 0) return 0;
 
-        // 과거 가상 시즌: virtualEndBlock 사용, 현재/미래 가상 시즌: min(block.number, virtualEndBlock) 사용
-        uint toBlock =
-            (seasonNumber < currentSeason || block.number >= virtualEndBlock) ? virtualEndBlock : block.number;
+        // 과거 가상 시즌: virtualEndTime 사용, 현재/미래 가상 시즌: min(block.timestamp, virtualEndTime) 사용
+        uint toTime =
+            (seasonNumber < currentSeason || block.timestamp >= virtualEndTime) ? virtualEndTime : block.timestamp;
 
-        return PointsLib.calculatePoints(totalStaked, virtualStartBlock, toBlock, blockTime, pointsTimeUnit);
+        return PointsLib.calculatePoints(totalStaked, virtualStartTime, toTime);
     }
 
     /**
@@ -768,17 +773,17 @@ contract StakingPool is StakingPoolBase, Pausable {
      * @param user User address
      * @return points User's points
      * @return balance User's balance
-     * @return joinBlock Block when user joined
-     * @return claimed Whether rewards claimed
+     * @return joinTime Block when user joined
      * @return finalized Whether snapshot finalized
+     * @dev claimed status is tracked per-token in RewardPool.hasClaimedSeasonReward
      */
     function getUserSeasonData(uint seasonNumber, address user)
         external
         view
-        returns (uint points, uint balance, uint joinBlock, bool claimed, bool finalized)
+        returns (uint points, uint balance, uint joinTime, bool finalized)
     {
         UserSeasonData storage data = userSeasonData[seasonNumber][user];
-        return (data.points, data.balance, data.joinBlock, data.claimed, data.finalized);
+        return (data.points, data.balance, data.joinTime, data.finalized);
     }
 
     /**
@@ -803,11 +808,13 @@ contract StakingPool is StakingPoolBase, Pausable {
         Season storage season = seasons[seasonNumber];
 
         // 온체인 시즌 (rollover 완료)
-        if (season.startBlock > 0) {
+        if (season.startTime > 0) {
             canClaim = season.isFinalized;
-            UserSeasonData storage userData = userSeasonData[seasonNumber][user];
-            alreadyClaimed = userData.claimed;
 
+            // Check if already claimed from RewardPool (per-token)
+            alreadyClaimed = rewardPool.hasClaimedSeasonReward(user, seasonNumber, rewardToken);
+
+            UserSeasonData storage userData = userSeasonData[seasonNumber][user];
             if (userData.finalized) {
                 userPoints = userData.points;
                 totalPoints = season.totalPoints > 0 ? season.totalPoints : seasonTotalPointsSnapshot(seasonNumber);
@@ -939,52 +946,27 @@ contract StakingPool is StakingPoolBase, Pausable {
     }
 
     /**
-     * @notice Sets the time unit for points calculation
-     * @param _timeUnit Time unit in seconds (e.g., 3600 for 1 hour)
-     * @dev Affects future point calculations
-     *      Example: 3600 = 1 token × 1 hour = 1 point
-     */
-    function setPointsTimeUnit(uint _timeUnit) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(_timeUnit != 0, StakingPoolBaseInvalidTimeUnit());
-        uint oldValue = pointsTimeUnit;
-        pointsTimeUnit = _timeUnit;
-        emit PointsTimeUnitUpdated(oldValue, _timeUnit);
-    }
-
-    /**
-     * @notice Sets the block time in seconds
-     * @param _blockTime Block time (e.g., 1 for 1 second per block)
-     * @dev Used to convert block numbers to time for point calculation
-     */
-    function setBlockTime(uint _blockTime) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(_blockTime != 0, StakingPoolBaseInvalidTimeUnit());
-        uint oldValue = blockTime;
-        blockTime = _blockTime;
-        emit BlockTimeUpdated(oldValue, _blockTime);
-    }
-
-    /**
      * @notice Sets when the next season should start
-     * @param _startBlock Start block (0 = use automatic calculation)
+     * @param _startTime Start block (0 = use automatic calculation)
      * @dev Used to create gaps between seasons or delay next season
      */
-    function setNextSeasonStart(uint _startBlock) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(_startBlock == 0 || _startBlock > block.number, StakingPoolBaseInvalidStartBlock());
-        uint oldValue = nextSeasonStartBlock;
-        nextSeasonStartBlock = _startBlock;
-        emit NextSeasonStartUpdated(oldValue, _startBlock);
+    function setNextSeasonStart(uint _startTime) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(_startTime == 0 || _startTime > block.timestamp, StakingPoolBaseInvalidStartTime());
+        uint oldValue = nextSeasonStartTime;
+        nextSeasonStartTime = _startTime;
+        emit NextSeasonStartUpdated(oldValue, _startTime);
     }
 
     /**
      * @notice Sets when the pool should end
-     * @param _endBlock End block (0 = infinite)
+     * @param _endTime End block (0 = infinite)
      * @dev After end block, no new seasons are created
      *      Existing stakes can still be withdrawn
      */
-    function setPoolEndBlock(uint _endBlock) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(_endBlock == 0 || _endBlock > block.number, StakingPoolBaseInvalidEndBlock());
-        uint oldValue = poolEndBlock;
-        poolEndBlock = _endBlock;
-        emit PoolEndBlockUpdated(oldValue, _endBlock);
+    function setPoolEndBlock(uint _endTime) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(_endTime == 0 || _endTime > block.timestamp, StakingPoolBaseInvalidEndTime());
+        uint oldValue = poolEndTime;
+        poolEndTime = _endTime;
+        emit PoolEndBlockUpdated(oldValue, _endTime);
     }
 }

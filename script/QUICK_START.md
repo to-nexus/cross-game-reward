@@ -64,9 +64,9 @@ export STAKING_PROTOCOL_ADDRESS=0x...
 ```bash
 # 환경변수 설정
 export PROJECT_NAME="My Test Project"
-export SEASON_BLOCKS=86400  # 1일
-export FIRST_SEASON_START_BLOCK=$(cast block-number --rpc-url $RPC_URL | awk '{print $1 + 100}')
-export POOL_END_BLOCK=0  # 무한
+export SEASON_DURATION=86400  # 시즌 길이 (초): 86400 = 1일
+export FIRST_SEASON_START_TIME=$(($(date +%s) + 3600))  # 1시간 후 시작
+export POOL_END_TIME=0  # 종료 타임스탬프 (0 = 무한)
 
 # 프로젝트 생성 (스크립트 실행 계정이 Project Admin이 됩니다)
 forge script script/CreateProject.s.sol:CreateProjectScript \

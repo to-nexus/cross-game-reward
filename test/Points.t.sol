@@ -11,7 +11,7 @@ contract PointsTest is BaseTest {
     function test_PointsAccumulation() public {
         stakeFor(user1, 10 ether);
 
-        vm.roll(block.number + 50);
+        vm.warp(block.timestamp + 50);
         updatePointsFor(user1);
 
         uint points = stakingPool.getUserPoints(user1);
@@ -21,12 +21,12 @@ contract PointsTest is BaseTest {
     function test_PointsCalculation() public {
         stakeFor(user1, 10 ether);
 
-        vm.roll(block.number + 100);
+        vm.warp(block.timestamp + 100);
         updatePointsFor(user1);
 
         uint points1 = stakingPool.getUserPoints(user1);
 
-        vm.roll(block.number + 100);
+        vm.warp(block.timestamp + 100);
         updatePointsFor(user1);
 
         uint points2 = stakingPool.getUserPoints(user1);
@@ -36,56 +36,12 @@ contract PointsTest is BaseTest {
         assertGt(points2, points1 * 19 / 10); // 1.9배 이상
     }
 
-    function test_BlockTimeAffectsPoints() public {
-        stakeFor(user1, 10 ether);
-
-        // 블록 시간 1초로 설정 (protocol을 통해)
-        vm.prank(address(protocol));
-        stakingPool.setBlockTime(1);
-
-        vm.roll(block.number + 100);
-        updatePointsFor(user1);
-
-        uint points1 = stakingPool.getUserPoints(user1);
-
-        // 새로운 사용자 with 블록 시간 12초
-        stakeFor(user2, 10 ether);
-
-        vm.prank(address(protocol));
-        stakingPool.setBlockTime(12);
-
-        vm.roll(block.number + 100);
-        updatePointsFor(user2);
-
-        uint points2 = stakingPool.getUserPoints(user2);
-
-        // User2가 12배 더 많은 포인트
-        assertGt(points2, points1 * 10); // 최소 10배
-    }
-
-    function test_PointsTimeUnitAffectsCalculation() public {
-        stakeFor(user1, 10 ether);
-
-        // 1시간 단위로 설정 (protocol을 통해)
-        vm.prank(address(protocol));
-        stakingPool.setPointsTimeUnit(1 hours);
-
-        // blockTime(1초) × pointsTimeUnit(1시간) = 3600블록 필요
-        uint pointsTimeUnit = stakingPool.pointsTimeUnit();
-        uint blockTime = stakingPool.blockTime();
-        uint blocksNeeded = pointsTimeUnit / blockTime; // 3600 / 1 = 3600블록
-
-        vm.roll(block.number + blocksNeeded);
-        updatePointsFor(user1);
-
-        uint points = stakingPool.getUserPoints(user1);
-        assertGt(points, 0);
-    }
+    // NOTE: test_PointsTimeUnitAffectsCalculation removed - no longer uses timeUnit
 
     function test_PointsResetOnWithdraw() public {
         stakeFor(user1, 10 ether);
 
-        vm.roll(block.number + 50);
+        vm.warp(block.timestamp + 50);
         updatePointsFor(user1);
 
         uint pointsBefore = stakingPool.getUserPoints(user1);
@@ -101,7 +57,7 @@ contract PointsTest is BaseTest {
         stakeFor(user1, 10 ether);
         stakeFor(user2, 5 ether);
 
-        vm.roll(block.number + 100);
+        vm.warp(block.timestamp + 100);
         updatePointsFor(user1);
         updatePointsFor(user2);
 
@@ -114,7 +70,7 @@ contract PointsTest is BaseTest {
     }
 
     function test_NoPointsWithoutStake() public {
-        vm.roll(block.number + 100);
+        vm.warp(block.timestamp + 100);
 
         uint points = stakingPool.getUserPoints(user1);
         assertEq(points, 0);
@@ -125,7 +81,7 @@ contract PointsTest is BaseTest {
         stakeFor(user1, 100 ether);
 
         // 2. 50블록 경과
-        vm.roll(block.number + 50);
+        vm.warp(block.timestamp + 50);
 
         uint pointsBeforeAdditional = stakingPool.getUserPoints(user1);
 
@@ -134,7 +90,7 @@ contract PointsTest is BaseTest {
         router.stake{value: 50 ether}(PROJECT_ID);
 
         // 4. 추가 50블록 경과
-        vm.roll(block.number + 50);
+        vm.warp(block.timestamp + 50);
 
         // 5. 포인트 조회 (스냅샷 + 추가 기간 포인트)
         uint totalPoints = stakingPool.getUserPoints(user1);
@@ -155,7 +111,7 @@ contract PointsTest is BaseTest {
         stakeFor(user1, 100 ether);
 
         // 2. 50블록 경과
-        vm.roll(block.number + 50);
+        vm.warp(block.timestamp + 50);
 
         uint pointsBeforeAdditional = stakingPool.getUserPoints(user1);
 
@@ -185,8 +141,10 @@ contract PointsTest is BaseTest {
         stakeFor(user1, 10 ether);
         stakeFor(user2, 20 ether);
 
-        // 100 블록 진행
-        vm.roll(block.number + 100);
+        // 50초 진행 (시즌 진행 중)
+        // SEASON_DURATION = 100, endTime = startTime + 99
+        // 따라서 50초 진행하면 시즌 중간
+        vm.warp(block.timestamp + 50);
 
         // 현재 시즌의 총 포인트 계산
         uint totalPointsBefore = stakingPool.seasonTotalPointsSnapshot(1);
@@ -196,16 +154,16 @@ contract PointsTest is BaseTest {
         uint user1PointsBefore = stakingPool.getUserPoints(user1);
         assertGt(user1PointsBefore, 0, "User1 points should be greater than 0");
 
-        // user1이 unstake
+        // user1이 unstake (시즌 진행 중이므로 포인트 몰수)
         withdrawFor(user1);
 
         // unstake 후 user1의 포인트는 0이어야 함
         uint user1PointsAfter = stakingPool.getUserPoints(user1);
         assertEq(user1PointsAfter, 0, "User1 points should be 0 after unstake");
 
-        // unstake 후 총 포인트는 user1의 포인트만큼 감소해야 함
+        // unstake 후 총 포인트는 user1의 포인트만큼 감소해야 함 (시즌 진행 중 unstake)
         uint totalPointsAfter = stakingPool.seasonTotalPointsSnapshot(1);
-        assertLt(totalPointsAfter, totalPointsBefore, "Total points should decrease after unstake");
+        assertLt(totalPointsAfter, totalPointsBefore, "Total points should decrease after unstake during season");
     }
 
     function test_MultipleUnstakesTotalPointsDecrease() public {
@@ -215,7 +173,7 @@ contract PointsTest is BaseTest {
         stakeFor(user3, 30 ether);
 
         // 50 블록 진행 (시즌 중간)
-        vm.roll(block.number + 50);
+        vm.warp(block.timestamp + 50);
 
         // 초기 총 포인트 기록
         uint initialTotalPoints = stakingPool.seasonTotalPointsSnapshot(1);

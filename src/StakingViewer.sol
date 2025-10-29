@@ -64,53 +64,53 @@ contract StakingViewer {
     }
 
     /**
-     * @notice Calculates the first season's start block
+     * @notice Calculates the first season's start timestamp
      * @param pool StakingPool contract
      * @return ok True if calculation succeeded
-     * @return firstStart First season start block
-     * @dev Attempts to derive from current season or nextSeasonStartBlock
+     * @return firstStart First season start timestamp
+     * @dev Attempts to derive from current season or nextSeasonStartTime
      */
     function _calcFirstSeasonStart(IStakingPool pool) internal view returns (bool ok, uint firstStart) {
-        (uint season, uint startBlock,,) = pool.getCurrentSeasonInfo();
-        if (season > 0 && startBlock > 0) {
-            uint sb = pool.seasonBlocks();
+        (uint season, uint startTime,,) = pool.getCurrentSeasonInfo();
+        if (season > 0 && startTime > 0) {
+            uint sb = pool.seasonDuration();
             // Reverse calculate: season is 1-based
-            firstStart = startBlock - ((season - 1) * sb);
+            firstStart = startTime - ((season - 1) * sb);
             return (true, firstStart);
         }
-        // Season not started yet - use nextSeasonStartBlock
-        uint nextStart = pool.nextSeasonStartBlock();
+        // Season not started yet - use nextSeasonStartTime
+        uint nextStart = pool.nextSeasonStartTime();
         if (nextStart > 0) return (true, nextStart);
         return (false, 0);
     }
 
     /**
-     * @notice Calculates block range for any season number
+     * @notice Calculates timestamp range for any season number
      * @param pool StakingPool contract
      * @param season Season number
      * @return ok True if calculation succeeded
-     * @return startBlock Season start block
-     * @return endBlock Season end block
+     * @return startTime Season start timestamp
+     * @return endTime Season end timestamp
      * @dev Calculates virtual season ranges even if seasons haven't been rolled over on-chain
      */
     function _calcSeasonRange(IStakingPool pool, uint season)
         internal
         view
-        returns (bool ok, uint startBlock, uint endBlock)
+        returns (bool ok, uint startTime, uint endTime)
     {
         (bool okStart, uint firstStart) = _calcFirstSeasonStart(pool);
         if (!okStart || season == 0) return (false, 0, 0);
 
-        uint sb = pool.seasonBlocks();
-        startBlock = firstStart + ((season - 1) * sb);
-        endBlock = startBlock + sb - 1;
+        uint seasonDuration = pool.seasonDuration();
+        startTime = firstStart + ((season - 1) * seasonDuration);
+        endTime = startTime + seasonDuration - 1;
 
-        uint pe = pool.poolEndBlock();
-        if (pe > 0) {
-            if (startBlock > pe) return (false, 0, 0);
-            if (endBlock > pe) endBlock = pe;
+        uint poolEndTime = pool.poolEndTime();
+        if (poolEndTime > 0) {
+            if (startTime > poolEndTime) return (false, 0, 0);
+            if (endTime > poolEndTime) endTime = poolEndTime;
         }
-        return (true, startBlock, endBlock);
+        return (true, startTime, endTime);
     }
 
     /**
@@ -136,40 +136,37 @@ contract StakingViewer {
         view
         returns (uint userPoints, uint totalPoints)
     {
-        (bool ok, uint startBlock, uint endBlock) = _calcSeasonRange(pool, season);
+        (bool ok, uint startTime, uint endTime) = _calcSeasonRange(pool, season);
         if (!ok) return (0, 0);
 
-        if (block.number < startBlock) return (0, 0);
+        if (block.timestamp < startTime) return (0, 0);
 
-        uint currentSeason = pool.currentSeason();
+        // getCurrentSeasonInfo를 사용해서 실제 현재 시즌 확인 (가상 시즌 포함)
+        (uint actualCurrentSeason,,,) = pool.getCurrentSeasonInfo();
 
-        // 과거 시즌: endBlock 사용 (종료된 시즌은 고정)
+        // 과거 시즌: endTime 사용 (종료된 시즌은 고정)
         // 현재/미래 시즌: 현재 블록까지만 반영
-        uint toBlock = (season < currentSeason) ? endBlock : (block.number < endBlock ? block.number : endBlock);
-
-        uint blockTime = pool.blockTime();
-        uint timeUnit = pool.pointsTimeUnit();
+        uint toTime = (season < actualCurrentSeason) ? endTime : (block.timestamp < endTime ? block.timestamp : endTime);
 
         // 유저 포인트 계산 (user가 address(0)이 아닌 경우만)
         if (user != address(0)) {
             (uint balance,, uint lastUpdate) = pool.getStakePosition(user);
 
             if (balance > 0) {
-                // 유저의 시작 블록: lastUpdate와 시즌 시작 블록 중 큰 값
-                uint fromBlock = lastUpdate > startBlock ? lastUpdate : startBlock;
+                // 유저의 시작 시간: lastUpdate와 시즌 시작 시간 중 큰 값
+                uint fromTime = lastUpdate > startTime ? lastUpdate : startTime;
 
                 // lastUpdate가 시즌 종료 후면 참여 안 함
-                if (fromBlock <= toBlock) {
-                    userPoints = PointsLib.calculatePoints(balance, fromBlock, toBlock, blockTime, timeUnit);
-                }
+                if (fromTime <= toTime) userPoints = PointsLib.calculatePoints(balance, fromTime, toTime);
             }
         }
 
-        // 토탈 포인트 계산: 현재 totalStaked 기준
+        // 토탈 포인트 계산: 가상 시즌이므로 seasonTotalStaked 사용
+        // (현재 totalStaked가 아닌 해당 시즌의 totalStaked 사용해야 함)
+        // 가상 시즌은 아직 롤오버되지 않았으므로 season.seasonTotalStaked가 0
+        // 따라서 현재 totalStaked를 사용하되, 이는 근사치임을 인지
         uint totalStaked = pool.totalStaked();
-        if (totalStaked > 0) {
-            totalPoints = PointsLib.calculatePoints(totalStaked, startBlock, toBlock, blockTime, timeUnit);
-        }
+        if (totalStaked > 0) totalPoints = PointsLib.calculatePoints(totalStaked, startTime, toTime);
 
         return (userPoints, totalPoints);
     }
@@ -182,12 +179,12 @@ contract StakingViewer {
      * @param user User address
      * @return balance Staked amount
      * @return points Current season points
-     * @return lastUpdateBlock Last update block
+     * @return lastUpdateTime Last update block
      */
     function getStakeInfo(uint projectID, address user)
         external
         view
-        returns (uint balance, uint points, uint lastUpdateBlock)
+        returns (uint balance, uint points, uint lastUpdateTime)
     {
         (IStakingPool pool,) = _getPools(projectID);
         return pool.getStakePosition(user);
@@ -241,12 +238,12 @@ contract StakingViewer {
      * @return currentSeason Current season number
      * @return seasonStartBlock Season start block
      * @return seasonEndBlock Season end block
-     * @return blocksElapsed Blocks elapsed in current season
+     * @return timeElapsed Blocks elapsed in current season
      */
     function getSeasonInfo(uint projectID)
         external
         view
-        returns (uint currentSeason, uint seasonStartBlock, uint seasonEndBlock, uint blocksElapsed)
+        returns (uint currentSeason, uint seasonStartBlock, uint seasonEndBlock, uint timeElapsed)
     {
         (IStakingPool pool,) = _getPools(projectID);
         return pool.getCurrentSeasonInfo();
@@ -306,23 +303,18 @@ contract StakingViewer {
      */
     function getSeasonTotalPoints(uint projectID, uint season) external view returns (uint totalPoints) {
         (IStakingPool pool,) = _getPools(projectID);
-        uint currentSeason = pool.currentSeason();
+
+        // getCurrentSeasonInfo를 사용해서 실제 현재 시즌 확인 (가상 시즌 포함)
+        (uint actualCurrentSeason,,,) = pool.getCurrentSeasonInfo();
 
         // Virtual season - calculate directly
-        if (season > currentSeason) {
+        if (season > actualCurrentSeason) {
             (, totalPoints) = _calculateVirtualSeasonData(pool, season, address(0));
             return totalPoints;
         }
 
-        // On-chain season
-        totalPoints = pool.seasonTotalPointsSnapshot(season);
-
-        // If 0 and past season, try virtual calculation
-        if (totalPoints == 0 && season < currentSeason) {
-            (, totalPoints) = _calculateVirtualSeasonData(pool, season, address(0));
-        }
-
-        return totalPoints;
+        // On-chain season - seasonTotalPointsSnapshot handles all cases
+        return pool.seasonTotalPointsSnapshot(season);
     }
 
     /**
@@ -340,18 +332,15 @@ contract StakingViewer {
         returns (uint userPoints, uint totalPoints)
     {
         (IStakingPool pool,) = _getPools(projectID);
-        uint currentSeason = pool.currentSeason();
+
+        // getCurrentSeasonInfo를 사용해서 실제 현재 시즌 확인 (가상 시즌 포함)
+        (uint actualCurrentSeason,,,) = pool.getCurrentSeasonInfo();
 
         // Virtual season - calculate directly
-        if (season > currentSeason) return _calculateVirtualSeasonData(pool, season, user);
+        if (season > actualCurrentSeason) return _calculateVirtualSeasonData(pool, season, user);
 
-        // On-chain season - delegate to pool
-        (userPoints, totalPoints) = pool.getSeasonUserPoints(season, user);
-
-        // If totalPoints = 0, try virtual calculation
-        if (totalPoints == 0 && season < currentSeason) {
-            (, totalPoints) = _calculateVirtualSeasonData(pool, season, address(0));
-        }
+        // On-chain season - delegate to pool (이미 seasonTotalPointsSnapshot 사용)
+        return pool.getSeasonUserPoints(season, user);
     }
 
     /**
@@ -367,21 +356,21 @@ contract StakingViewer {
     /**
      * @notice Returns pool end block
      * @param projectID Project ID
-     * @return endBlock Pool end block (0 = infinite)
+     * @return endTime Pool end block (0 = infinite)
      */
-    function getPoolEndBlock(uint projectID) external view returns (uint endBlock) {
+    function getPoolEndBlock(uint projectID) external view returns (uint endTime) {
         (IStakingPool pool,) = _getPools(projectID);
-        return pool.poolEndBlock();
+        return pool.poolEndTime();
     }
 
     /**
      * @notice Returns next season start block
      * @param projectID Project ID
-     * @return startBlock Next season start block
+     * @return startTime Next season start block
      */
-    function getNextSeasonStartBlock(uint projectID) external view returns (uint startBlock) {
+    function getNextSeasonStartBlock(uint projectID) external view returns (uint startTime) {
         (IStakingPool pool,) = _getPools(projectID);
-        return pool.nextSeasonStartBlock();
+        return pool.nextSeasonStartTime();
     }
 
     /**
@@ -391,14 +380,14 @@ contract StakingViewer {
      * @param season Season number
      * @return points User's points
      * @return balance User's balance
-     * @return joinBlock Join block
-     * @return claimed Whether claimed
+     * @return joinTime Join block
      * @return finalized Whether finalized
+     * @dev claimed status is tracked per-token in RewardPool.hasClaimedSeasonReward
      */
     function getUserSeasonData(uint projectID, address user, uint season)
         external
         view
-        returns (uint points, uint balance, uint joinBlock, bool claimed, bool finalized)
+        returns (uint points, uint balance, uint joinTime, bool finalized)
     {
         (IStakingPool pool,) = _getPools(projectID);
         return pool.getUserSeasonData(season, user);
@@ -634,30 +623,26 @@ contract StakingViewer {
         if (season > currentSeason) return _calculateVirtualSeasonData(pool, season, user);
 
         // 시즌 범위 계산
-        (bool ok, uint startBlock, uint endBlock) = _calcSeasonRange(pool, season);
+        (bool ok, uint startTime, uint endTime) = _calcSeasonRange(pool, season);
         if (!ok) return (0, 0);
-        if (block.number < startBlock) return (0, 0);
+        if (block.timestamp < startTime) return (0, 0);
 
-        // 과거 시즌: 항상 endBlock 사용 (종료된 시즌이므로 고정)
+        // 과거 시즌: 항상 endTime 사용 (종료된 시즌이므로 고정)
         // 현재 시즌: 현재 블록까지만 반영
-        uint toBlock = (season < currentSeason) ? endBlock : (block.number < endBlock ? block.number : endBlock);
+        uint toTime = (season < currentSeason) ? endTime : (block.timestamp < endTime ? block.timestamp : endTime);
 
-        if (toBlock <= startBlock) return (0, 0);
+        if (toTime <= startTime) return (0, 0);
 
         // 유저 포인트 계산
         (uint balance,, uint lastUpdate) = pool.getStakePosition(user);
         if (balance == 0) return (0, 0);
-        if (lastUpdate > toBlock) return (0, 0);
+        if (lastUpdate > toTime) return (0, 0);
 
-        uint fromBlock = lastUpdate > startBlock ? lastUpdate : startBlock;
-        userPoints = PointsLib.calculatePoints(balance, fromBlock, toBlock, pool.blockTime(), pool.pointsTimeUnit());
+        uint fromTime = lastUpdate > startTime ? lastUpdate : startTime;
+        userPoints = PointsLib.calculatePoints(balance, fromTime, toTime);
 
-        // 토탈 포인트: 온체인 값 우선, 없으면 계산
+        // 토탈 포인트: seasonTotalPointsSnapshot 사용 (과거 시즌 정확성 보장)
         totalPoints = pool.seasonTotalPointsSnapshot(season);
-        if (totalPoints == 0) {
-            // 가상 계산
-            (, totalPoints) = _calculateVirtualSeasonData(pool, season, address(0));
-        }
 
         return (userPoints, totalPoints);
     }
@@ -683,57 +668,43 @@ contract StakingViewer {
     /**
      * @notice Returns comprehensive pool configuration and state
      * @param projectID Project ID
-     * @return blockTime Block time in seconds
-     * @return pointsTimeUnit Points calculation time unit in seconds
-     * @return seasonBlocks Number of blocks per season
-     * @return poolEndBlock Pool end block (0 = infinite)
+     * @return seasonDuration Season duration in seconds
+     * @return poolEndTime Pool end time (0 = infinite)
      * @return currentSeason Current season number
-     * @return preDepositStartBlock Pre-deposit start block (0 = disabled)
-     * @return firstSeasonStartBlock First season start block
+     * @return preDepositStartTime Pre-deposit start time (0 = disabled)
+     * @return firstSeasonStartTime First season start time
      * @dev Includes pre-deposit information for frontend UI
-     *      firstSeasonStartBlock is calculated from current season or nextSeasonStartBlock
+     *      firstSeasonStartTime is calculated from current season or nextSeasonStartTime
      */
     function getPoolInfo(uint projectID)
         external
         view
         returns (
-            uint blockTime,
-            uint pointsTimeUnit,
-            uint seasonBlocks,
-            uint poolEndBlock,
+            uint seasonDuration,
+            uint poolEndTime,
             uint currentSeason,
-            uint preDepositStartBlock,
-            uint firstSeasonStartBlock
+            uint preDepositStartTime,
+            uint firstSeasonStartTime
         )
     {
         (IStakingPool pool,) = _getPools(projectID);
 
-        blockTime = pool.blockTime();
-        pointsTimeUnit = pool.pointsTimeUnit();
-        seasonBlocks = pool.seasonBlocks();
-        poolEndBlock = pool.poolEndBlock();
+        seasonDuration = pool.seasonDuration();
+        poolEndTime = pool.poolEndTime();
         // Use getCurrentSeasonInfo to get calculated season (supports virtual seasons)
         (currentSeason,,,) = pool.getCurrentSeasonInfo();
-        preDepositStartBlock = pool.preDepositStartBlock();
+        preDepositStartTime = pool.preDepositStartTime();
 
-        // firstSeasonStartBlock 계산
+        // firstSeasonStartTime 계산
         if (currentSeason > 0) {
             // 시즌이 시작된 경우: 현재 시즌 정보에서 역산
-            (uint season, uint startBlock,,) = pool.getCurrentSeasonInfo();
-            if (season > 0 && startBlock > 0) firstSeasonStartBlock = startBlock - ((season - 1) * seasonBlocks);
+            (uint season, uint startTime,,) = pool.getCurrentSeasonInfo();
+            if (season > 0 && startTime > 0) firstSeasonStartTime = startTime - ((season - 1) * seasonDuration);
         } else {
-            // 시즌 시작 전: nextSeasonStartBlock 사용
-            firstSeasonStartBlock = pool.nextSeasonStartBlock();
+            // 시즌 시작 전: nextSeasonStartTime 사용
+            firstSeasonStartTime = pool.nextSeasonStartTime();
         }
 
-        return (
-            blockTime,
-            pointsTimeUnit,
-            seasonBlocks,
-            poolEndBlock,
-            currentSeason,
-            preDepositStartBlock,
-            firstSeasonStartBlock
-        );
+        return (seasonDuration, poolEndTime, currentSeason, preDepositStartTime, firstSeasonStartTime);
     }
 }

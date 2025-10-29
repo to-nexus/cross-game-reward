@@ -62,16 +62,14 @@ interface IStakingPool {
     function setApprovedRouter(address router, bool approved) external;
 
     /// @notice Sets the time unit for points calculation (e.g., 3600 for 1 hour)
-    function setPointsTimeUnit(uint timeUnit) external;
 
     /// @notice Sets the block time in seconds (e.g., 1 for 1 second/block)
-    function setBlockTime(uint blockTime) external;
 
     /// @notice Sets the start block for the next season
-    function setNextSeasonStart(uint startBlock) external;
+    function setNextSeasonStart(uint startTime) external;
 
     /// @notice Sets the pool end block (0 = infinite)
-    function setPoolEndBlock(uint endBlock) external;
+    function setPoolEndBlock(uint endTime) external;
 
     /// @notice Manually rolls over multiple seasons (for catching up)
     function manualRolloverSeasons(uint maxRollovers) external returns (uint rolloversPerformed);
@@ -97,7 +95,7 @@ interface IStakingPool {
     function getCurrentSeasonInfo()
         external
         view
-        returns (uint season, uint startBlock, uint endBlock, uint blocksElapsed);
+        returns (uint season, uint startTime, uint endTime, uint timeElapsed);
 
     /// @notice Returns user's points for a specific season
     function getSeasonUserPoints(uint season, address user) external view returns (uint userPoints, uint totalPoints);
@@ -118,22 +116,23 @@ interface IStakingPool {
     function isSeasonActive() external view returns (bool);
 
     /// @notice Returns the pool end block (0 = infinite)
-    function poolEndBlock() external view returns (uint);
+    function poolEndTime() external view returns (uint);
 
     /// @notice Returns the next season start block
-    function nextSeasonStartBlock() external view returns (uint);
+    function nextSeasonStartTime() external view returns (uint);
 
     /// @notice Returns the pre-deposit start block (0 = disabled)
-    function preDepositStartBlock() external view returns (uint);
+    function preDepositStartTime() external view returns (uint);
 
     /// @notice Returns number of pending season rollovers
     function getPendingSeasonRollovers() external view returns (uint pendingSeasons);
 
     /// @notice Returns user's season data (for lazy snapshot system)
+    /// @dev claimed status is tracked per-token in RewardPool.hasClaimedSeasonReward
     function getUserSeasonData(uint season, address user)
         external
         view
-        returns (uint points, uint balance, uint joinBlock, bool claimed, bool finalized);
+        returns (uint points, uint balance, uint joinBlock, bool finalized);
 
     /// @notice Previews claim information for a user
     function previewClaim(uint season, address user, address rewardToken)
@@ -144,11 +143,9 @@ interface IStakingPool {
     // ============ Configuration View Functions ============
 
     /// @notice Returns block time in seconds
-    function blockTime() external view returns (uint);
 
     /// @notice Returns points calculation time unit in seconds
-    function pointsTimeUnit() external view returns (uint);
 
     /// @notice Returns number of blocks per season
-    function seasonBlocks() external view returns (uint);
+    function seasonDuration() external view returns (uint);
 }

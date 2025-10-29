@@ -45,11 +45,11 @@ function withdraw(uint amount) external  // Alias for unwrap
 // Project Management
 function createProject(
     string calldata projectName,
-    uint seasonBlocks,
-    uint firstSeasonStartBlock,
-    uint poolEndBlock,
+    uint seasonDuration,
+    uint firstSeasonStartTime,
+    uint poolEndTime,
     address projectAdmin,
-    uint preDepositStartBlock
+    uint preDepositStartTime
 ) external returns (uint projectID, address stakingPool, address rewardPool)
 
 // Funding
@@ -62,8 +62,8 @@ function fundProjectSeason(
 
 // Configuration
 function setPoolPointsTimeUnit(uint projectID, uint _pointsTimeUnit) external
-function setPoolBlockTime(uint projectID, uint _blockTime) external
-function setPoolEndBlock(uint projectID, uint endBlock) external
+function setPoolBlockTime(uint projectID, uint _removed (direct timestamp)) external
+function setPoolEndBlock(uint projectID, uint endTime) external
 ```
 
 **State Variables**:
@@ -121,7 +121,7 @@ function getCurrentSeasonInfo() external view returns (
     uint currentSeason,
     uint seasonStartBlock,
     uint seasonEndBlock,
-    uint blocksElapsed
+    uint timeElapsed
 )
 function getUserPoints(address user) external view returns (uint)
 function getSeasonUserPoints(uint season, address user) external view returns (uint)
@@ -241,13 +241,13 @@ User's stake recorded
 ```solidity
 // Pool Information
 function getPoolInfo(uint projectID) external view returns (
-    uint blockTime,
+    uint removed (direct timestamp),
     uint pointsTimeUnit,
-    uint seasonBlocks,
-    uint poolEndBlock,
+    uint seasonDuration,
+    uint poolEndTime,
     uint currentSeason,
-    uint preDepositStartBlock,
-    uint firstSeasonStartBlock
+    uint preDepositStartTime,
+    uint firstSeasonStartTime
 )
 
 // User Information
@@ -262,7 +262,7 @@ function getSeasonInfo(uint projectID) external view returns (
     uint currentSeason,
     uint seasonStartBlock,
     uint seasonEndBlock,
-    uint blocksElapsed
+    uint timeElapsed
 )
 
 // Points Information
@@ -396,7 +396,7 @@ function calculatePoints(
     uint balance,
     uint fromBlock,
     uint toBlock,
-    uint blockTime,
+    uint removed (direct timestamp),
     uint timeUnit
 ) internal pure returns (uint points)
 
@@ -416,19 +416,19 @@ function calculateProRata(
 **Functions**:
 ```solidity
 function isSeasonActive(
-    uint startBlock,
-    uint endBlock,
+    uint startTime,
+    uint endTime,
     bool isFinalized
 ) internal view returns (bool)
 
-function isSeasonEnded(uint endBlock) internal view returns (bool)
+function isSeasonEnded(uint endTime) internal view returns (bool)
 
-function validateSeasonBlocks(uint startBlock, uint endBlock) internal pure
+function validateSeasonBlocks(uint startTime, uint endTime) internal pure
 
 function isBlockInSeason(
     uint blockNumber,
-    uint startBlock,
-    uint endBlock
+    uint startTime,
+    uint endTime
 ) internal pure returns (bool)
 ```
 

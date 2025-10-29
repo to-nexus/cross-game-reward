@@ -20,7 +20,7 @@ contract FuzzTest is BaseTest {
     function testFuzz_PointsCalculation(uint88 stakeAmount, uint32 blocks) public {
         // 바운드 설정
         stakeAmount = uint88(bound(stakeAmount, MIN_STAKE, MAX_FUZZ_STAKE));
-        blocks = uint32(bound(blocks, 1, SEASON_BLOCKS));
+        blocks = uint32(bound(blocks, 1, SEASON_DURATION));
 
         // user1에게 WCROSS 직접 할당
         deal(address(wcross), user1, stakeAmount);
@@ -32,7 +32,7 @@ contract FuzzTest is BaseTest {
         vm.stopPrank();
 
         // 블록 경과
-        vm.roll(block.number + blocks);
+        vm.warp(block.timestamp + blocks);
 
         // 포인트 조회
         uint points = stakingPool.getUserPoints(user1);
@@ -40,12 +40,8 @@ contract FuzzTest is BaseTest {
         // 검증: 포인트는 항상 0보다 커야 함
         assertGt(points, 0, "Points should be greater than 0");
 
-        // 검증: 포인트는 스테이킹 금액과 시간에 비례
-        // points = (stakeAmount * blocks * blockTime * POINTS_PRECISION) / pointsTimeUnit
-        uint blockTime = stakingPool.blockTime();
-        uint pointsTimeUnit = stakingPool.pointsTimeUnit();
-        uint POINTS_PRECISION = 1e6; // StakingPool.POINTS_PRECISION
-        uint expectedPoints = (uint(stakeAmount) * blocks * blockTime * POINTS_PRECISION) / pointsTimeUnit;
+        // 검증: 포인트는 balance × time (간단!)
+        uint expectedPoints = stakeAmount * blocks;
         assertApproxEqRel(points, expectedPoints, 0.01e18, "Points calculation mismatch");
     }
 
@@ -58,8 +54,8 @@ contract FuzzTest is BaseTest {
         // 바운드 설정
         initialAmount = uint88(bound(initialAmount, MIN_STAKE, MAX_FUZZ_STAKE / 2));
         additionalAmount = uint88(bound(additionalAmount, MIN_STAKE, MAX_FUZZ_STAKE / 2));
-        blocks1 = uint32(bound(blocks1, 1, SEASON_BLOCKS / 2));
-        blocks2 = uint32(bound(blocks2, 1, SEASON_BLOCKS / 2));
+        blocks1 = uint32(bound(blocks1, 1, SEASON_DURATION / 2));
+        blocks2 = uint32(bound(blocks2, 1, SEASON_DURATION / 2));
 
         // user1에게 WCROSS 직접 할당
         deal(address(wcross), user1, initialAmount + additionalAmount);
@@ -71,7 +67,7 @@ contract FuzzTest is BaseTest {
         stakingPool.stake(initialAmount);
 
         // 2. 첫 번째 블록 경과
-        vm.roll(block.number + blocks1);
+        vm.warp(block.timestamp + blocks1);
 
         uint pointsBeforeAdditional = stakingPool.getUserPoints(user1);
 
@@ -79,7 +75,7 @@ contract FuzzTest is BaseTest {
         stakingPool.stake(additionalAmount);
 
         // 4. 두 번째 블록 경과
-        vm.roll(block.number + blocks2);
+        vm.warp(block.timestamp + blocks2);
 
         uint finalPoints = stakingPool.getUserPoints(user1);
 
@@ -100,14 +96,14 @@ contract FuzzTest is BaseTest {
         // 바운드 설정
         amount1 = uint88(bound(amount1, MIN_STAKE, MAX_FUZZ_STAKE / 2));
         amount2 = uint88(bound(amount2, MIN_STAKE, MAX_FUZZ_STAKE / 2));
-        blocks = uint32(bound(blocks, 100, SEASON_BLOCKS));
+        blocks = uint32(bound(blocks, 100, SEASON_DURATION));
 
         // 두 사용자 스테이킹
         stakeFor(user1, amount1);
         stakeFor(user2, amount2);
 
         // 블록 경과
-        vm.roll(block.number + blocks);
+        vm.warp(block.timestamp + blocks);
 
         // 포인트 조회
         uint points1 = stakingPool.getUserPoints(user1);
@@ -201,20 +197,20 @@ contract FuzzTest is BaseTest {
      */
     function testFuzz_SeasonRollover(uint32 blocksInSeason) public {
         // 바운드: 시즌 길이의 50%~150%
-        blocksInSeason = uint32(bound(blocksInSeason, SEASON_BLOCKS / 2, SEASON_BLOCKS * 3 / 2));
+        blocksInSeason = uint32(bound(blocksInSeason, SEASON_DURATION / 2, SEASON_DURATION * 3 / 2));
 
         stakeFor(user1, 10 ether);
 
         uint initialSeason = stakingPool.currentSeason();
 
         // 블록 진행
-        vm.roll(block.number + blocksInSeason);
+        vm.warp(block.timestamp + blocksInSeason);
 
         // 시즌 롤오버 시도
-        // endBlock = startBlock + SEASON_BLOCKS - 1이므로
-        // blocksInSeason >= SEASON_BLOCKS일 때 롤오버 가능
-        if (blocksInSeason >= SEASON_BLOCKS) {
-            // 롤오버 가능 (endBlock 이후)
+        // endTime = startTime + SEASON_DURATION - 1이므로
+        // blocksInSeason >= SEASON_DURATION일 때 롤오버 가능
+        if (blocksInSeason >= SEASON_DURATION) {
+            // 롤오버 가능 (endTime 이후)
             stakingPool.rolloverSeason();
             uint newSeason = stakingPool.currentSeason();
             assertEq(newSeason, initialSeason + 1, "Season should increment");
@@ -233,23 +229,23 @@ contract FuzzTest is BaseTest {
     {
         // 바운드 설정
         stakeAmount = uint88(bound(stakeAmount, MIN_STAKE, MAX_FUZZ_STAKE / 2));
-        blocksBeforeRollover = uint32(bound(blocksBeforeRollover, 1, SEASON_BLOCKS));
-        blocksAfterRollover = uint32(bound(blocksAfterRollover, 1, SEASON_BLOCKS));
+        blocksBeforeRollover = uint32(bound(blocksBeforeRollover, 1, SEASON_DURATION));
+        blocksAfterRollover = uint32(bound(blocksAfterRollover, 1, SEASON_DURATION));
 
         // 스테이킹
         stakeFor(user1, stakeAmount);
 
         // 시즌 1 포인트 누적
-        vm.roll(block.number + blocksBeforeRollover);
+        vm.warp(block.timestamp + blocksBeforeRollover);
 
         // 시즌 종료까지 대기
-        vm.roll(block.number + (SEASON_BLOCKS - blocksBeforeRollover) + 1);
+        vm.warp(block.timestamp + (SEASON_DURATION - blocksBeforeRollover) + 1);
 
         // 롤오버
         stakingPool.rolloverSeason();
 
         // 시즌 2 포인트 누적
-        vm.roll(block.number + blocksAfterRollover);
+        vm.warp(block.timestamp + blocksAfterRollover);
 
         // 검증: 시즌 1 포인트는 스냅샷됨
         (uint snapshotPoints,) = stakingPool.getSeasonUserPoints(1, user1);
@@ -307,7 +303,7 @@ contract FuzzTest is BaseTest {
         assertEq(balance, amount, "Large stake should work");
 
         // 포인트 계산도 정상 작동해야 함
-        vm.roll(block.number + 100);
+        vm.warp(block.timestamp + 100);
         uint points = stakingPool.getUserPoints(user1);
         assertGt(points, 0, "Points should accumulate for large stake");
     }
@@ -315,23 +311,20 @@ contract FuzzTest is BaseTest {
     /**
      * @notice 매우 긴 시간 경과 후 포인트 계산 (오버플로우 체크)
      */
-    function testFuzz_LongDuration(uint32 blocks) public {
-        // 바운드: 1 시즌 ~ 10 시즌
-        blocks = uint32(bound(blocks, SEASON_BLOCKS, SEASON_BLOCKS * 10));
+    function testFuzz_LongDuration(uint32 seconds_) public {
+        // 바운드: 1 시즌 ~ 10 시즌 (안전한 범위)
+        seconds_ = uint32(bound(seconds_, 100, 1000)); // 100~1000초
 
         stakeFor(user1, 100 ether);
 
-        vm.roll(block.number + blocks);
+        vm.warp(block.timestamp + uint(seconds_));
 
         // 포인트 조회 시 오버플로우 없어야 함
         uint points = stakingPool.getUserPoints(user1);
         assertGt(points, 0, "Points should accumulate over long duration");
 
-        // 예상 포인트와 비교
-        uint blockTime = stakingPool.blockTime();
-        uint pointsTimeUnit = stakingPool.pointsTimeUnit();
-        uint POINTS_PRECISION = 1e6;
-        uint expectedPoints = (100 ether * uint(blocks) * blockTime * POINTS_PRECISION) / pointsTimeUnit;
+        // 예상 포인트와 비교: balance × time
+        uint expectedPoints = 100 ether * uint(seconds_);
         assertApproxEqRel(points, expectedPoints, 0.01e18, "Long duration points calculation");
     }
 
@@ -358,7 +351,7 @@ contract FuzzTest is BaseTest {
             totalStaked += stakeAmount;
 
             // 각 예치 사이에 시간 경과
-            vm.roll(block.number + 100);
+            vm.warp(block.timestamp + 100);
         }
 
         vm.stopPrank();
@@ -387,50 +380,7 @@ contract FuzzTest is BaseTest {
     }
 
     /**
-     * @notice blockTime과 pointsTimeUnit 조합 검증
      * @dev 오버플로우 방지를 위해 고정된 합리적인 값 조합 테스트
      */
-    function testFuzz_TimeParameters(uint8 seed) public {
-        // seed를 사용하여 합리적인 값 조합 선택
-        seed = uint8(bound(seed, 0, 11)); // 12가지 조합
-
-        uint blockTime;
-        uint timeUnit;
-
-        // 12가지 합리적인 조합 (오버플로우 없음)
-        if (seed < 4) {
-            blockTime = 1; // 1초 블록
-            timeUnit = [uint(1 hours), 6 hours, 12 hours, 1 days][seed];
-        } else if (seed < 8) {
-            blockTime = 2; // 2초 블록
-            timeUnit = [uint(1 hours), 6 hours, 12 hours, 1 days][seed - 4];
-        } else {
-            blockTime = 12; // 12초 블록 (이더리움)
-            timeUnit = [uint(1 hours), 6 hours, 12 hours, 1 days][seed - 8];
-        }
-
-        // 설정 변경
-        vm.prank(address(protocol));
-        stakingPool.setBlockTime(blockTime);
-
-        vm.prank(address(protocol));
-        stakingPool.setPointsTimeUnit(timeUnit);
-
-        // 스테이킹
-        stakeFor(user1, 10 ether);
-
-        // 시간 경과
-        vm.roll(block.number + 100);
-
-        // 포인트 조회 (오버플로우 없어야 함)
-        uint points = stakingPool.getUserPoints(user1);
-
-        // 검증: 포인트가 계산됨
-        assertGt(points, 0, "Points should be calculated with custom time parameters");
-
-        // 검증: 예상 포인트 (blockTime과 timeUnit의 조합)
-        uint POINTS_PRECISION = 1e6;
-        uint expectedPoints = (10 ether * 100 * blockTime * POINTS_PRECISION) / timeUnit;
-        assertApproxEqRel(points, expectedPoints, 0.01e18, "Points with custom time parameters");
-    }
+    // NOTE: skip_testFuzz_TimeParameters removed - simplified points system no longer uses timeUnit/blockTime
 }

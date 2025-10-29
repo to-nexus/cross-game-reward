@@ -30,7 +30,7 @@ Cross Staking Protocol is a blockchain-based season staking platform. It creates
 ## Key Features
 
 ### Season-based System
-- Clear season distinction based on blocks
+- Clear season distinction based on seconds
 - Automatic rollover (up to 50 seasons)
 - Manual rollover support
 

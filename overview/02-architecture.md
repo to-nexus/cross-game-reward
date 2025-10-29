@@ -81,7 +81,7 @@ Pure logic separated into libraries for reusability and gas efficiency.
 // Season validation and helper functions
 - isSeasonActive()        // Check season active status
 - isSeasonEnded()         // Check season ended
-- validateSeasonBlocks()  // Validate season blocks
+- validateSeasonBlocks()  // Validate season seconds
 - isBlockInSeason()       // Check if block in season range
 - calculateEffectiveStart() // Calculate effective start block
 ```
@@ -135,8 +135,8 @@ struct StakePosition {
 
 struct Season {
     uint seasonNumber;      // Season number
-    uint startBlock;        // Start block
-    uint endBlock;          // End block
+    uint startTime;        // Start block
+    uint endTime;          // End block
     bool isFinalized;       // Finalization status
     uint totalPoints;       // Total points (cached)
     uint seasonTotalStaked; // Total staked during season
@@ -217,10 +217,10 @@ Create new season
 Aggregated points = Σ(total staked × time interval)
 
 Time t1: Total staked 100, aggregation 0
-  ↓ 10 blocks elapsed
+  ↓ 10 seconds elapsed
 Time t2: aggregation += 100 × 10 = 1000
   ↓ Stake +50 (total 150)
-  ↓ 20 blocks elapsed
+  ↓ 20 seconds elapsed
 Time t3: aggregation += 150 × 20 = 4000
   Total aggregation = 1000 + 4000 = 5000
 ```

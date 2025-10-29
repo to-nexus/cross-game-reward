@@ -5,43 +5,43 @@ pragma solidity 0.8.28;
  * @title PointsLib
  * @notice Pure logic library for points calculation
  * @dev Provides gas-efficient point calculation functions
- *      All calculations use fixed-point arithmetic with 6 decimal precision (1e6)
+ *      Points = balance × time (1 token × 1 second = 1 point)
  */
 library PointsLib {
-    /// @notice Points calculation precision: 6 decimal places (1,000,000)
-    /// @dev Used to maintain fractional precision in Solidity's integer arithmetic
-    uint public constant POINTS_PRECISION = 1e6;
+    /// @notice Decimals for display purposes
+    /// @dev Frontend divides raw points by 10^POINT_DECIMALS for display
+    ///      Raw points are in wei-seconds, divide by 1e18 to get token-seconds
+    uint public constant POINT_DECIMALS = 18;
 
     /**
      * @notice Calculates points earned based on staking amount and time
-     * @param balance Amount staked
-     * @param fromBlock Starting block number
-     * @param toBlock Ending block number
-     * @param blockTime Block time in seconds (e.g., 1 for 1 second per block)
-     * @param timeUnit Time unit in seconds for point calculation (e.g., 3600 for 1 hour)
-     * @return points Calculated points with POINTS_PRECISION
-     * @dev Formula: points = (balance × timeElapsed × POINTS_PRECISION) / timeUnit
+     * @param balance Amount staked (in wei)
+     * @param fromTime Starting timestamp
+     * @param toTime Ending timestamp
+     * @return points Calculated points (balance × timeElapsed)
+     * @dev Formula: points = balance × timeElapsed
+     *
+     *      This gives us "token-seconds" as the unit:
+     *      - 1 token (1e18 wei) × 1 second = 1e18 points
+     *      - 100 tokens × 1 hour (3600s) = 360,000e18 points
+     *
+     *      For display: divide by 1e18 to get human-readable token-seconds
      *
      *      Overflow Safety Analysis:
      *      - Uses Solidity 0.8+ built-in overflow checks
-     *      - Maximum calculation: balance(~10^27) × timeElapsed(~10^9) × PRECISION(10^6) = ~10^42
-     *      - uint256 max value: ~10^77, providing 10^35 safety margin
-     *      - Operation order: multiplication first (preserves precision), division last
+     *      - Maximum realistic: balance(~10^27) × time(~10^9) = ~10^36
+     *      - uint256 max value: ~10^77, providing 10^41 safety margin
      *
-     *      Example: 100 tokens staked for 3600 seconds with 1-hour time unit
-     *      = (100 × 3600 × 1e6) / 3600 = 100,000,000 (100 points in raw format)
+     *      Example: 100 tokens staked for 1 hour (3600 seconds)
+     *      = 100e18 × 3600 = 3.6e23 raw points
+     *      = 360,000 token-seconds (display)
      */
-    function calculatePoints(uint balance, uint fromBlock, uint toBlock, uint blockTime, uint timeUnit)
-        internal
-        pure
-        returns (uint points)
-    {
-        if (fromBlock >= toBlock || balance == 0) return 0;
+    function calculatePoints(uint balance, uint fromTime, uint toTime) internal pure returns (uint points) {
+        if (fromTime >= toTime || balance == 0) return 0;
 
-        uint blockElapsed = toBlock - fromBlock;
-        uint timeElapsed = blockElapsed * blockTime;
+        uint timeElapsed = toTime - fromTime;
 
-        return (balance * timeElapsed * POINTS_PRECISION) / timeUnit;
+        return balance * timeElapsed;
     }
 
     /**

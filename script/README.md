@@ -58,9 +58,9 @@ forge script script/DeployRouter.s.sol:DeployRouterScript \
 **환경변수:**
 ```bash
 PROJECT_NAME="My Staking Project"
-SEASON_BLOCKS=86400
-FIRST_SEASON_START_BLOCK=1100
-POOL_END_BLOCK=0
+SEASON_DURATION=86400  # 시즌 길이 (초): 86400 = 1일
+FIRST_SEASON_START_TIME=1704067200  # 시작 타임스탬프 (Unix timestamp)
+POOL_END_TIME=0  # 종료 타임스탬프 (0 = 무한)
 
 # 선택 (리워드 예치)
 REWARD_TOKEN=0x...

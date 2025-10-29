@@ -25,14 +25,14 @@ contract MultiPoolTest is BaseTest {
 
         // Protocol을 통해 추가 프로젝트 생성 (즉시 시작)
         (, address poolAddr2, address rewardPoolAddr2) =
-            protocol.createProject("TestProject2", SEASON_BLOCKS * 2, block.number, 0, owner, 0);
+            protocol.createProject("TestProject2", SEASON_DURATION * 2, block.timestamp, 0, owner, 0);
         pool2 = StakingPool(poolAddr2);
         rewardPool2 = RewardPool(rewardPoolAddr2);
         router2 = new StakingRouter(address(wcross), address(protocol));
         protocol.setApprovedRouter(PROJECT_ID_2, address(router2), true);
 
         (, address poolAddr3, address rewardPoolAddr3) =
-            protocol.createProject("TestProject3", SEASON_BLOCKS / 2, block.number, 0, owner, 0);
+            protocol.createProject("TestProject3", SEASON_DURATION / 2, block.timestamp, 0, owner, 0);
         pool3 = StakingPool(poolAddr3);
         rewardPool3 = RewardPool(rewardPoolAddr3);
         router3 = new StakingRouter(address(wcross), address(protocol));
@@ -73,9 +73,9 @@ contract MultiPoolTest is BaseTest {
         assertEq(stakingPool.currentSeason(), 1);
         assertEq(pool2.currentSeason(), 1);
 
-        // Pool 1 롤오버 (실제 컨트랙트의 seasonBlocks 사용)
-        uint seasonBlocks = stakingPool.seasonBlocks();
-        vm.roll(block.number + seasonBlocks + 1);
+        // Pool 1 롤오버 (실제 컨트랙트의 seasonDuration 사용)
+        uint seasonDuration = stakingPool.seasonDuration();
+        vm.warp(block.timestamp + seasonDuration + 1);
         stakingPool.rolloverSeason();
 
         assertEq(stakingPool.currentSeason(), 2);
@@ -83,9 +83,9 @@ contract MultiPoolTest is BaseTest {
     }
 
     function test_DifferentSeasonLengths() public view {
-        assertEq(stakingPool.seasonBlocks(), SEASON_BLOCKS);
-        assertEq(pool2.seasonBlocks(), SEASON_BLOCKS * 2);
-        assertEq(pool3.seasonBlocks(), SEASON_BLOCKS / 2);
+        assertEq(stakingPool.seasonDuration(), SEASON_DURATION);
+        assertEq(pool2.seasonDuration(), SEASON_DURATION * 2);
+        assertEq(pool3.seasonDuration(), SEASON_DURATION / 2);
     }
 
     function test_IndependentRewards() public {
@@ -93,8 +93,8 @@ contract MultiPoolTest is BaseTest {
         vm.prank(user1);
         router.stake{value: 10 ether}(PROJECT_ID);
 
-        uint seasonBlocks = stakingPool.seasonBlocks();
-        vm.roll(block.number + seasonBlocks + 1);
+        uint seasonDuration = stakingPool.seasonDuration();
+        vm.warp(block.timestamp + seasonDuration + 1);
         stakingPool.rolloverSeason();
 
         vm.startPrank(rewardProvider);
@@ -106,7 +106,7 @@ contract MultiPoolTest is BaseTest {
         vm.prank(user2);
         router2.stake{value: 10 ether}(2);
 
-        vm.roll(block.number + SEASON_BLOCKS + 1);
+        vm.warp(block.timestamp + SEASON_DURATION + 1);
         pool2.rolloverSeason();
 
         vm.startPrank(rewardProvider);

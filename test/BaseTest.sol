@@ -42,7 +42,7 @@ contract BaseTest is Test {
 
     // 상수
     uint public constant INITIAL_BALANCE = 10000 ether;
-    uint public constant SEASON_BLOCKS = 100;
+    uint public constant SEASON_DURATION = 100; // 100 seconds for testing
     uint public constant PROJECT_ID = 1;
 
     function setUp() public virtual {
@@ -59,10 +59,10 @@ contract BaseTest is Test {
         protocol = new StakingProtocol(address(wcross), address(stakingPoolCode), address(rewardPoolCode), owner);
 
         // 4. 프로젝트 생성 (Code 패턴 사용)
-        uint firstSeasonStartBlock = block.number; // 현재 블록에서 시작
-        uint poolEndBlock = 0; // 무한 진행
+        uint firstSeasonStartTime = block.number; // 현재 블록에서 시작
+        uint poolEndTime = 0; // 무한 진행
         (, address stakingPoolAddr, address rewardPoolAddr) =
-            protocol.createProject("TestProject", SEASON_BLOCKS, firstSeasonStartBlock, poolEndBlock, owner, 0);
+            protocol.createProject("TestProject", SEASON_DURATION, firstSeasonStartTime, poolEndTime, owner, 0);
 
         stakingPool = StakingPool(stakingPoolAddr);
         rewardPool = RewardPool(rewardPoolAddr);
@@ -106,9 +106,9 @@ contract BaseTest is Test {
     }
 
     function rolloverSeason() internal {
-        // 실제 컨트랙트의 seasonBlocks 값을 사용
-        uint seasonBlocks = stakingPool.seasonBlocks();
-        vm.roll(block.number + seasonBlocks + 1);
+        // 실제 컨트랙트의 seasonDuration 값을 사용
+        uint seasonDuration = stakingPool.seasonDuration();
+        vm.warp(block.timestamp + seasonDuration + 1);
         stakingPool.rolloverSeason();
     }
 

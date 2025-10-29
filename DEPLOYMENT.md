@@ -135,9 +135,9 @@ constructor(
 ```solidity
 function createProject(
     string calldata projectName,      // Unique project name
-    uint seasonBlocks,                 // Blocks per season (0 = use default)
+    uint seasonDuration,                 // Blocks per season (0 = use default)
     uint firstSeasonStartBlock,       // Season 1 start block
-    uint poolEndBlock,                 // Pool end block (0 = infinite)
+    uint poolEndTime,                 // Pool end block (0 = infinite)
     address projectAdmin,              // Project administrator
     uint preDepositStartBlock          // Pre-deposit start block (0 = disabled)
 ) external returns (uint projectID, address stakingPool, address rewardPool)
@@ -198,13 +198,13 @@ protocol.setPoolBlockTime(projectId, 1);
 **Pool End Block**
 ```solidity
 // Set or update pool end block
-protocol.setPoolEndBlock(projectId, endBlock);
+protocol.setPoolEndBlock(projectId, endTime);
 ```
 
 **Season Start**
 ```solidity
 // Set next season start block (for restart after end)
-protocol.setNextSeasonStart(projectId, startBlock);
+protocol.setNextSeasonStart(projectId, startTime);
 ```
 
 ## Access Control
@@ -256,14 +256,14 @@ stakingPool.rolloverSeason();
 
 ```solidity
 // Set pool end block
-protocol.setPoolEndBlock(projectId, endBlock);
+protocol.setPoolEndBlock(projectId, endTime);
 ```
 
 ### Pool Restart
 
 ```solidity
 // Set new season start after termination
-protocol.setNextSeasonStart(projectId, startBlock);
+protocol.setNextSeasonStart(projectId, startTime);
 ```
 
 ## Security Considerations

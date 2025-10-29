@@ -77,17 +77,16 @@ contract RewardPool is RewardPoolBase {
     /**
      * @notice Initializes the reward pool
      * @param _stakingPool Address of the connected StakingPool
-     * @param _protocol Address of the StakingProtocol factory
      * @dev - Validates both addresses
      *      - Grants STAKING_POOL_ROLE to the staking pool
      *      - Sets both as immutable (cannot be changed)
      */
-    constructor(address _stakingPool, address _protocol) RewardPoolBase(_protocol) {
+    constructor(address _stakingPool) RewardPoolBase(msg.sender) {
         _validateAddress(_stakingPool);
-        _validateAddress(_protocol);
+        _validateAddress(msg.sender);
 
         stakingPool = IStakingPool(_stakingPool);
-        protocol = IStakingProtocol(_protocol);
+        protocol = IStakingProtocol(msg.sender);
 
         _grantRole(STAKING_POOL_ROLE, _stakingPool);
     }
@@ -159,8 +158,8 @@ contract RewardPool is RewardPoolBase {
         if (currentSeason == 0) {
             targetSeason = 1;
 
-            uint preDepositStart = stakingPool.preDepositStartBlock();
-            require(preDepositStart == 0 || block.number >= preDepositStart, RewardPoolPreDepositNotAvailable());
+            uint preDepositStart = stakingPool.preDepositStartTime();
+            require(preDepositStart == 0 || block.timestamp >= preDepositStart, RewardPoolPreDepositNotAvailable());
         }
 
         fundSeason(targetSeason, token, amount);

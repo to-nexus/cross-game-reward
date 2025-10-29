@@ -205,11 +205,11 @@ contract RewardsTest is BaseTest {
 
     function test_PreDepositBeforeSeasonStart() public {
         // 새 프로젝트 생성 (미래 시작 블록, 사전 예치 즉시 가능)
-        uint futureStartBlock = block.number + 100;
+        uint futureStartBlock = block.timestamp + 100;
 
         vm.prank(owner);
         (, address newStakingPoolAddr, address newRewardPoolAddr) =
-            protocol.createProject("PreDepositTest", SEASON_BLOCKS, futureStartBlock, 0, owner, 0);
+            protocol.createProject("PreDepositTest", SEASON_DURATION, futureStartBlock, 0, owner, 0);
 
         StakingPool newPool = StakingPool(newStakingPoolAddr);
         RewardPool newRewardPool = RewardPool(newRewardPoolAddr);
@@ -240,12 +240,12 @@ contract RewardsTest is BaseTest {
 
     function test_PreDepositWithBlockRestriction() public {
         // 새 프로젝트 생성 (미래 시작 블록, 사전 예치 미래 블록부터 가능)
-        uint futureStartBlock = block.number + 100;
-        uint preDepositBlock = block.number + 50;
+        uint futureStartBlock = block.timestamp + 100;
+        uint preDepositBlock = block.timestamp + 50;
 
         vm.prank(owner);
         (,, address newRewardPoolAddr) =
-            protocol.createProject("PreDepositRestricted", SEASON_BLOCKS, futureStartBlock, 0, owner, preDepositBlock);
+            protocol.createProject("PreDepositRestricted", SEASON_DURATION, futureStartBlock, 0, owner, preDepositBlock);
 
         RewardPool newRewardPool = RewardPool(newRewardPoolAddr);
 
@@ -259,7 +259,7 @@ contract RewardsTest is BaseTest {
         newRewardPool.depositReward(address(rewardToken), 100 ether);
 
         // preDepositBlock으로 이동
-        vm.roll(preDepositBlock);
+        vm.warp(preDepositBlock);
 
         // 이제 예치 가능
         newRewardPool.depositReward(address(rewardToken), 100 ether);
@@ -273,11 +273,11 @@ contract RewardsTest is BaseTest {
 
     function test_PreDepositAndNormalDeposit() public {
         // 새 프로젝트 생성 (미래 시작 블록)
-        uint futureStartBlock = block.number + 100;
+        uint futureStartBlock = block.timestamp + 100;
 
         vm.prank(owner);
         (uint newProjectID, address newStakingPoolAddr, address newRewardPoolAddr) =
-            protocol.createProject("PreDepositAndNormal", SEASON_BLOCKS, futureStartBlock, 0, owner, 0);
+            protocol.createProject("PreDepositAndNormal", SEASON_DURATION, futureStartBlock, 0, owner, 0);
 
         StakingPool newPool = StakingPool(newStakingPoolAddr);
         RewardPool newRewardPool = RewardPool(newRewardPoolAddr);
@@ -291,7 +291,7 @@ contract RewardsTest is BaseTest {
         newRewardPool.depositReward(address(rewardToken), 100 ether);
 
         // 시즌 시작 블록으로 이동
-        vm.roll(futureStartBlock);
+        vm.warp(futureStartBlock);
 
         // 시즌을 시작하기 위해 스테이킹 액션 필요
         // 먼저 StakingRouter 생성 및 승인

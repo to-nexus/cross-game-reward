@@ -9,7 +9,7 @@ points = (balance × timeElapsed × POINTS_PRECISION) / timeUnit
 
 Where:
 - balance: Staked amount (uint, wei)
-- timeElapsed: (toBlock - fromBlock) × blockTime (uint, seconds)
+- timeElapsed: (toBlock - fromBlock) × removed (direct timestamp) (uint, seconds)
 - POINTS_PRECISION: 1e6 (constant)
 - timeUnit: Configurable, default 3600 seconds (1 hour)
 ```
@@ -33,8 +33,8 @@ Operation order: Multiplication first (preserves precision), division last
 // 100 CROSS staked for 3600 seconds (1 hour)
 balance = 100e18
 fromBlock = 1000
-toBlock = 4600  // 3600 blocks later (1 sec/block)
-blockTime = 1
+toBlock = 4600  // 3600 seconds later (1 sec/block)
+removed (direct timestamp) = 1
 timeUnit = 3600
 
 timeElapsed = (4600 - 1000) × 1 = 3600 seconds
@@ -93,21 +93,21 @@ function _updateSeasonAggregation(uint seasonNum) internal {
     Season storage season = seasons[seasonNum];
     
     // Skip if already up-to-date
-    if (season.lastAggregatedBlock >= block.number) return;
+    if (season.lastAggregatedBlock >= block.timestamp) return;
     
     // Calculate incremental points
     if (season.seasonTotalStaked > 0) {
         uint additionalPoints = PointsLib.calculatePoints(
             season.seasonTotalStaked,
             season.lastAggregatedBlock,
-            block.number,
-            blockTime,
+            block.timestamp,
+            removed (direct timestamp),
             pointsTimeUnit
         );
         season.aggregatedPoints += additional Points;
     }
     
-    season.lastAggregatedBlock = block.number;
+    season.lastAggregatedBlock = block.timestamp;
 }
 ```
 
@@ -362,7 +362,7 @@ contract StakingPool is StakingPoolBase {
 
 ### Problem
 
-If no transactions occur for many blocks, `currentSeason` storage variable becomes stale.
+If no transactions occur for many seconds, `currentSeason` storage variable becomes stale.
 
 ### Solution
 
@@ -375,34 +375,34 @@ function getCurrentSeasonInfo() external view returns (
     uint currentSeason,
     uint seasonStartBlock,
     uint seasonEndBlock,
-    uint blocksElapsed
+    uint timeElapsed
 ) {
     // Read storage
     uint storedSeason = currentSeason;
     
     // If no season yet
     if (storedSeason == 0) {
-        if (block.number < nextSeasonStartBlock) {
+        if (block.timestamp < nextSeasonStartTime) {
             return (0, 0, 0, 0);
         }
         // Calculate first season
         storedSeason = 1;
-        seasonStartBlock = nextSeasonStartBlock;
+        seasonStartBlock = nextSeasonStartTime;
     } else {
-        seasonStartBlock = seasons[storedSeason].startBlock;
+        seasonStartBlock = seasons[storedSeason].startTime;
     }
     
     // Calculate how many seasons have passed
-    uint expectedEndBlock = seasonStartBlock + seasonBlocks;
-    while (block.number > expectedEndBlock) {
+    uint expectedEndBlock = seasonStartBlock + seasonDuration;
+    while (block.timestamp > expectedEndBlock) {
         storedSeason++;
         seasonStartBlock = expectedEndBlock + 1;
-        expectedEndBlock = seasonStartBlock + seasonBlocks;
+        expectedEndBlock = seasonStartBlock + seasonDuration;
     }
     
     currentSeason = storedSeason;
     seasonEndBlock = expectedEndBlock;
-    blocksElapsed = block.number - seasonStartBlock;
+    timeElapsed = block.timestamp - seasonStartBlock;
 }
 ```
 
@@ -613,7 +613,7 @@ for (uint i = 0; i < length;) {
 1. After explicit bounds checks
 2. Loop counters (reasonable limits)
 3. Accumulation with known bounds
-4. Time calculations (block numbers)
+4. Time calculations (timestamps)
 
 ### When NOT Safe
 

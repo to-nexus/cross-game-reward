@@ -1,19 +1,19 @@
 # Cross Staking Protocol v1.0
 
-> Season-based blockchain staking protocol
+> Season-based blockchain staking protocol with simplified points calculation
 
 ## Overview
 
-Cross Staking Protocol is a decentralized staking platform with a season-based reward distribution system. It enables creation of independent staking pools for each project, providing fair reward distribution per season.
+Cross Staking Protocol is a decentralized staking platform with a season-based reward distribution system. It enables creation of independent staking pools for each project, providing fair reward distribution per season using simplified timestamp-based point calculations.
 
 ### Key Features
 
-- ⏱️ **Season-based System**: Clear reward periods defined by block ranges
-- 🎯 **Points System**: Fair reward calculation based on staking amount × time
+- ⏱️ **Time-based Seasons**: Clear reward periods defined by timestamps
+- 🎯 **Simple Points**: 1 token × 1 second = 1 point (intuitive!)
 - 🏭 **Project Independence**: Factory pattern creates isolated pools per project
 - 🔄 **Native Token Support**: Automatic WCROSS wrapping for user convenience
 - 🔐 **Enhanced Security**: Reentrancy Guard, Access Control, Pausable patterns
-- ⚡ **Gas Optimized**: Custom errors, storage optimization, transient storage (EIP-1153)
+- ⚡ **Gas Optimized**: Custom errors, transient storage (EIP-1153), minimal calculations
 
 ## Architecture
 
@@ -71,309 +71,310 @@ Creates project-specific staking pools and manages global settings using CREATE2
 - 1:1 wrapping ratio
 - Standard WETH-style implementation
 
+## Points System
+
+### Simple & Intuitive Formula
+
+```solidity
+points = balance × timeElapsed
+
+Where:
+- balance: Amount staked (in wei)
+- timeElapsed: Time duration (in seconds)
+- Result: token-seconds
+
+Example:
+- Stake 100 CROSS for 1 hour (3600 seconds)
+- Points = 100e18 × 3600 = 3.6e23 (raw)
+- Display = 3.6e23 / 1e18 = 360,000 token-seconds
+```
+
+### Display Formatting
+
+**POINT_DECIMALS = 18**
+
+```typescript
+// Frontend
+const rawPoints = 3.6e23;  // from contract
+const displayPoints = rawPoints / 1e18;  // 360,000 token-seconds
+
+// Or in Solidity for display
+displayPoints = rawPoints / 10**PointsLib.POINT_DECIMALS;
+```
+
+### Why This Is Better
+
+**Before (Complex)**:
+```solidity
+points = (balance × time × 1e6) / timeUnit
+// Requires timeUnit parameter
+// Division operation (more gas)
+// Less intuitive
+```
+
+**After (Simple)**:
+```solidity
+points = balance × time
+// No extra parameters
+// No division (gas efficient)
+// Crystal clear: 1 token × 1 second = 1 point
+```
+
 ## Technical Implementation
 
 ### Season System
 
-**Block-based Seasons**
-- Each season has fixed block duration
+**Timestamp-based Seasons**
+- Each season has fixed time duration (in seconds)
 - Automatic rollover support (up to 50 seasons)
 - Lazy snapshot for gas efficiency
 
 **Season Lifecycle**
 ```solidity
-Season 1: [startBlock, endBlock]
+Season 1: [startTime, endTime]
 - Users stake and earn points
-- Points = balance × time × PRECISION / timeUnit
-- At endBlock: Season can be finalized
+- Points = balance × time (directly!)
+- At endTime: Season can be finalized
 - After finalize: Rewards claimable
 
 Season 2: Auto-starts after Season 1 ends
 ```
 
-### Points System
+### O(1) Aggregation Algorithm
 
-**Calculation Formula**
 ```solidity
-points = (balance × timeElapsed × POINTS_PRECISION) / timeUnit
+totalPoints = aggregatedPoints + (totalStaked × timeSinceLastUpdate)
 
-Where:
-- balance: Staked amount
-- timeElapsed: (currentBlock - lastUpdateBlock) × blockTime
-- POINTS_PRECISION: 1e6 (6 decimal places)
-- timeUnit: Configurable (default: 1 hour)
+- Incremental updates on stake/unstake
+- No iteration over users
+- Constant time complexity
+- Gas-efficient for any number of users
 ```
 
-**O(1) Aggregation**
-- Incremental total points update
-- No iteration over all users
-- Gas-efficient design
+### Virtual Seasons
 
-**Lazy Snapshot**
-- User points finalized only when needed
-- Reduces gas costs during rollovers
-- Maintains accuracy for reward distribution
+Supports season information queries without on-chain rollover:
+
+```solidity
+// Season 1 ended but not rolled over
+getCurrentSeasonInfo() returns (1, startTime, endTime, duration)
+
+// Frontend can display and calculate without transactions
+previewClaim(1, user, token) returns (points, totalPoints, expectedReward)
+```
 
 ### Pre-deposit Feature
 
-Allows users to stake before Season 1 starts:
+Optional feature allowing staking before Season 1:
 
 ```solidity
-Timeline:
-[preDepositStartBlock] → [firstSeasonStartBlock] → [Season 1 End]
-     |                        |                         |
-   Staking allowed      Points start accumulating   Season ends
+preDepositStartTime = 1704067200  // 2024-01-01 00:00:00 UTC
+firstSeasonStartTime = 1706745600  // 2024-02-01 00:00:00 UTC
+
+// Users can stake between these times
+// Points accumulate from firstSeasonStartTime
 ```
 
-**Key Points**
-- Only applicable to Season 1
-- Points accumulate from season start block
-- Optional feature (disabled if preDepositStartBlock = 0)
+### Lazy Snapshot
 
-### Reward Distribution
+User season data is finalized only when needed:
 
-**Proportional Distribution**
 ```solidity
-userReward = (totalReward × userPoints) / totalPoints
+// User A claims Season 1 → snapshot taken
+// User B doesn't claim → no snapshot (gas saved)
+
+// Snapshot taken on:
+- Reward claim
+- Manual snapshot call
+- Season rollover with aggregation
 ```
-
-**Multi-token Support**
-- Multiple reward tokens per season
-- Independent tracking per token
-- Prevents double-claiming
-
-### Security Patterns
-
-**Reentrancy Protection**
-- `ReentrancyGuardTransient` (EIP-1153)
-- Transient storage for 30% gas savings
-- Protects all state-changing functions
-
-**Access Control**
-- `AccessControlDefaultAdminRules`
-- 3-day timelock for admin role transfers
-- Role-based permissions:
-  - `DEFAULT_ADMIN_ROLE`: Protocol admin
-  - `STAKING_POOL_ROLE`: StakingPool contract
-  - `REWARD_POOL_ROLE`: RewardPool contract
-
-**Pausable**
-- Emergency stop mechanism
-- Only admin can pause/unpause
-- Protects staking/unstaking functions
-
-**Safe ERC20**
-- Uses OpenZeppelin's `SafeERC20`
-- Handles non-standard ERC20 tokens
-- Prevents transfer failures
 
 ## Usage Examples
 
-### Staking
+### Basic Staking Flow
 
 ```solidity
-// Stake with Native CROSS (via Router)
-stakingRouter.stake{value: 5 ether}(projectID);
+// 1. User stakes 1000 WCROSS
+wcross.approve(address(router), 1000e18);
+router.stakeNative{value: 1000e18}(projectId);
 
-// Stake with WCROSS directly
-wcross.approve(address(stakingPool), 5 ether);
-stakingPool.stake(5 ether);
+// 2. Season progresses...
+// Points accumulate: 1 token × 1 second = 1 point
+
+// 3. Season ends and rewards are deposited
+rewardToken.approve(address(rewardPool), 10000e18);
+rewardPool.fundSeason(1, address(rewardToken), 10000e18);
+
+// 4. User claims rewards
+pool.claimSeason(1, address(rewardToken));
+
+// 5. User unstakes
+router.unstakeNative(projectId, 1000e18);
 ```
 
-### Withdrawal
+### Admin Operations
 
 ```solidity
-// Withdraw to Native CROSS (via Router)
-stakingRouter.unstake(projectID);
-
-// Withdraw WCROSS directly
-stakingPool.withdrawAll();
-```
-
-### Reward Claims
-
-```solidity
-// Claim single season
-stakingPool.claimSeason(seasonNumber, rewardTokenAddress);
-
-// Claim multiple seasons (via Router)
-uint[] memory seasons = [1, 2, 3];
-address[] memory tokens = [token1, token2, token3];
-stakingRouter.claimMultipleRewards(projectID, seasons, tokens);
-```
-
-### View Functions
-
-```solidity
-// Get current points
-uint points = stakingViewer.getUserPoints(projectID, userAddress);
-
-// Get season information
-(uint season, uint startBlock, uint endBlock, uint blocksElapsed) = 
-    stakingViewer.getSeasonInfo(projectID);
-
-// Get expected reward
-uint expectedReward = stakingViewer.getClaimableReward(
-    projectID, userAddress, seasonNumber, rewardTokenAddress
+// Create new staking pool
+protocol.createProject(
+    "Project Name",
+    1 days,      // Season duration (86400 seconds)
+    block.timestamp + 7 days,  // First season starts in 7 days
+    0,           // Pool never ends
+    0            // Pre-deposit disabled
 );
+
+// Emergency pool end
+pool.setPoolEndTime(block.timestamp + 30 days);
+
+// Manual season rollover
+pool.rolloverSeason(10); // Rollover up to 10 seasons
 ```
 
-## Project Structure
+### View Queries
 
-```
-src/
-├── base/                    # Abstract contracts
-│   ├── CrossStakingBase.sol     # Common base with access control
-│   ├── StakingPoolBase.sol      # Core staking logic
-│   └── RewardPoolBase.sol       # Core reward logic
-├── interfaces/              # Contract interfaces
-│   ├── IStakingPool.sol
-│   ├── IRewardPool.sol
-│   └── IStakingProtocol.sol
-├── libraries/               # Pure logic libraries
-│   ├── PointsLib.sol           # Points calculation
-│   └── SeasonLib.sol           # Season validation
-├── StakingProtocol.sol      # Factory contract
-├── StakingPool.sol          # Staking pool implementation
-├── RewardPool.sol           # Reward pool implementation
-├── StakingRouter.sol        # Native token router
-├── StakingViewer.sol        # View functions aggregator
-└── WCROSS.sol              # Wrapped CROSS token
+```solidity
+// Get current season info
+(uint season, uint startTime, uint endTime, uint timeElapsed) = 
+    pool.getCurrentSeasonInfo();
 
-test/
-├── BaseTest.sol            # Test base setup
-├── Staking.t.sol           # Staking tests
-├── Season.t.sol            # Season tests
-├── Points.t.sol            # Points tests
-├── Rewards.t.sol           # Reward tests
-├── MultiPool.t.sol         # Multi-project tests
-├── Advanced.t.sol          # Advanced scenarios
-├── Integrated.t.sol        # Integration tests
-└── Fuzz.t.sol              # Fuzz tests
+// Preview claim (before transaction)
+(uint userPoints, uint totalPoints, uint expectedReward, bool claimed, bool canClaim) = 
+    viewer.previewClaim(projectId, user, season, rewardToken);
+
+// Get all claimable rewards
+(address[] memory tokens, uint[] memory amounts) = 
+    viewer.getClaimableRewards(projectId, user, season);
 ```
+
+## Security Features
+
+### Access Control
+- **DEFAULT_ADMIN_ROLE**: Pool configuration
+- **MANAGER_ROLE**: Season management
+- **REWARD_POOL_ROLE**: Reward distribution
+- **ROUTER_ROLE**: Batch operations
+
+### Protection Mechanisms
+- ✅ Reentrancy Guard (transient storage)
+- ✅ Pausable (emergency stop)
+- ✅ Minimum stake requirement (1 CROSS)
+- ✅ Integer overflow protection (Solidity 0.8+)
+- ✅ Safe ERC20 transfers
+- ✅ Role-based access control
+
+### Known Limitations
+- Maximum 50 automatic rollovers per transaction
+- Pool end time cannot be before current time
+- Season duration must be > 0
+- Points display decimals: 18 (for normalization)
+
+## Deployment
+
+### Prerequisites
+- Foundry installed
+- Private key configured
+- RPC endpoint available
+
+### Deploy Factory
+
+```bash
+# Set environment variables
+export PRIVATE_KEY="0x..."
+export RPC_URL="https://rpc.example.com"
+export ADMIN_ADDRESS="0x..."
+
+# Deploy
+cd script
+forge script Deploy.s.sol:Deploy --rpc-url $RPC_URL --broadcast
+```
+
+### Create First Project
+
+```bash
+forge script CreateProject.s.sol:CreateProject --rpc-url $RPC_URL --broadcast
+```
+
+### Configuration Files
+
+See `script/` directory for deployment scripts and `.env` examples.
 
 ## Testing
-
-### Test Coverage
-
-- **Total Tests**: 68
-- **Pass Rate**: 100%
-- **Core Logic Coverage**: 100%
-
-### Test Categories
-
-1. **Staking Tests** (9 tests)
-   - Basic stake/unstake operations
-   - Multiple users and stakes
-   - Minimum stake requirements
-   - Edge cases
-
-2. **Season Tests** (7 tests)
-   - Season rollover
-   - Points snapshots
-   - Multiple seasons
-   - Season information queries
-
-3. **Points Tests** (9 tests)
-   - Points calculation accuracy
-   - Time-based accumulation
-   - Proportional distribution
-   - Snapshot mechanisms
-
-4. **Reward Tests** (8 tests)
-   - Proportional distribution
-   - Multi-season rewards
-   - Claim prevention
-   - Token recovery
-
-5. **Fuzz Tests** (13 tests)
-   - Random input validation
-   - Overflow protection
-   - Edge case handling
-
-### Running Tests
 
 ```bash
 # Run all tests
 forge test
+
+# Run specific test file
+forge test --match-path test/Season.t.sol
 
 # Run with gas report
 forge test --gas-report
 
-# Run specific test file
-forge test --match-contract StakingTest
-```
-
-## Security
-
-### Applied Security Patterns
-
-- ✅ **ReentrancyGuardTransient** (EIP-1153)
-- ✅ **AccessControlDefaultAdminRules** (3-day timelock)
-- ✅ **Pausable Pattern**
-- ✅ **SafeERC20**
-- ✅ **Custom Errors** (gas efficient)
-- ✅ **Checks-Effects-Interactions Pattern**
-
-### Gas Optimizations
-
-1. **Custom Errors**: 15-20% savings vs string errors
-2. **Transient Storage**: 30% savings in reentrancy guard
-3. **Unchecked Arithmetic**: 5-10% savings where safe
-4. **Immutable Variables**: Reduces storage access costs
-5. **O(1) Aggregation**: Constant-time operations
-
-### Audit Status
-
-- ⏳ Internal audit: Completed
-- ⏳ External audit: Pending
-
-## Documentation
-
-- [Architecture Overview](overview/architecture.md)
-- [Core Concepts](overview/concepts.md)
-- [Contract Details](overview/contracts.md)
-- [Workflows](overview/workflows.md)
-- [Technical Implementation](overview/technical.md)
-- [Pre-deposit Guide](overview/predeposit.md)
-- [Test Documentation](overview/tests.md)
-
-## Development
-
-### Prerequisites
-
-```bash
-# Install Foundry
-curl -L https://foundry.paradigm.xyz | bash
-foundryup
-
-# Install dependencies
-forge install
-```
-
-### Compile
-
-```bash
-forge build
-```
-
-### Test
-
-```bash
-# Run all tests
-forge test
-
-# With gas report
-forge test --gas-report
-
-# With coverage
+# Run with coverage
 forge coverage
 ```
 
+### Test Coverage
+- ✅ 81 tests, 100% passing
+- ✅ Unit tests for all core functions
+- ✅ Integration tests for full workflows
+- ✅ Fuzz tests for edge cases
+- ✅ Multi-season scenarios
+- ✅ Virtual season handling
+
+## Gas Optimization
+
+### Techniques Used
+- Transient storage for reentrancy guard (EIP-1153)
+- Custom errors instead of string reverts
+- Simplified points calculation (no division!)
+- Unchecked arithmetic where safe
+- Storage variable packing
+- Incremental aggregation (O(1))
+- Lazy snapshot system
+
+### Typical Gas Costs
+| Operation | Gas Cost |
+|-----------|----------|
+| Stake | ~170,000 |
+| Unstake | ~130,000 |
+| Claim Reward | ~180,000 |
+| Season Rollover | ~160,000 |
+| View Functions | Free |
+
 ## License
 
-MIT License
+MIT
+
+## Documentation
+
+For detailed documentation, see:
+- [Overview](overview/README.md)
+- [Architecture](overview/02-architecture.md)
+- [Concepts](overview/03-concepts.md)
+- [Contracts](overview/04-contracts.md)
+- [Workflows](overview/05-workflows.md)
+- [Technical Details](overview/06-technical.md)
+
+## Support
+
+For issues and questions:
+- GitHub Issues: [github.com/to-nexus/cross-staking](https://github.com/to-nexus/cross-staking)
+- Documentation: [docs](overview/)
+
+## Version History
+
+### v1.0.0
+- Initial release with timestamp-based seasons
+- Simplified points calculation: balance × time
+- Points display decimals: 18
+- O(1) aggregation algorithm
+- Virtual season support
+- Pre-deposit feature
+- Multi-token rewards per season
+- Gas optimizations
 
 ---
 
-**v1.0.0** - Ready for Audit
+**Built with ❤️ using Solidity 0.8.28 and Foundry**

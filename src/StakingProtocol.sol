@@ -11,6 +11,9 @@ import {AccessControlDefaultAdminRules} from
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
+
+import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
+
 /**
  * @title StakingProtocol
  * @notice Central factory contract for creating and managing project-specific staking pools
@@ -43,7 +46,6 @@ import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/Reentrancy
  *      - Project creators: Can fund their own projects
  *      - Project admins: Can modify their project's pool settings
  */
-
 contract StakingProtocol is IStakingProtocol, AccessControlDefaultAdminRules, ReentrancyGuardTransient {
     using SafeERC20 for IERC20;
 
@@ -178,11 +180,11 @@ contract StakingProtocol is IStakingProtocol, AccessControlDefaultAdminRules, Re
     /**
      * @notice Creates a new staking project with dedicated pools
      * @param projectName Unique project name
-     * @param seasonBlocks Number of blocks per season (0 = use default)
-     * @param firstSeasonStartBlock Block when season 1 starts
-     * @param poolEndBlock Block when pool ends (0 = infinite)
+     * @param seasonDuration Number of blocks per season (0 = use default)
+     * @param firstSeasonStartTime Block when season 1 starts
+     * @param poolEndTime Block when pool ends (0 = infinite)
      * @param projectAdmin Admin address for the project
-     * @param preDepositStartBlock Block when pre-deposit starts (0 = disabled)
+     * @param preDepositStartTime Block when pre-deposit starts (0 = disabled)
      * @return projectID Newly created project ID
      * @return stakingPool Address of deployed StakingPool
      * @return rewardPool Address of deployed RewardPool
@@ -203,27 +205,27 @@ contract StakingProtocol is IStakingProtocol, AccessControlDefaultAdminRules, Re
      */
     function createProject(
         string calldata projectName,
-        uint seasonBlocks,
-        uint firstSeasonStartBlock,
-        uint poolEndBlock,
+        uint seasonDuration,
+        uint firstSeasonStartTime,
+        uint poolEndTime,
         address projectAdmin,
-        uint preDepositStartBlock
+        uint preDepositStartTime
     ) external nonReentrant returns (uint projectID, address stakingPool, address rewardPool) {
         require(bytes(projectName).length != 0, StakingProtocolEmptyProjectName());
         require(projectIDByName[projectName] == 0, StakingProtocolProjectNameExists());
         require(projectAdmin != address(0), StakingProtocolCanNotZeroAddress());
 
-        if (seasonBlocks == 0) seasonBlocks = defaultSeasonBlocks;
-        require(seasonBlocks > 0, StakingProtocolInvalidSeasonBlocks());
+        if (seasonDuration == 0) seasonDuration = defaultSeasonBlocks;
+        require(seasonDuration > 0, StakingProtocolInvalidSeasonBlocks());
 
         projectCount++;
         projectID = projectCount;
+        bytes32 salt = keccak256(abi.encode(projectName));
 
         // Deploy both pools
-        stakingPool = _deployStakingPool(
-            projectID, projectName, seasonBlocks, firstSeasonStartBlock, poolEndBlock, preDepositStartBlock
-        );
-        rewardPool = _deployRewardPool(projectID, projectName, stakingPool);
+        stakingPool =
+            _deployStakingPool(projectID, salt, seasonDuration, firstSeasonStartTime, poolEndTime, preDepositStartTime);
+        rewardPool = _deployRewardPool(projectID, salt, stakingPool);
 
         // Connect pools
         _setupPools(stakingPool, rewardPool);
@@ -239,22 +241,22 @@ contract StakingProtocol is IStakingProtocol, AccessControlDefaultAdminRules, Re
     /**
      * @notice Deploys StakingPool using CREATE2 for deterministic address
      * @param projectID Project ID
-     * @param projectName Project name (used in salt)
-     * @param seasonBlocks Blocks per season
-     * @param firstSeasonStartBlock First season start block
-     * @param poolEndBlock Pool end block
-     * @param preDepositStartBlock Pre-deposit start block
+     * @param salt Salt for deterministic address
+     * @param seasonDuration Blocks per season
+     * @param firstSeasonStartTime First season start block
+     * @param poolEndTime Pool end block
+     * @param preDepositStartTime Pre-deposit start block
      * @return pool Deployed StakingPool address
-     * @dev Salt: keccak256(abi.encode(projectName, "StakingPool"))
+     * @dev Salt: keccak256(abi.encode(projectName))
      *      This makes addresses predictable based on project name
      */
     function _deployStakingPool(
         uint projectID,
-        string calldata projectName,
-        uint seasonBlocks,
-        uint firstSeasonStartBlock,
-        uint poolEndBlock,
-        uint preDepositStartBlock
+        bytes32 salt,
+        uint seasonDuration,
+        uint firstSeasonStartTime,
+        uint poolEndTime,
+        uint preDepositStartTime
     ) internal returns (address pool) {
         bytes memory code = _getStakingPoolCode();
         bytes memory bytecode = bytes.concat(
@@ -263,42 +265,30 @@ contract StakingProtocol is IStakingProtocol, AccessControlDefaultAdminRules, Re
                 projectID,
                 crossToken,
                 address(this),
-                seasonBlocks,
-                firstSeasonStartBlock,
-                poolEndBlock,
-                preDepositStartBlock
+                seasonDuration,
+                firstSeasonStartTime,
+                poolEndTime,
+                preDepositStartTime
             )
         );
-
-        bytes32 salt = keccak256(abi.encode(projectName, "StakingPool"));
-
-        assembly {
-            pool := create2(0, add(bytecode, 0x20), mload(bytecode), salt)
-        }
-        require(pool != address(0), StakingProtocolDeploymentFailed());
+        pool = Create2.deploy(0, salt, bytecode);
     }
 
     /**
      * @notice Deploys RewardPool using CREATE2 for deterministic address
-     * @param projectName Project name (used in salt)
+     * @param salt Salt for deterministic address
      * @param stakingPool Address of already-deployed StakingPool
      * @return pool Deployed RewardPool address
-     * @dev Salt: keccak256(abi.encode(projectName, "RewardPool"))
+     * @dev Salt: keccak256(abi.encode(projectName))
      *      This makes addresses predictable based on project name
      */
-    function _deployRewardPool(uint, /* projectID */ string calldata projectName, address stakingPool)
+    function _deployRewardPool(uint, /* projectID */ bytes32 salt, address stakingPool)
         internal
         returns (address pool)
     {
         bytes memory code = _getRewardPoolCode();
         bytes memory bytecode = bytes.concat(code, abi.encode(stakingPool, address(this)));
-
-        bytes32 salt = keccak256(abi.encode(projectName, "RewardPool"));
-
-        assembly {
-            pool := create2(0, add(bytecode, 0x20), mload(bytecode), salt)
-        }
-        require(pool != address(0), StakingProtocolDeploymentFailed());
+        pool = Create2.deploy(0, salt, bytecode);
     }
 
     /**
@@ -425,48 +415,29 @@ contract StakingProtocol is IStakingProtocol, AccessControlDefaultAdminRules, Re
      */
     function setDefaultSeasonBlocks(uint blocks) external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(blocks > 0, StakingProtocolInvalidSeasonBlocks());
-        uint oldValue = defaultSeasonBlocks;
+        emit DefaultSeasonBlocksUpdated(defaultSeasonBlocks, blocks);
         defaultSeasonBlocks = blocks;
-        emit DefaultSeasonBlocksUpdated(oldValue, blocks);
-    }
-
-    /**
-     * @notice Sets points time unit for a project's pool
-     * @param projectID Project ID
-     * @param timeUnit Time unit in seconds
-     */
-    function setPoolPointsTimeUnit(uint projectID, uint timeUnit) external onlyProjectAdminOrProtocolAdmin(projectID) {
-        IStakingPool(projects[projectID].stakingPool).setPointsTimeUnit(timeUnit);
-    }
-
-    /**
-     * @notice Sets block time for a project's pool
-     * @param projectID Project ID
-     * @param blockTime Block time in seconds
-     */
-    function setPoolBlockTime(uint projectID, uint blockTime) external onlyProjectAdminOrProtocolAdmin(projectID) {
-        IStakingPool(projects[projectID].stakingPool).setBlockTime(blockTime);
     }
 
     /**
      * @notice Sets next season start block for a project's pool
      * @param projectID Project ID
-     * @param startBlock Start block number
+     * @param startTime Start block number
      */
-    function setPoolNextSeasonStart(uint projectID, uint startBlock)
+    function setPoolNextSeasonStart(uint projectID, uint startTime)
         external
         onlyProjectAdminOrProtocolAdmin(projectID)
     {
-        IStakingPool(projects[projectID].stakingPool).setNextSeasonStart(startBlock);
+        IStakingPool(projects[projectID].stakingPool).setNextSeasonStart(startTime);
     }
 
     /**
      * @notice Sets pool end block for a project
      * @param projectID Project ID
-     * @param endBlock End block number (0 = infinite)
+     * @param endTime End block number (0 = infinite)
      */
-    function setPoolEndBlock(uint projectID, uint endBlock) external onlyProjectAdminOrProtocolAdmin(projectID) {
-        IStakingPool(projects[projectID].stakingPool).setPoolEndBlock(endBlock);
+    function setPoolEndBlock(uint projectID, uint endTime) external onlyProjectAdminOrProtocolAdmin(projectID) {
+        IStakingPool(projects[projectID].stakingPool).setPoolEndBlock(endTime);
     }
 
     /**
@@ -561,9 +532,9 @@ contract StakingProtocol is IStakingProtocol, AccessControlDefaultAdminRules, Re
      * @notice Computes StakingPool address before deployment (CREATE2 prediction)
      * @param projectName Project name
      * @param projectID Project ID
-     * @param seasonBlocks Season length in blocks
-     * @param firstSeasonStartBlock First season start block
-     * @param poolEndBlock Pool end block
+     * @param seasonDuration Season length in blocks
+     * @param firstSeasonStartTime First season start block
+     * @param poolEndTime Pool end block
      * @return Predicted StakingPool address
      * @dev Uses CREATE2 formula with deterministic salt
      *      Useful for frontends to display address before creation
@@ -571,13 +542,13 @@ contract StakingProtocol is IStakingProtocol, AccessControlDefaultAdminRules, Re
     function computeStakingPoolAddress(
         string calldata projectName,
         uint projectID,
-        uint seasonBlocks,
-        uint firstSeasonStartBlock,
-        uint poolEndBlock
+        uint seasonDuration,
+        uint firstSeasonStartTime,
+        uint poolEndTime
     ) external view returns (address) {
         bytes memory code = _getStakingPoolCode();
         bytes memory bytecode = bytes.concat(
-            code, abi.encode(projectID, crossToken, address(this), seasonBlocks, firstSeasonStartBlock, poolEndBlock)
+            code, abi.encode(projectID, crossToken, address(this), seasonDuration, firstSeasonStartTime, poolEndTime)
         );
 
         bytes32 salt = keccak256(abi.encode(projectName, "StakingPool"));

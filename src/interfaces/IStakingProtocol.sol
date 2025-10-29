@@ -54,11 +54,11 @@ interface IStakingProtocol {
     /**
      * @notice Creates a new staking project with dedicated StakingPool and RewardPool
      * @param projectName Unique name for the project
-     * @param seasonBlocks Number of blocks per season (0 = use default)
+     * @param seasonDuration Number of blocks per season (0 = use default)
      * @param firstSeasonStartBlock Block number when first season starts
-     * @param poolEndBlock Block number when pool ends (0 = infinite)
+     * @param poolEndTime Block number when pool ends (0 = infinite)
      * @param projectAdmin Address of the project administrator
-     * @param preDepositStartBlock Block number when pre-deposit starts (0 = disabled)
+     * @param preDepositStartTime Block number when pre-deposit starts (0 = disabled)
      * @return projectID The newly created project's ID
      * @return stakingPool Address of the deployed StakingPool
      * @return rewardPool Address of the deployed RewardPool
@@ -66,11 +66,11 @@ interface IStakingProtocol {
      */
     function createProject(
         string calldata projectName,
-        uint seasonBlocks,
+        uint seasonDuration,
         uint firstSeasonStartBlock,
-        uint poolEndBlock,
+        uint poolEndTime,
         address projectAdmin,
-        uint preDepositStartBlock
+        uint preDepositStartTime
     ) external returns (uint projectID, address stakingPool, address rewardPool);
 
     // ============ Admin Functions ============
@@ -91,16 +91,14 @@ interface IStakingProtocol {
     function setDefaultSeasonBlocks(uint blocks) external;
 
     /// @notice Sets the points calculation time unit for a project's pool
-    function setPoolPointsTimeUnit(uint projectID, uint timeUnit) external;
 
     /// @notice Sets the block time for a project's pool
-    function setPoolBlockTime(uint projectID, uint blockTime) external;
 
     /// @notice Sets the next season start block for a project's pool
-    function setPoolNextSeasonStart(uint projectID, uint startBlock) external;
+    function setPoolNextSeasonStart(uint projectID, uint startTime) external;
 
     /// @notice Sets the end block for a project's pool
-    function setPoolEndBlock(uint projectID, uint endBlock) external;
+    function setPoolEndBlock(uint projectID, uint endTime) external;
 
     /// @notice Changes the reward pool for a project (emergency use only)
     function setPoolRewardPool(uint projectID, IRewardPool rewardPool) external;

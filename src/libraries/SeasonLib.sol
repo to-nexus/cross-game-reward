@@ -8,72 +8,72 @@ pragma solidity 0.8.28;
  *      Used across StakingPool contracts to maintain consistent season logic
  */
 library SeasonLib {
-    /// @notice Thrown when season block parameters are invalid (endBlock <= startBlock)
-    error SeasonLibInvalidSeasonBlocks();
+    /// @notice Thrown when season time parameters are invalid (endTime <= startTime)
+    error SeasonLibInvalidSeasonTime();
 
     /**
      * @notice Checks if a season is currently active
-     * @param startBlock Season start block number
-     * @param endBlock Season end block number
+     * @param startTime Season start timestamp
+     * @param endTime Season end timestamp
      * @param isFinalized Whether the season has been finalized
-     * @return active True if season is active (current block is within range and not finalized)
+     * @return active True if season is active (current time is within range and not finalized)
      * @dev A season is active if:
      *      - Not finalized
-     *      - Current block >= startBlock
-     *      - Current block <= endBlock
+     *      - Current timestamp >= startTime
+     *      - Current timestamp <= endTime
      */
-    function isSeasonActive(uint startBlock, uint endBlock, bool isFinalized) internal view returns (bool active) {
+    function isSeasonActive(uint startTime, uint endTime, bool isFinalized) internal view returns (bool active) {
         if (isFinalized) return false;
-        return block.number >= startBlock && block.number <= endBlock;
+        return block.timestamp >= startTime && block.timestamp <= endTime;
     }
 
     /**
      * @notice Checks if a season has ended
-     * @param endBlock Season end block number
-     * @return ended True if current block is past the season end block
+     * @param endTime Season end timestamp
+     * @return ended True if current timestamp is past the season end time
      */
-    function isSeasonEnded(uint endBlock) internal view returns (bool ended) {
-        return block.number > endBlock;
+    function isSeasonEnded(uint endTime) internal view returns (bool ended) {
+        return block.timestamp > endTime;
     }
 
     /**
-     * @notice Validates that season block numbers are logically correct
-     * @param startBlock Season start block number
-     * @param endBlock Season end block number
-     * @dev Reverts with SeasonLibInvalidSeasonBlocks if endBlock <= startBlock
+     * @notice Validates that season timestamps are logically correct
+     * @param startTime Season start timestamp
+     * @param endTime Season end timestamp
+     * @dev Reverts with SeasonLibInvalidSeasonTime if endTime <= startTime
      */
-    function validateSeasonBlocks(uint startBlock, uint endBlock) internal pure {
-        require(endBlock > startBlock, SeasonLibInvalidSeasonBlocks());
+    function validateSeasonTime(uint startTime, uint endTime) internal pure {
+        require(endTime > startTime, SeasonLibInvalidSeasonTime());
     }
 
     /**
-     * @notice Checks if a specific block number falls within a season
-     * @param blockNumber Block number to check
-     * @param startBlock Season start block number
-     * @param endBlock Season end block number
-     * @return inSeason True if blockNumber is within [startBlock, endBlock] inclusive
+     * @notice Checks if a specific timestamp falls within a season
+     * @param timestamp Timestamp to check
+     * @param startTime Season start timestamp
+     * @param endTime Season end timestamp
+     * @return inSeason True if timestamp is within [startTime, endTime] inclusive
      */
-    function isBlockInSeason(uint blockNumber, uint startBlock, uint endBlock) internal pure returns (bool inSeason) {
-        return blockNumber >= startBlock && blockNumber <= endBlock;
+    function isTimeInSeason(uint timestamp, uint startTime, uint endTime) internal pure returns (bool inSeason) {
+        return timestamp >= startTime && timestamp <= endTime;
     }
 
     /**
-     * @notice Calculates the effective start block for point calculation
-     * @param userJoinBlock Block when user joined/staked
-     * @param seasonStartBlock Season start block
-     * @return effectiveStart The later of userJoinBlock and seasonStartBlock
+     * @notice Calculates the effective start time for point calculation
+     * @param userJoinTime Timestamp when user joined/staked
+     * @param seasonStartTime Season start timestamp
+     * @return effectiveStart The later of userJoinTime and seasonStartTime
      * @dev Used to ensure points are only calculated from when both:
      *      1. The season started
      *      2. The user had a position
      *
-     *      Example: If user staked at block 100 but season starts at block 200,
-     *      points should only accumulate from block 200 onwards.
+     *      Example: If user staked at time 100 but season starts at time 200,
+     *      points should only accumulate from time 200 onwards.
      */
-    function calculateEffectiveStart(uint userJoinBlock, uint seasonStartBlock)
+    function calculateEffectiveStart(uint userJoinTime, uint seasonStartTime)
         internal
         pure
         returns (uint effectiveStart)
     {
-        return userJoinBlock > seasonStartBlock ? userJoinBlock : seasonStartBlock;
+        return userJoinTime > seasonStartTime ? userJoinTime : seasonStartTime;
     }
 }

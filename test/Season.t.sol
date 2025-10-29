@@ -19,7 +19,7 @@ contract SeasonTest is BaseTest {
     function test_PointsResetAfterRollover() public {
         stakeFor(user1, 10 ether);
 
-        vm.roll(block.number + 50);
+        vm.warp(block.timestamp + 50);
         updatePointsFor(user1);
 
         uint pointsBefore = stakingPool.getUserPoints(user1);
@@ -53,37 +53,37 @@ contract SeasonTest is BaseTest {
         assertEq(stakingPool.currentSeason(), 1);
 
         // Check season info at season 1
-        (uint season, uint startBlock, uint endBlock, uint blocksElapsed) = stakingPool.getCurrentSeasonInfo();
-        uint season1Start = startBlock;
-        uint season1End = endBlock;
+        (uint season, uint startTime, uint endTime, uint timeElapsed) = stakingPool.getCurrentSeasonInfo();
+        uint season1Start = startTime;
+        uint season1End = endTime;
         assertEq(season, 1, "Should be season 1");
 
         console.log("Season 1 start:", season1Start);
         console.log("Season 1 end:", season1End);
-        console.log("SEASON_BLOCKS:", SEASON_BLOCKS);
+        console.log("SEASON_DURATION:", SEASON_DURATION);
 
         // Move to season 3 time without any transactions
         // Season 1 ends at season1End (e.g., 100)
         // Season 2: 101~200
         // Season 3: 201~300
         // We want to be in the middle of season 3, so 250
-        uint targetBlock = season1End + SEASON_BLOCKS + 50; // Season 2 (100 blocks) + 50 into season 3
-        vm.roll(targetBlock);
+        uint targetBlock = season1End + SEASON_DURATION + 50; // Season 2 (100 blocks) + 50 into season 3
+        vm.warp(targetBlock);
 
-        console.log("Current block after skip:", block.number);
-        console.log("Blocks since season 1 start:", block.number - season1Start);
+        console.log("Current block after skip:", block.timestamp);
+        console.log("Blocks since season 1 start:", block.timestamp - season1Start);
 
         // Now getCurrentSeasonInfo should return season 3, not season 1!
-        (season, startBlock, endBlock, blocksElapsed) = stakingPool.getCurrentSeasonInfo();
+        (season, startTime, endTime, timeElapsed) = stakingPool.getCurrentSeasonInfo();
 
         console.log("Returned season:", season);
-        console.log("Returned startBlock:", startBlock);
-        console.log("Returned endBlock:", endBlock);
-        console.log("Blocks elapsed:", blocksElapsed);
+        console.log("Returned startTime:", startTime);
+        console.log("Returned endTime:", endTime);
+        console.log("Blocks elapsed:", timeElapsed);
 
         assertEq(season, 3, "Should calculate season 3 based on current block");
-        assertEq(blocksElapsed, 49, "Should be 49 blocks into season 3 (0-indexed)");
-        assertLt(blocksElapsed, SEASON_BLOCKS, "Blocks elapsed should be less than season length");
+        assertEq(timeElapsed, 49, "Should be 49 blocks into season 3 (0-indexed)");
+        assertLt(timeElapsed, SEASON_DURATION, "Blocks elapsed should be less than season length");
 
         // Verify storage season is still 1 (not rolled over)
         assertEq(stakingPool.currentSeason(), 1, "Storage should still be season 1");
@@ -93,7 +93,7 @@ contract SeasonTest is BaseTest {
         stakeFor(user1, 10 ether);
         stakeFor(user2, 5 ether);
 
-        vm.roll(block.number + 50);
+        vm.warp(block.timestamp + 50);
         updatePointsFor(user1);
         updatePointsFor(user2);
 
@@ -110,7 +110,7 @@ contract SeasonTest is BaseTest {
         // Season 1
         assertEq(stakingPool.currentSeason(), 1);
 
-        vm.roll(block.number + 50);
+        vm.warp(block.timestamp + 50);
         updatePointsFor(user1);
         updatePointsFor(user2);
 
@@ -125,7 +125,7 @@ contract SeasonTest is BaseTest {
         uint snapshot1 = stakingPool.seasonTotalPointsSnapshot(1);
 
         // Season 2
-        vm.roll(block.number + 50);
+        vm.warp(block.timestamp + 50);
         updatePointsFor(user1);
         updatePointsFor(user2);
 
@@ -149,14 +149,14 @@ contract SeasonTest is BaseTest {
     }
 
     function test_SeasonInfo() public view {
-        (uint season, uint startBlock, uint endBlock, uint blocksElapsed) = stakingPool.getCurrentSeasonInfo();
+        (uint season, uint startTime, uint endTime, uint timeElapsed) = stakingPool.getCurrentSeasonInfo();
 
         assertEq(season, 1);
-        assertEq(startBlock, block.number);
-        uint seasonBlocks = stakingPool.seasonBlocks();
-        // endBlock은 inclusive이므로 startBlock + seasonBlocks - 1
-        assertEq(endBlock, block.number + seasonBlocks - 1);
-        assertEq(blocksElapsed, 0);
+        assertEq(startTime, block.timestamp);
+        uint seasonDuration = stakingPool.seasonDuration();
+        // endTime은 inclusive이므로 startTime + seasonDuration - 1
+        assertEq(endTime, block.timestamp + seasonDuration - 1);
+        assertEq(timeElapsed, 0);
     }
 
     function test_StakePreservedAcrossSeasons() public {
@@ -176,9 +176,9 @@ contract SeasonTest is BaseTest {
         (,, uint season1EndBlock,) = stakingPool.getCurrentSeasonInfo();
 
         // 5개 시즌이 완전히 지나가도록 블록 증가
-        // endBlock = startBlock + seasonBlocks - 1이므로
-        // 시즌 2~6이 완료되려면 season1EndBlock + SEASON_BLOCKS * 5까지 가야 함
-        vm.roll(season1EndBlock + SEASON_BLOCKS * 5);
+        // endTime = startTime + seasonDuration - 1이므로
+        // 시즌 2~6이 완료되려면 season1EndBlock + SEASON_DURATION * 5까지 가야 함
+        vm.warp(season1EndBlock + SEASON_DURATION * 5);
 
         // 대기 중인 시즌 개수 확인
         uint pending = protocol.getPendingSeasonRollovers(PROJECT_ID);
@@ -205,8 +205,8 @@ contract SeasonTest is BaseTest {
         (,, uint season1EndBlock,) = stakingPool.getCurrentSeasonInfo();
 
         // 120개 시즌이 완전히 지나가도록 블록 증가
-        // 시즌 2~121이 완료되려면 season1EndBlock + SEASON_BLOCKS * 120까지
-        vm.roll(season1EndBlock + SEASON_BLOCKS * 120);
+        // 시즌 2~121이 완료되려면 season1EndBlock + SEASON_DURATION * 120까지
+        vm.warp(season1EndBlock + SEASON_DURATION * 120);
 
         // Protocol을 통해 수동 롤오버 수행
         vm.startPrank(owner);

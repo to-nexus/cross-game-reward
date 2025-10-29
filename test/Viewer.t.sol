@@ -15,8 +15,8 @@ contract ViewerTest is BaseTest {
         assertEq(s1, 1);
 
         // Move to mid season 3 without causing storage rollover
-        uint targetBlock = end1 + SEASON_BLOCKS + 50; // into season 3
-        vm.roll(targetBlock);
+        uint targetBlock = end1 + SEASON_DURATION + 50; // into season 3
+        vm.warp(targetBlock);
 
         // Act: query via Viewer (virtual expected points)
         StakingViewer viewer = new StakingViewer(address(protocol));

@@ -146,7 +146,7 @@ forge test --match-contract FuzzTest
 #### test_SeasonInfo
 - **Purpose**: Season information query
 - **Validates**:
-  - startBlock, endBlock accuracy
+  - startTime, endTime accuracy
   - blocksElapsed calculation
 
 #### test_RevertWhen_RolloverBeforeSeasonEnd
@@ -294,7 +294,7 @@ forge test --match-contract FuzzTest
 #### test_DifferentSeasonLengths
 - **Purpose**: Different season lengths per project
 - **Validates**:
-  - seasonBlocks setting independence
+  - seasonDuration setting independence
   - Each operates correctly
 
 ---

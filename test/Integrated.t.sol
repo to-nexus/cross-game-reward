@@ -15,7 +15,7 @@ contract IntegratedTest is BaseTest {
         assertEq(balance1, 10 ether);
 
         // 2. 포인트 누적
-        vm.roll(block.number + 50);
+        vm.warp(block.timestamp + 50);
         updatePointsFor(user1);
         uint points1 = stakingPool.getUserPoints(user1);
         assertGt(points1, 0);
@@ -69,7 +69,7 @@ contract IntegratedTest is BaseTest {
         // 첫 번째 스테이킹
         stakeFor(user1, 10 ether);
 
-        vm.roll(block.number + 50);
+        vm.warp(block.timestamp + 50);
         updatePointsFor(user1);
 
         // 출금
@@ -158,7 +158,7 @@ contract IntegratedTest is BaseTest {
         // 새 프로젝트 생성 테스트
         vm.prank(owner);
         (uint projectId, address stakingPoolAddr, address rewardPoolAddr) =
-            protocol.createProject("NewProject", SEASON_BLOCKS * 2, block.number + 1, 0, owner, 0);
+            protocol.createProject("NewProject", SEASON_DURATION * 2, block.timestamp + 1, 0, owner, 0);
 
         assertEq(projectId, 2); // 첫 프로젝트는 setUp에서 생성됨
         assertNotEq(stakingPoolAddr, address(0));
@@ -169,7 +169,7 @@ contract IntegratedTest is BaseTest {
         // Protocol을 통해 새 프로젝트 생성하고 전체 플로우 테스트
         vm.prank(owner);
         (uint projectId, address stakingPoolAddr,) =
-            protocol.createProject("NewProject", SEASON_BLOCKS, block.number, 0, owner, 0);
+            protocol.createProject("NewProject", SEASON_DURATION, block.timestamp, 0, owner, 0);
 
         StakingPool newPool = StakingPool(stakingPoolAddr);
 

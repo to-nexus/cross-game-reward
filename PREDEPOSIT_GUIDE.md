@@ -10,7 +10,7 @@ Pre-deposit is a feature that allows users to stake before Season 1 begins. When
 - Pre-deposit applies **only to Season 1**
 - From Season 2 onwards, only regular staking is available
 
-### 2. Block-based Timing
+### 2. Time-based Timing
 ```
 Timeline:
 [preDepositStartBlock] -----> [firstSeasonStartBlock] -----> [Season 1 End]
@@ -31,9 +31,9 @@ Timeline:
 // When calling StakingProtocol.createProject()
 function createProject(
     string calldata projectName,
-    uint seasonBlocks,
+    uint seasonDuration,
     uint firstSeasonStartBlock,  // Season 1 start block
-    uint poolEndBlock,
+    uint poolEndTime,
     address projectAdmin,
     uint preDepositStartBlock    // Pre-deposit start block (0 to disable)
 ) external returns (uint projectID, address stakingPool, address rewardPool)
@@ -48,9 +48,9 @@ function createProject(
 
 protocol.createProject(
     "MyProject",
-    100,        // seasonBlocks: 100 blocks
+    100,        // seasonDuration: 100 blocks
     1200,       // firstSeasonStartBlock: Season 1 starts at block 1200
-    0,          // poolEndBlock: Infinite (0)
+    0,          // poolEndTime: Infinite (0)
     msg.sender, // projectAdmin
     1100        // preDepositStartBlock: Pre-deposit allowed from block 1100
 );
@@ -90,11 +90,11 @@ For pre-deposit stakes, `_calculateCurrentSeasonPoints()` uses:
 
 ```solidity
 uint lastUpdate = position.lastUpdateBlock;
-if (lastUpdate < current.startBlock && position.balance > 0) {
+if (lastUpdate < current.startTime && position.balance > 0) {
     // Pre-deposit case: Calculate from season start block
     return PointsLib.calculatePoints(
         position.balance, 
-        current.startBlock,  // ✅ From season start block
+        current.startTime,  // ✅ From season start block
         block.number, 
         blockTime, 
         pointsTimeUnit

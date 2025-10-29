@@ -59,6 +59,9 @@ interface IRewardPool {
     /// @notice Calculates expected reward for a user in a season
     function getExpectedReward(address user, uint season, address token) external view returns (uint);
 
+    /// @notice Checks if a user has claimed rewards for a specific season/token combination
+    function hasClaimedSeasonReward(address user, uint season, address token) external view returns (bool);
+
     // Season reward token information
 
     /// @notice Returns list of all reward tokens used in a season

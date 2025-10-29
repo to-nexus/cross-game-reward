@@ -52,12 +52,12 @@ StakingPool._ensureSeason()
   ↓
 Update season aggregation
   ├─ Calculate incremental points
-  ├─ aggregatedPoints += (totalStaked × elapsed blocks)
+  ├─ aggregatedPoints += (totalStaked × elapsed seconds)
   └─ lastAggregatedBlock = current block
   ↓
 Update user position
   ├─ Calculate user points since last update
-  ├─ userPoints += (balance × elapsed blocks)
+  ├─ userPoints += (balance × elapsed seconds)
   ├─ balance += staking amount
   └─ lastUpdateBlock = current block
   ↓
@@ -146,20 +146,20 @@ If ended, start rollover loop (max 50 seasons)
 For each ended season:
   ├─ Finalize season aggregation
   │   ├─ Calculate final points
-  │   ├─ aggregatedPoints += (totalStaked × remaining blocks)
+  │   ├─ aggregatedPoints += (totalStaked × remaining seconds)
   │   ├─ totalPoints = aggregatedPoints (cache)
   │   └─ isFinalized = true
   ├─ Notify addon of season end
   ├─ Increment currentSeason
   └─ Create next season
       ├─ seasonNumber = currentSeason
-      ├─ startBlock = previous endBlock + 1
-      ├─ endBlock = startBlock + seasonBlocks
+      ├─ startTime = previous endTime + 1
+      ├─ endTime = startTime + seasonDuration
       ├─ isFinalized = false
       ├─ totalPoints = 0
       ├─ aggregatedPoints = 0
       ├─ seasonTotalStaked = current totalStaked
-      └─ lastAggregatedBlock = startBlock
+      └─ lastAggregatedBlock = startTime
 ```
 
 ### Manual Rollover
@@ -271,7 +271,7 @@ Calculate current season points
   ├─ If user has balance:
   │   ├─ fromBlock = max(lastUpdateBlock, seasonStartBlock)
   │   ├─ toBlock = min(current block, seasonEndBlock)
-  │   └─ points = (balance × (toBlock - fromBlock) × blockTime) / timeUnit
+  │   └─ points = (balance × (toBlock - fromBlock) × removed (direct timestamp)) / timeUnit
   └─ Add to user's stored points
   ↓
 Return total points
@@ -288,7 +288,7 @@ If season is finalized:
   ├─ Return season.totalPoints (cached)
 Else (current season):
   ├─ Calculate from aggregation
-  ├─ aggregatedPoints + (totalStaked × elapsed blocks since last aggregation)
+  ├─ aggregatedPoints + (totalStaked × elapsed seconds since last aggregation)
   └─ Return calculated value
 ```
 
@@ -306,7 +306,7 @@ Else (current season):
 
 ```
 Timeline:
-[Current] < [preDepositStartBlock] < [firstSeasonStartBlock]
+[Current] < [preDepositStartTime] < [firstSeasonStartTime]
           |                         |
         Waiting                Pre-deposit period
 ```
@@ -319,9 +319,9 @@ User
 Calls stake() during pre-deposit period
   ↓
 currentSeason == 0 check passes
-  ├─ preDepositStartBlock > 0
-  ├─ current block >= preDepositStartBlock
-  └─ current block < firstSeasonStartBlock
+  ├─ preDepositStartTime > 0
+  ├─ current block >= preDepositStartTime
+  └─ current block < firstSeasonStartTime
   ↓
 Stake is allowed
   ↓
@@ -340,13 +340,13 @@ Next transaction triggers _ensureSeason()
   ↓
 First season created
   ├─ currentSeason = 1
-  ├─ startBlock = firstSeasonStartBlock
+  ├─ startTime = firstSeasonStartTime
   └─ Pre-deposit users automatically included
   ↓
 Points calculation for pre-deposit users
-  ├─ fromBlock = firstSeasonStartBlock (not lastUpdateBlock!)
+  ├─ fromBlock = firstSeasonStartTime (not lastUpdateBlock!)
   ├─ toBlock = current block
-  └─ points = (balance × (toBlock - fromBlock) × blockTime) / timeUnit
+  └─ points = (balance × (toBlock - fromBlock) × removed (direct timestamp)) / timeUnit
 ```
 
 **Key Points**:
@@ -451,7 +451,7 @@ RankingAddon updates Top 10 rankings
 ## Common Error Scenarios
 
 ### "No Active Season"
-- **Cause**: Staking before firstSeasonStartBlock
+- **Cause**: Staking before firstSeasonStartTime
 - **Solution**: Wait for season start or enable pre-deposit
 
 ### "Season Not Ended"

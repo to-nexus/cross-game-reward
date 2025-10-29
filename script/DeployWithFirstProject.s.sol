@@ -17,9 +17,9 @@ import {Script, console} from "forge-std/Script.sol";
  * @dev 환경변수:
  *      - WCROSS_ADDRESS: (선택) 기존 WCROSS 주소 (없으면 새로 배포)
  *      - PROJECT_NAME: 프로젝트 이름
- *      - SEASON_BLOCKS: 시즌 길이 (블록 수, 0이면 기본값)
- *      - FIRST_SEASON_START_BLOCK: 첫 시즌 시작 블록
- *      - PRE_DEPOSIT_START_BLOCK: 사전 디폴트 블록
+ *      - SEASON_DURATION: 시즌 길이 (초 단위, 0이면 기본값)
+ *      - FIRST_SEASON_START_TIME: 첫 시즌 시작 타임스탬프
+ *      - PRE_DEPOSIT_START_TIME: 사전 예치 시작 타임스탬프
  *      - PROJECT_ADMIN: (선택) 프로젝트 관리자 주소 (없으면 생성자)
  *      - REWARD_TOKEN: (선택) 리워드 토큰 주소
  *      - REWARD_AMOUNT: (선택) 리워드 수량 (wei 단위)
@@ -39,9 +39,9 @@ contract DeployWithFirstProjectScript is Script {
 
     struct ProjectConfig {
         string name;
-        uint seasonBlocks;
-        uint firstSeasonStartBlock;
-        uint preDepositStartBlock;
+        uint seasonDuration;
+        uint firstSeasonStartTime;
+        uint preDepositStartTime;
         address admin;
     }
 
@@ -50,27 +50,26 @@ contract DeployWithFirstProjectScript is Script {
         console.log("Deployer:", msg.sender);
 
         ProjectConfig memory config = _loadProjectConfig();
-        
+
         vm.startBroadcast();
-        
+
         DeployedContracts memory contracts = _deployContracts();
-        
-        (uint projectID, address stakingPool, address rewardPool) = 
-            _createFirstProject(contracts.protocol, config);
-        
+
+        (uint projectID, address stakingPool, address rewardPool) = _createFirstProject(contracts.protocol, config);
+
         _fundRewardIfConfigured(rewardPool);
-        
+
         vm.stopBroadcast();
-        
+
         _printSummary(contracts, projectID, stakingPool, rewardPool, config.admin);
     }
 
     function _loadProjectConfig() internal view returns (ProjectConfig memory config) {
         config.name = vm.envString("PROJECT_NAME");
-        config.seasonBlocks = vm.envUint("SEASON_BLOCKS");
-        config.firstSeasonStartBlock = vm.envUint("FIRST_SEASON_START_BLOCK");
-        config.preDepositStartBlock = vm.envUint("PRE_DEPOSIT_START_BLOCK");
-        
+        config.seasonDuration = vm.envUint("SEASON_DURATION");
+        config.firstSeasonStartTime = vm.envUint("FIRST_SEASON_START_TIME");
+        config.preDepositStartTime = vm.envUint("PRE_DEPOSIT_START_TIME");
+
         try vm.envAddress("PROJECT_ADMIN") returns (address admin) {
             config.admin = admin;
         } catch {
@@ -100,10 +99,7 @@ contract DeployWithFirstProjectScript is Script {
         // Protocol
         console.log("\n[3/5] Deploying StakingProtocol...");
         contracts.protocol = new StakingProtocol(
-            address(contracts.wcross),
-            address(contracts.stakingPoolCode),
-            address(contracts.rewardPoolCode),
-            msg.sender
+            address(contracts.wcross), address(contracts.stakingPoolCode), address(contracts.rewardPoolCode), msg.sender
         );
         console.log("StakingProtocol:", address(contracts.protocol));
 
@@ -129,18 +125,13 @@ contract DeployWithFirstProjectScript is Script {
     {
         console.log("\nCreating First Project...");
         console.log("Project Name:", config.name);
-        console.log("Season Blocks:", config.seasonBlocks);
-        console.log("Pre-deposit Start:", config.preDepositStartBlock);
-        console.log("First Season Start:", config.firstSeasonStartBlock);
+        console.log("Season Duration (seconds):", config.seasonDuration);
+        console.log("Pre-deposit Start Time:", config.preDepositStartTime);
+        console.log("First Season Start Time:", config.firstSeasonStartTime);
         console.log("Project Admin:", config.admin);
 
         (projectID, stakingPool, rewardPool) = protocol.createProject(
-            config.name,
-            config.seasonBlocks,
-            config.firstSeasonStartBlock,
-            0,
-            config.admin,
-            config.preDepositStartBlock
+            config.name, config.seasonDuration, config.firstSeasonStartTime, 0, config.admin, config.preDepositStartTime
         );
 
         console.log("Project ID:", projectID);

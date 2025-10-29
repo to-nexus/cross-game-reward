@@ -22,7 +22,7 @@ Where:
 
 **Scenario:**
 - Alice stakes 100 CROSS
-- 720 blocks elapse (1 sec/block = 720 seconds)
+- 720 seconds elapse (1 sec/block = 720 seconds)
 - Time unit: 3600 seconds (1 hour)
 
 **Calculation:**
@@ -64,18 +64,18 @@ Block 100: Alice stakes 100 CROSS
     lastUpdateBlock = 100
 
 Block 200: Points update
-    additional points = (100 × (200-100) × blockTime) / timeUnit
+    additional points = (100 × (200-100) × removed (direct timestamp)) / timeUnit
     total points = 0 + additional points
     lastUpdateBlock = 200
 
 Block 250: Alice stakes additional 50 CROSS
-    additional points = (100 × (250-200) × blockTime) / timeUnit
+    additional points = (100 × (250-200) × removed (direct timestamp)) / timeUnit
     total points += additional points
     balance = 100 + 50 = 150 CROSS
     lastUpdateBlock = 250
 
 Block 300: Points update
-    additional points = (150 × (300-250) × blockTime) / timeUnit
+    additional points = (150 × (300-250) × removed (direct timestamp)) / timeUnit
     total points += additional points
 ```
 
@@ -109,8 +109,8 @@ A season is the **fundamental cycle for reward distribution**. Rewards are distr
 ```solidity
 struct Season {
     uint seasonNumber;        // Season number (starts at 1)
-    uint startBlock;          // Start block
-    uint endBlock;            // End block
+    uint startTime;          // Start block
+    uint endTime;            // End block
     bool isFinalized;         // Finalization status
     uint totalPoints;         // Total points (cached after finalize)
     uint seasonTotalStaked;   // Total staked during season
@@ -135,16 +135,16 @@ struct Season {
 
 Waiting (Before Start):
 - currentSeason = 0 or previous season finalized
-- block.number < nextSeasonStartBlock
+- block.timestamp < nextSeasonStartTime
 
 Active:
 - isFinalized = false
-- startBlock ≤ block.number ≤ endBlock
+- startTime ≤ block.timestamp ≤ endTime
 - Staking/withdrawal allowed
 - Points accumulating
 
 Ended:
-- block.number > endBlock
+- block.timestamp > endTime
 - Not yet finalized = false
 - Auto-rollover on next transaction
 
@@ -162,7 +162,7 @@ Finalized:
 function _ensureSeason() internal {
     // When season 0
     if (currentSeason == 0) {
-        if (block.number >= nextSeasonStartBlock) {
+        if (block.timestamp >= nextSeasonStartTime) {
             _startFirstSeason();
         }
         return;
@@ -174,7 +174,7 @@ function _ensureSeason() internal {
     
     while (currentSeason > 0 && rolloversPerformed < maxRollovers) {
         Season storage current = seasons[currentSeason];
-        if (block.number <= current.endBlock) break;
+        if (block.timestamp <= current.endTime) break;
         
         _rolloverSeason();
         rolloversPerformed++;
@@ -244,7 +244,7 @@ Block 100:
 - Bob: 30 CROSS
 - Total staked: 80 CROSS
 
-Block 200 (100 blocks elapsed):
+Block 200 (100 seconds elapsed):
 Individual calculation:
 - Alice points: 50 × 100 = 5,000
 - Bob points: 30 × 100 = 3,000
@@ -280,11 +280,11 @@ function _updateSeasonAggregation(uint seasonNum) internal {
     Season storage season = seasons[seasonNum];
     
     // Skip if already up-to-date
-    if (season.lastAggregatedBlock >= block.number) return;
+    if (season.lastAggregatedBlock >= block.timestamp) return;
     
     // If total staked is 0, only update time
     if (season.seasonTotalStaked == 0) {
-        season.lastAggregatedBlock = block.number;
+        season.lastAggregatedBlock = block.timestamp;
         return;
     }
     
@@ -292,14 +292,14 @@ function _updateSeasonAggregation(uint seasonNum) internal {
     uint additionalPoints = PointsLib.calculatePoints(
         season.seasonTotalStaked,
         season.lastAggregatedBlock,
-        block.number,
-        blockTime,
+        block.timestamp,
+        removed (direct timestamp),
         pointsTimeUnit
     );
     
     // Add to aggregated points
     season.aggregatedPoints += additionalPoints;
-    season.lastAggregatedBlock = block.number;
+    season.lastAggregatedBlock = block.timestamp;
 }
 ```
 
@@ -409,7 +409,7 @@ Allows users to stake before Season 1 starts, with points accumulating from the 
 ### Timeline
 
 ```
-[preDepositStartBlock] → [firstSeasonStartBlock] → [Season 1 End]
+[preDepositStartTime] → [firstSeasonStartTime] → [Season 1 End]
      |                        |                         |
    Staking allowed      Points start accumulating   Season ends
 ```
@@ -418,7 +418,7 @@ Allows users to stake before Season 1 starts, with points accumulating from the 
 
 - **Season 1 exclusive**: Only applies to first season
 - **Points timing**: Accumulate from season start block, not staking block
-- **Optional**: Disabled if preDepositStartBlock = 0
+- **Optional**: Disabled if preDepositStartTime = 0
 - **Fairness**: All pre-deposit stakers start earning points simultaneously
 
 ### Implementation
@@ -429,11 +429,11 @@ function _stakeFor(address user, uint amount, address from) internal virtual {
     
     if (currentSeason == 0) {
         // First season not yet created
-        if (preDepositStartBlock > 0 && block.number >= preDepositStartBlock) {
+        if (preDepositStartTime > 0 && block.timestamp >= preDepositStartTime) {
             // ✅ Pre-deposit period: staking allowed
         } else {
             // ❌ No pre-deposit or before pre-deposit block
-            require(block.number >= nextSeasonStartBlock, StakingPoolBaseNoActiveSeason());
+            require(block.timestamp >= nextSeasonStartTime, StakingPoolBaseNoActiveSeason());
         }
     }
     // ... staking logic
@@ -443,13 +443,13 @@ function _stakeFor(address user, uint amount, address from) internal virtual {
 Points calculation for pre-deposit users:
 ```solidity
 uint lastUpdate = position.lastUpdateBlock;
-if (lastUpdate < current.startBlock && position.balance > 0) {
+if (lastUpdate < current.startTime && position.balance > 0) {
     // Pre-deposit case: calculate from season start block
     return PointsLib.calculatePoints(
         position.balance, 
-        current.startBlock,  // ✅ From season start block
-        block.number, 
-        blockTime, 
+        current.startTime,  // ✅ From season start block
+        block.timestamp, 
+        removed (direct timestamp), 
         pointsTimeUnit
     );
 }
