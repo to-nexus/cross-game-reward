@@ -11,43 +11,79 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 
 /**
  * @title CrossStakingRouter
- * @notice 사용자와 스테이킹 풀 사이의 인터페이스
- * @dev Native CROSS 래핑 및 스테이킹 처리
+ * @notice Interface between users and staking pools
+ * @dev Handles native CROSS wrapping and staking operations
  *
- * 주요 기능:
- * - Native CROSS를 WCROSS로 래핑 후 스테이킹
- * - WCROSS 언스테이킹 후 Native CROSS로 반환
- * - 일반 ERC20 토큰 스테이킹도 지원
+ * Key Features:
+ * - Wraps native CROSS to WCROSS and stakes
+ * - Unstakes WCROSS and returns native CROSS
+ * - Supports general ERC20 token staking
  */
 contract CrossStakingRouter is ICrossStakingRouter {
     using SafeERC20 for IERC20;
 
-    // ==================== 에러 ====================
+    // ==================== Errors ====================
 
+    /// @notice Thrown when an invalid amount is provided
     error CSRInvalidAmount();
+
+    /// @notice Thrown when a zero address is provided where it's not allowed
     error CSRCanNotZeroAddress();
+
+    /// @notice Thrown when a transfer fails
     error CSRTransferFailed();
+
+    /// @notice Thrown when accessing a non-existent pool
     error CSRPoolNotFound();
+
+    /// @notice Thrown when attempting native operations on a non-WCROSS pool
     error CSRNotWCROSSPool();
+
+    /// @notice Thrown when attempting to unstake with no active stake
     error CSRNoStakeFound();
 
-    // ==================== 이벤트 ====================
+    // ==================== Events ====================
 
+    /// @notice Emitted when a user stakes native CROSS
+    /// @param user Address of the user who staked
+    /// @param poolId ID of the pool staked into
+    /// @param amount Amount of native CROSS staked
     event StakedNative(address indexed user, uint indexed poolId, uint amount);
+
+    /// @notice Emitted when a user unstakes to native CROSS
+    /// @param user Address of the user who unstaked
+    /// @param poolId ID of the pool unstaked from
+    /// @param amount Amount of native CROSS unstaked
     event UnstakedNative(address indexed user, uint indexed poolId, uint amount);
+
+    /// @notice Emitted when a user stakes ERC20 tokens
+    /// @param user Address of the user who staked
+    /// @param poolId ID of the pool staked into
+    /// @param token Address of the staked token
+    /// @param amount Amount of tokens staked
     event StakedERC20(address indexed user, uint indexed poolId, address token, uint amount);
+
+    /// @notice Emitted when a user unstakes ERC20 tokens
+    /// @param user Address of the user who unstaked
+    /// @param poolId ID of the pool unstaked from
+    /// @param token Address of the unstaked token
+    /// @param amount Amount of tokens unstaked
     event UnstakedERC20(address indexed user, uint indexed poolId, address token, uint amount);
 
-    // ==================== 상태 변수 ====================
+    // ==================== State Variables ====================
 
-    /// @notice CrossStaking 컨트랙트
+    /// @notice CrossStaking contract reference
     CrossStaking public immutable crossStaking;
 
-    /// @notice WCROSS 토큰
+    /// @notice WCROSS token reference
     IWCROSS public immutable wcross;
 
-    // ==================== 생성자 ====================
+    // ==================== Constructor ====================
 
+    /**
+     * @notice Initializes the CrossStakingRouter
+     * @param _crossStaking Address of the CrossStaking contract
+     */
     constructor(address _crossStaking) {
         require(_crossStaking != address(0), CSRCanNotZeroAddress());
 
@@ -55,28 +91,30 @@ contract CrossStakingRouter is ICrossStakingRouter {
         wcross = IWCROSS(crossStaking.wcross());
     }
 
-    // ==================== 수신 함수 ====================
+    // ==================== Receive Function ====================
 
     /**
-     * @notice Native CROSS 수신
+     * @notice Receives native CROSS
+     * @dev Required for unstaking native CROSS
      */
     receive() external payable {}
 
-    // ==================== Native CROSS 스테이킹 ====================
+    // ==================== Native CROSS Staking ====================
 
     /**
-     * @notice Native CROSS 스테이킹
-     * @param poolId 스테이킹할 풀 ID
+     * @notice Stakes native CROSS tokens
+     * @dev Wraps native CROSS to WCROSS and stakes into the pool
+     * @param poolId ID of the pool to stake into
      */
     function stakeNative(uint poolId) external payable {
         require(msg.value > 0, CSRInvalidAmount());
 
         CrossStakingPool pool = _getPoolAndValidateWCROSS(poolId);
 
-        // Router가 Native CROSS를 WCROSS로 래핑
+        // Router wraps native CROSS to WCROSS
         wcross.deposit{value: msg.value}();
 
-        // Router가 풀에 msg.sender를 위해 스테이킹
+        // Router stakes to pool on behalf of msg.sender
         IERC20(address(wcross)).forceApprove(address(pool), msg.value);
         pool.stakeFor(msg.sender, msg.value);
 
@@ -84,8 +122,9 @@ contract CrossStakingRouter is ICrossStakingRouter {
     }
 
     /**
-     * @notice Native CROSS 언스테이킹
-     * @param poolId 언스테이킹할 풀 ID
+     * @notice Unstakes and returns native CROSS tokens
+     * @dev Unstakes WCROSS from pool and unwraps to native CROSS
+     * @param poolId ID of the pool to unstake from
      */
     function unstakeNative(uint poolId) external {
         CrossStakingPool pool = _getPoolAndValidateWCROSS(poolId);
@@ -93,29 +132,30 @@ contract CrossStakingRouter is ICrossStakingRouter {
         uint stakedAmount = pool.balances(msg.sender);
         require(stakedAmount > 0, CSRNoStakeFound());
 
-        // Pool에서 msg.sender 언스테이킹 (WCROSS + 보상이 msg.sender에게 전송됨)
+        // Unstake from pool (WCROSS + rewards sent to msg.sender)
         pool.unstakeFor(msg.sender);
 
-        // msg.sender의 WCROSS를 Router가 가져와서 언래핑
+        // Router takes msg.sender's WCROSS and unwraps
         uint wcrossBalance = IERC20(address(wcross)).balanceOf(msg.sender);
         require(wcrossBalance >= stakedAmount, CSRTransferFailed());
 
         IERC20(address(wcross)).safeTransferFrom(msg.sender, address(this), wcrossBalance);
         wcross.withdraw(wcrossBalance);
 
-        // Native CROSS를 msg.sender에게 전송
+        // Send native CROSS to msg.sender
         (bool success,) = msg.sender.call{value: wcrossBalance}("");
         require(success, CSRTransferFailed());
 
         emit UnstakedNative(msg.sender, poolId, stakedAmount);
     }
 
-    // ==================== ERC20 스테이킹 (일반 토큰) ====================
+    // ==================== ERC20 Staking (General Tokens) ====================
 
     /**
-     * @notice ERC20 토큰 스테이킹
-     * @param poolId 스테이킹할 풀 ID
-     * @param amount 스테이킹할 수량
+     * @notice Stakes ERC20 tokens
+     * @dev Transfers tokens from user and stakes into the pool
+     * @param poolId ID of the pool to stake into
+     * @param amount Amount of tokens to stake
      */
     function stakeERC20(uint poolId, uint amount) external {
         require(amount > 0, CSRInvalidAmount());
@@ -123,7 +163,7 @@ contract CrossStakingRouter is ICrossStakingRouter {
         CrossStakingPool pool = _getPool(poolId);
         IERC20 stakingToken = pool.stakingToken();
 
-        // 토큰을 msg.sender에서 가져와서 풀에 스테이킹
+        // Transfer tokens from msg.sender and stake to pool
         stakingToken.safeTransferFrom(msg.sender, address(this), amount);
         stakingToken.forceApprove(address(pool), amount);
         pool.stakeFor(msg.sender, amount);
@@ -132,8 +172,9 @@ contract CrossStakingRouter is ICrossStakingRouter {
     }
 
     /**
-     * @notice ERC20 토큰 언스테이킹
-     * @param poolId 언스테이킹할 풀 ID
+     * @notice Unstakes ERC20 tokens
+     * @dev Unstakes all staked tokens and claims rewards
+     * @param poolId ID of the pool to unstake from
      */
     function unstakeERC20(uint poolId) external {
         CrossStakingPool pool = _getPool(poolId);
@@ -141,20 +182,20 @@ contract CrossStakingRouter is ICrossStakingRouter {
         uint stakedAmount = pool.balances(msg.sender);
         require(stakedAmount > 0, CSRNoStakeFound());
 
-        // 언스테이킹 (보상 포함)
+        // Unstake (includes rewards)
         pool.unstakeFor(msg.sender);
 
         emit UnstakedERC20(msg.sender, poolId, address(pool.stakingToken()), stakedAmount);
     }
 
-    // ==================== View 함수 ====================
+    // ==================== View Functions ====================
 
     /**
-     * @notice 사용자의 스테이킹 정보 조회
-     * @param poolId 풀 ID
-     * @param user 사용자 주소
-     * @return stakedAmount 스테이킹된 수량
-     * @return pendingRewards 대기 중인 보상 배열
+     * @notice Retrieves user's staking information
+     * @param poolId ID of the pool
+     * @param user Address of the user
+     * @return stakedAmount Amount of tokens staked
+     * @return pendingRewards Array of pending rewards for each reward token
      */
     function getUserStakingInfo(uint poolId, address user)
         external
@@ -167,26 +208,30 @@ contract CrossStakingRouter is ICrossStakingRouter {
     }
 
     /**
-     * @notice 풀이 Native CROSS 풀인지 확인
-     * @param poolId 풀 ID
-     * @return WCROSS 풀 여부
+     * @notice Checks if a pool is a native CROSS pool
+     * @param poolId ID of the pool
+     * @return True if the pool uses WCROSS as staking token
      */
     function isNativePool(uint poolId) external view returns (bool) {
         CrossStakingPool pool = _getPool(poolId);
         return address(pool.stakingToken()) == address(wcross);
     }
 
-    // ==================== 내부 함수 ====================
+    // ==================== Internal Functions ====================
 
     /**
-     * @dev 풀 주소 조회 및 Pool 인스턴스 반환
+     * @dev Retrieves pool address and returns pool instance
+     * @param poolId ID of the pool
+     * @return Pool contract instance
      */
     function _getPool(uint poolId) internal view returns (CrossStakingPool) {
         return CrossStakingPool(crossStaking.getPoolAddress(poolId));
     }
 
     /**
-     * @dev 풀 조회 및 WCROSS 풀 검증
+     * @dev Retrieves pool and validates it's a WCROSS pool
+     * @param poolId ID of the pool
+     * @return pool Pool contract instance
      */
     function _getPoolAndValidateWCROSS(uint poolId) internal view returns (CrossStakingPool pool) {
         pool = _getPool(poolId);

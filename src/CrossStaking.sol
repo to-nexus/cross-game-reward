@@ -15,8 +15,9 @@ import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet
 
 /**
  * @title CrossStaking
- * @notice 여러 스테이킹 풀을 관리하는 팩토리 컨트랙트
- * @dev UUPS 업그레이더블, 풀 생성/관리, WCROSS 화이트리스트 관리
+ * @notice Factory contract for managing multiple staking pools
+ * @dev UUPS upgradeable pattern with pool creation and management capabilities
+ *      Serves as the central hub for all CrossStaking pools and WCROSS token
  */
 contract CrossStaking is Initializable, AccessControlDefaultAdminRulesUpgradeable, UUPSUpgradeable, ICrossStaking {
     using EnumerableSet for EnumerableSet.AddressSet;
@@ -24,47 +25,65 @@ contract CrossStaking is Initializable, AccessControlDefaultAdminRulesUpgradeabl
 
     // ==================== Roles ====================
 
-    bytes32 public constant POOL_MANAGER_ROLE = keccak256("POOL_MANAGER_ROLE");
+    /// @notice Role identifier for pool management operations
+    bytes32 public constant MANAGER_ROLE = keccak256("MANAGER_ROLE");
 
-    // ==================== 에러 ====================
+    // ==================== Errors ====================
 
+    /// @notice Thrown when attempting to access a non-existent pool
     error CSPoolNotFound();
+
+    /// @notice Thrown when a zero address is provided where it's not allowed
     error CSCanNotZeroAddress();
 
-    // ==================== 이벤트 ====================
+    // ==================== Events ====================
 
+    /// @notice Emitted when a new staking pool is created
+    /// @param poolId The ID of the newly created pool
+    /// @param poolAddress The address of the newly created pool
+    /// @param stakingToken The token that can be staked in this pool
     event PoolCreated(uint indexed poolId, address indexed poolAddress, address indexed stakingToken);
+
+    /// @notice Emitted when the pool implementation is updated
+    /// @param implementation The new implementation address
     event PoolImplementationSet(address indexed implementation);
+
+    /// @notice Emitted when a pool's active status changes
+    /// @param poolId The ID of the pool
+    /// @param active The new active status
     event PoolStatusChanged(uint indexed poolId, bool active);
+
+    /// @notice Emitted when the router address is set
+    /// @param router The new router address
     event RouterSet(address indexed router);
 
-    // ==================== 상태 변수 ====================
+    // ==================== State Variables ====================
 
-    /// @notice WCROSS 토큰 주소
+    /// @notice Address of the WCROSS token contract
     address public wcross;
 
-    /// @notice Router 주소
+    /// @notice Address of the router contract for staking operations
     address public router;
 
-    /// @notice CrossStakingPool implementation (UUPS 프록시용)
+    /// @notice Implementation address for CrossStakingPool (UUPS proxy pattern)
     address public poolImplementation;
 
-    /// @notice 다음 풀 ID
+    /// @notice Next pool ID to be assigned
     uint public nextPoolId;
 
-    /// @notice 풀 ID => 풀 정보
+    /// @notice Mapping from pool ID to pool information
     mapping(uint => PoolInfo) public pools;
 
-    /// @notice 풀 주소 => 풀 ID
+    /// @notice Mapping from pool address to pool ID
     mapping(address => uint) public poolIds;
 
-    /// @notice 스테이킹 토큰 => 풀 ID 목록
+    /// @notice Mapping from staking token to set of pool IDs
     mapping(address => EnumerableSet.UintSet) private _poolsByStakingToken;
 
-    /// @notice 모든 풀 ID 목록
+    /// @notice Set of all pool IDs
     EnumerableSet.UintSet private _allPoolIds;
 
-    // ==================== 생성자 ====================
+    // ==================== Constructor ====================
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -72,10 +91,11 @@ contract CrossStaking is Initializable, AccessControlDefaultAdminRulesUpgradeabl
     }
 
     /**
-     * @notice 컨트랙트 초기화
-     * @param _poolImplementation CrossStakingPool implementation 주소
-     * @param _admin 관리자 주소
-     * @param _initialDelay 관리자 변경 딜레이 (초)
+     * @notice Initializes the CrossStaking contract
+     * @dev Deploys WCROSS token and sets up initial roles
+     * @param _poolImplementation Address of the CrossStakingPool implementation contract
+     * @param _admin Address of the initial admin
+     * @param _initialDelay Delay in seconds for admin role transfers
      */
     function initialize(address _poolImplementation, address _admin, uint48 _initialDelay) external initializer {
         require(_poolImplementation != address(0), CSCanNotZeroAddress());
@@ -88,41 +108,38 @@ contract CrossStaking is Initializable, AccessControlDefaultAdminRulesUpgradeabl
         wcross = address(new WCROSS());
         nextPoolId = 1;
 
-        // 기본 역할 부여
-        _grantRole(POOL_MANAGER_ROLE, _admin);
+        // Grant default roles
+        _grantRole(MANAGER_ROLE, _admin);
     }
 
-    // ==================== 풀 관리 함수 ====================
+    // ==================== Pool Management Functions ====================
 
     /**
-     * @notice 새 스테이킹 풀 생성
-     * @param stakingToken 스테이킹 토큰 주소
-     * @param initialDelay 풀 관리자 변경 딜레이
-     * @return poolId 생성된 풀 ID
-     * @return poolAddress 생성된 풀 주소
-     * @dev 풀의 admin은 CrossStaking 자신으로 설정됨
+     * @notice Creates a new staking pool
+     * @dev Deploys a new UUPS proxy pointing to the pool implementation
+     *      Pool's DEFAULT_ADMIN_ROLE references CrossStaking's DEFAULT_ADMIN_ROLE
+     *      CrossStaking receives STAKING_ROOT_ROLE for pool management
+     * @param stakingToken Address of the token to be staked in the pool
+     * @return poolId ID of the newly created pool
+     * @return poolAddress Address of the newly created pool
      */
-    function createPool(address stakingToken, uint48 initialDelay)
+    function createPool(address stakingToken)
         external
-        onlyRole(POOL_MANAGER_ROLE)
+        onlyRole(MANAGER_ROLE)
         returns (uint poolId, address poolAddress)
     {
         require(stakingToken != address(0), CSCanNotZeroAddress());
 
         poolId = nextPoolId++;
 
-        // UUPS 프록시로 풀 배포 (admin = CrossStaking 자신)
-        bytes memory initData = abi.encodeWithSelector(
-            CrossStakingPool.initialize.selector,
-            IERC20(stakingToken),
-            address(this), // CrossStaking이 풀의 admin
-            initialDelay
-        );
+        // Deploy pool as UUPS proxy
+        // Pool will set CrossStaking as msg.sender and get owner from defaultAdmin()
+        bytes memory initData = abi.encodeWithSelector(CrossStakingPool.initialize.selector, IERC20(stakingToken));
 
         ERC1967Proxy proxy = new ERC1967Proxy(poolImplementation, initData);
         poolAddress = address(proxy);
 
-        // 풀 정보 저장
+        // Store pool information
         pools[poolId] = PoolInfo({
             poolId: poolId,
             poolAddress: poolAddress,
@@ -139,12 +156,12 @@ contract CrossStaking is Initializable, AccessControlDefaultAdminRulesUpgradeabl
     }
 
     /**
-     * @notice 풀에 보상 토큰 추가
-     * @param poolId 풀 ID
-     * @param rewardToken 보상 토큰 주소
-     * @dev CrossStaking이 풀의 admin이므로 직접 호출 가능
+     * @notice Adds a reward token to a pool
+     * @dev Can be called directly since CrossStaking has STAKING_ROOT_ROLE
+     * @param poolId ID of the pool
+     * @param rewardToken Address of the reward token to add
      */
-    function addRewardToken(uint poolId, address rewardToken) external onlyRole(POOL_MANAGER_ROLE) {
+    function addRewardToken(uint poolId, address rewardToken) external onlyRole(MANAGER_ROLE) {
         require(pools[poolId].poolAddress != address(0), CSPoolNotFound());
 
         CrossStakingPool pool = CrossStakingPool(pools[poolId].poolAddress);
@@ -152,16 +169,30 @@ contract CrossStaking is Initializable, AccessControlDefaultAdminRulesUpgradeabl
     }
 
     /**
-     * @notice 풀 활성화/비활성화
-     * @param poolId 풀 ID
-     * @param active 활성화 상태
+     * @notice Removes a reward token from a pool
+     * @dev Can be called directly since CrossStaking has STAKING_ROOT_ROLE
+     * @param poolId ID of the pool
+     * @param rewardToken Address of the reward token to remove
      */
-    function setPoolActive(uint poolId, bool active) external onlyRole(POOL_MANAGER_ROLE) {
+    function removeRewardToken(uint poolId, address rewardToken) external onlyRole(MANAGER_ROLE) {
+        require(pools[poolId].poolAddress != address(0), CSPoolNotFound());
+
+        CrossStakingPool pool = CrossStakingPool(pools[poolId].poolAddress);
+        pool.removeRewardToken(rewardToken);
+    }
+
+    /**
+     * @notice Activates or deactivates a pool
+     * @dev Pauses/unpauses the actual pool contract
+     * @param poolId ID of the pool
+     * @param active New active status
+     */
+    function setPoolActive(uint poolId, bool active) external onlyRole(MANAGER_ROLE) {
         require(pools[poolId].poolAddress != address(0), CSPoolNotFound());
 
         pools[poolId].active = active;
 
-        // 실제 풀 컨트랙트 pause/unpause
+        // Pause/unpause the actual pool contract
         CrossStakingPool pool = CrossStakingPool(pools[poolId].poolAddress);
         if (active) pool.unpause();
         else pool.pause();
@@ -170,9 +201,9 @@ contract CrossStaking is Initializable, AccessControlDefaultAdminRulesUpgradeabl
     }
 
     /**
-     * @notice Pool Implementation 업데이트
-     * @param newImplementation 새 implementation 주소
-     * @dev 기존 풀은 영향 없음, 새로 생성되는 풀만 적용
+     * @notice Updates the pool implementation address
+     * @dev Only affects newly created pools, existing pools remain unchanged
+     * @param newImplementation Address of the new implementation contract
      */
     function setPoolImplementation(address newImplementation) external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(newImplementation != address(0), CSCanNotZeroAddress());
@@ -180,18 +211,22 @@ contract CrossStaking is Initializable, AccessControlDefaultAdminRulesUpgradeabl
         emit PoolImplementationSet(newImplementation);
     }
 
+    /**
+     * @notice Sets the router address for WCROSS operations
+     * @param _router Address of the router contract
+     */
     function setRouter(address _router) external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(_router != address(0), CSCanNotZeroAddress());
         router = _router;
         emit RouterSet(_router);
     }
 
-    // ==================== View 함수 ====================
+    // ==================== View Functions ====================
 
     /**
-     * @notice 풀 정보 조회
-     * @param poolId 풀 ID
-     * @return 풀 정보
+     * @notice Retrieves pool information by pool ID
+     * @param poolId ID of the pool
+     * @return Pool information struct
      */
     function getPoolInfo(uint poolId) external view returns (PoolInfo memory) {
         require(pools[poolId].poolAddress != address(0), CSPoolNotFound());
@@ -199,62 +234,62 @@ contract CrossStaking is Initializable, AccessControlDefaultAdminRulesUpgradeabl
     }
 
     /**
-     * @notice 인덱스로 풀 ID 조회
-     * @param index 인덱스
-     * @return poolId 풀 ID
+     * @notice Retrieves pool ID by index
+     * @param index Index in the pool list
+     * @return poolId Pool ID at the specified index
      */
     function poolAt(uint index) external view returns (uint) {
         return _allPoolIds.at(index);
     }
 
     /**
-     * @notice 특정 스테이킹 토큰의 풀 개수 조회
-     * @param stakingToken 스테이킹 토큰 주소
-     * @return 풀 개수
+     * @notice Retrieves the number of pools for a specific staking token
+     * @param stakingToken Address of the staking token
+     * @return Number of pools using this staking token
      */
     function getPoolCountByStakingToken(address stakingToken) external view returns (uint) {
         return _poolsByStakingToken[stakingToken].length();
     }
 
     /**
-     * @notice 특정 스테이킹 토큰의 풀 ID 목록 조회
-     * @param stakingToken 스테이킹 토큰 주소
-     * @return 풀 ID 배열
+     * @notice Retrieves all pool IDs for a specific staking token
+     * @param stakingToken Address of the staking token
+     * @return Array of pool IDs
      */
     function getPoolIdsByStakingToken(address stakingToken) external view returns (uint[] memory) {
         return _poolsByStakingToken[stakingToken].values();
     }
 
     /**
-     * @notice 특정 스테이킹 토큰의 인덱스로 풀 ID 조회
-     * @param stakingToken 스테이킹 토큰 주소
-     * @param index 인덱스
-     * @return poolId 풀 ID
+     * @notice Retrieves pool ID by staking token and index
+     * @param stakingToken Address of the staking token
+     * @param index Index in the staking token's pool list
+     * @return poolId Pool ID at the specified index
      */
     function poolByStakingTokenAt(address stakingToken, uint index) external view returns (uint) {
         return _poolsByStakingToken[stakingToken].at(index);
     }
 
     /**
-     * @notice 전체 풀 개수 조회
-     * @return 전체 풀 개수
+     * @notice Retrieves the total number of pools
+     * @return Total pool count
      */
     function getTotalPoolCount() external view returns (uint) {
         return _allPoolIds.length();
     }
 
     /**
-     * @notice 모든 풀 ID 조회
-     * @return 풀 ID 배열
+     * @notice Retrieves all pool IDs
+     * @return Array of all pool IDs
      */
     function getAllPoolIds() external view returns (uint[] memory) {
         return _allPoolIds.values();
     }
 
     /**
-     * @notice 풀 ID로 풀 주소 조회
-     * @param poolId 풀 ID
-     * @return 풀 주소
+     * @notice Retrieves pool address by pool ID
+     * @param poolId ID of the pool
+     * @return Address of the pool contract
      */
     function getPoolAddress(uint poolId) external view returns (address) {
         require(pools[poolId].poolAddress != address(0), CSPoolNotFound());
@@ -262,9 +297,9 @@ contract CrossStaking is Initializable, AccessControlDefaultAdminRulesUpgradeabl
     }
 
     /**
-     * @notice 풀 주소로 풀 ID 조회
-     * @param poolAddress 풀 주소
-     * @return 풀 ID
+     * @notice Retrieves pool ID by pool address
+     * @param poolAddress Address of the pool contract
+     * @return Pool ID
      */
     function getPoolId(address poolAddress) external view returns (uint) {
         uint poolId = poolIds[poolAddress];
@@ -273,8 +308,8 @@ contract CrossStaking is Initializable, AccessControlDefaultAdminRulesUpgradeabl
     }
 
     /**
-     * @notice 활성 풀만 필터링하여 조회
-     * @return 활성 풀 ID 배열
+     * @notice Retrieves only active pool IDs
+     * @return Array of active pool IDs
      */
     function getActivePoolIds() external view returns (uint[] memory) {
         uint totalCount = _allPoolIds.length();
@@ -301,16 +336,17 @@ contract CrossStaking is Initializable, AccessControlDefaultAdminRulesUpgradeabl
     // ==================== UUPS ====================
 
     /**
-     * @dev 업그레이드 권한 체크
+     * @dev Authorizes contract upgrades
+     * @param newImplementation Address of the new implementation
      */
     function _authorizeUpgrade(address newImplementation) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
     // ==================== Storage Gap ====================
 
     /**
-     * @dev 향후 업그레이드를 위한 storage gap
-     * 현재 사용: 8 slots
-     * Gap: 50 - 8 = 42 slots
+     * @dev Storage gap for future upgrades
+     *      Currently used: 8 slots
+     *      Gap: 50 - 8 = 42 slots
      */
     uint[42] private __gap;
 }

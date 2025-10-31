@@ -58,8 +58,8 @@ contract CrossStakingRouterTest is Test {
         stakingToken = new MockERC20("Staking", "STK");
 
         // Create pools
-        (nativePoolId, nativePoolAddress) = crossStaking.createPool(address(wcross), 2 days);
-        (erc20PoolId, erc20PoolAddress) = crossStaking.createPool(address(stakingToken), 2 days);
+        (nativePoolId, nativePoolAddress) = crossStaking.createPool(address(wcross));
+        (erc20PoolId, erc20PoolAddress) = crossStaking.createPool(address(stakingToken));
 
         // Add reward tokens
         crossStaking.addRewardToken(nativePoolId, address(rewardToken));

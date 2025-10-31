@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
+import "../../src/CrossStaking.sol";
 import "../../src/CrossStakingPool.sol";
 import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
@@ -26,12 +27,13 @@ contract MockERC20 is ERC20 {
  * @dev setUp, helper 함수 제공
  */
 abstract contract CrossStakingPoolBase is Test {
+    CrossStaking public crossStaking;
     CrossStakingPool public pool;
     MockERC20 public crossToken;
     MockERC20 public rewardToken1;
     MockERC20 public rewardToken2;
 
-    address public owner = address(1);
+    address public owner = address(this); // Test contract is the owner
     address public user1 = address(2);
     address public user2 = address(3);
     address public user3 = address(4);
@@ -42,18 +44,23 @@ abstract contract CrossStakingPoolBase is Test {
         rewardToken1 = new MockERC20("Reward Token 1", "RWD1");
         rewardToken2 = new MockERC20("Reward Token 2", "RWD2");
 
-        // 스테이킹 풀 배포 (UUPS 패턴)
-        CrossStakingPool implementation = new CrossStakingPool();
+        // CrossStaking 배포 (UUPS 패턴)
+        CrossStakingPool poolImplementation = new CrossStakingPool();
+        CrossStaking stakingImplementation = new CrossStaking();
 
         bytes memory initData = abi.encodeWithSelector(
-            CrossStakingPool.initialize.selector,
-            IERC20(address(crossToken)),
+            CrossStaking.initialize.selector,
+            address(poolImplementation),
             owner,
-            2 days // initialDelay
+            2 days // initialDelay for CrossStaking admin
         );
 
-        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
-        pool = CrossStakingPool(address(proxy));
+        ERC1967Proxy proxy = new ERC1967Proxy(address(stakingImplementation), initData);
+        crossStaking = CrossStaking(address(proxy));
+
+        // 풀 생성 (CrossStaking을 통해)
+        (uint poolId, address poolAddress) = crossStaking.createPool(address(crossToken));
+        pool = CrossStakingPool(poolAddress);
 
         // 사용자들에게 CROSS 토큰 전송
         crossToken.transfer(user1, 1000 ether);
@@ -64,11 +71,9 @@ abstract contract CrossStakingPoolBase is Test {
         rewardToken1.transfer(owner, 100000 ether);
         rewardToken2.transfer(owner, 100000 ether);
 
-        // 풀에 보상 토큰 등록
-        vm.startPrank(owner);
-        pool.addRewardToken(address(rewardToken1));
-        pool.addRewardToken(address(rewardToken2));
-        vm.stopPrank();
+        // 풀에 보상 토큰 등록 (CrossStaking을 통해)
+        crossStaking.addRewardToken(poolId, address(rewardToken1));
+        crossStaking.addRewardToken(poolId, address(rewardToken2));
     }
 
     // ==================== Helper 함수 ====================

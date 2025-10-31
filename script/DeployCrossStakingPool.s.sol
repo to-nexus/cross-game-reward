@@ -98,13 +98,13 @@ contract DeployWithRewards is Script {
         // 직접 transfer하면 _syncReward가 자동 감지
         for (uint i = 0; i < rewardTokens.length; i++) {
             if (initialRewardAmounts[i] > 0) {
-            IERC20 rewardToken = IERC20(rewardTokens[i]);
+                IERC20 rewardToken = IERC20(rewardTokens[i]);
 
                 // 직접 transfer
                 rewardToken.transfer(address(pool), initialRewardAmounts[i]);
 
                 console.log("Transferred reward:", rewardTokens[i]);
-            console.log("  Amount:", initialRewardAmounts[i]);
+                console.log("  Amount:", initialRewardAmounts[i]);
             }
         }
 

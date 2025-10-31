@@ -145,7 +145,7 @@ contract WCROSSTest is Test {
         address poolAddress;
 
         // Create pool
-        (poolId, poolAddress) = crossStaking.createPool(address(wcross), 2 days);
+        (poolId, poolAddress) = crossStaking.createPool(address(wcross));
 
         // User stakes via router
         vm.startPrank(user1);
@@ -160,7 +160,7 @@ contract WCROSSTest is Test {
 
     function testWithdrawForIntegration() public {
         // Setup: stake first
-        (uint poolId, address poolAddress) = crossStaking.createPool(address(wcross), 2 days);
+        (uint poolId, address poolAddress) = crossStaking.createPool(address(wcross));
 
         vm.startPrank(user1);
         wcross.approve(address(router), type(uint).max);

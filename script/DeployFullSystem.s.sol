@@ -108,7 +108,7 @@ contract DeployWithPools is Script {
         crossStaking.setRouter(address(router));
 
         // 6. Native CROSS 풀 생성
-        (uint nativePoolId, address nativePoolAddress) = crossStaking.createPool(address(wcross), POOL_DELAY);
+        (uint nativePoolId, address nativePoolAddress) = crossStaking.createPool(address(wcross));
 
         console.log("\n=== Full Deployment Summary ===");
         console.log("WCROSS:", address(wcross));

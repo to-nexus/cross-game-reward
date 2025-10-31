@@ -324,9 +324,7 @@ contract CrossStakingPoolSecurityTest is CrossStakingPoolBase {
     // ==================== 보상 토큰 관리 검증 ====================
 
     function testRewardTokenIndexConsistency() public {
-        vm.startPrank(owner);
-        pool.addRewardToken(address(rewardToken3));
-        vm.stopPrank();
+        crossStaking.addRewardToken(1, address(rewardToken3));
 
         // 주소 확인
         assertEq(pool.rewardTokenAt(0), address(rewardToken1), "RewardToken1 index");

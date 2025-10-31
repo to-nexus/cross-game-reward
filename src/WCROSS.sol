@@ -7,44 +7,56 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 /**
  * @title WCROSS
  * @notice Wrapped CROSS Token (Native Token Wrapper)
- * @dev WETH9 스타일의 래핑 토큰
+ * @dev WETH9-style wrapping token with router-only access control
  *
- * 기능:
- * - 누구나 deposit/withdraw 가능
- * - CrossStaking이 화이트리스트 관리자로 등록됨
- * - 화이트리스트된 주소만 depositFor/withdrawFor 가능
+ * Features:
+ * - Only the designated router can deposit/withdraw
+ * - Native CROSS is automatically wrapped when received
+ * - Maintains 1:1 parity with native CROSS
  */
 contract WCROSS is ERC20 {
-    // ==================== 에러 ====================
+    // ==================== Errors ====================
 
+    /// @notice Thrown when caller is not the authorized router
     error WCROSSUnauthorized();
+
+    /// @notice Thrown when attempting to deposit/withdraw zero or insufficient amount
     error WCROSSInsufficientBalance();
+
+    /// @notice Thrown when native CROSS transfer fails
     error WCROSSTransferFailed();
 
-    // ==================== 상태 변수 ====================
+    // ==================== State Variables ====================
 
-    /// @notice CrossStaking 컨트랙트
+    /// @notice CrossStaking contract reference for router validation
     CrossStaking public staking;
 
-    // ==================== 생성자 ====================
+    // ==================== Constructor ====================
 
+    /**
+     * @notice Initializes the WCROSS token
+     * @dev Sets the deployer (CrossStaking) as the staking contract reference
+     */
     constructor() ERC20("Wrapped CROSS", "WCROSS") {
         staking = CrossStaking(msg.sender);
     }
 
-    // ==================== 수신 함수 ====================
+    // ==================== Receive Function ====================
 
     /**
-     * @notice Native CROSS 수신 시 자동 래핑
+     * @notice Automatically wraps native CROSS when received
+     * @dev Calls deposit() to mint equivalent WCROSS
      */
     receive() external payable {
         deposit();
     }
 
-    // ==================== 사용자 함수 ====================
+    // ==================== Public Functions ====================
 
     /**
-     * @notice CROSS를 WCROSS로 래핑
+     * @notice Wraps native CROSS to WCROSS
+     * @dev Only callable by the authorized router
+     *      Mints WCROSS tokens equivalent to the native CROSS sent
      */
     function deposit() public payable {
         require(msg.sender == staking.router(), WCROSSUnauthorized());
@@ -53,8 +65,10 @@ contract WCROSS is ERC20 {
     }
 
     /**
-     * @notice WCROSS를 CROSS로 언래핑
-     * @param amount 언래핑할 수량
+     * @notice Unwraps WCROSS to native CROSS
+     * @dev Only callable by the authorized router
+     *      Burns WCROSS tokens and returns equivalent native CROSS
+     * @param amount Amount of WCROSS to unwrap
      */
     function withdraw(uint amount) public {
         require(msg.sender == staking.router(), WCROSSUnauthorized());
