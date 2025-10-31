@@ -1,14 +1,20 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import "@openzeppelin/contracts-upgradeable/access/extensions/AccessControlDefaultAdminRulesUpgradeable.sol";
+import {AccessControlDefaultAdminRulesUpgradeable} from
+    "@openzeppelin/contracts-upgradeable/access/extensions/AccessControlDefaultAdminRulesUpgradeable.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
-import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardTransientUpgradeable.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+import {ReentrancyGuardTransientUpgradeable} from
+    "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardTransientUpgradeable.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
+
+import {ICrossStaking} from "./interfaces/ICrossStaking.sol";
+import {ICrossStakingPool} from "./interfaces/ICrossStakingPool.sol";
 
 /**
  * @title CrossStakingPool
@@ -39,20 +45,23 @@ contract CrossStakingPool is
     AccessControlDefaultAdminRulesUpgradeable,
     PausableUpgradeable,
     ReentrancyGuardTransientUpgradeable,
-    UUPSUpgradeable
+    UUPSUpgradeable,
+    ICrossStakingPool
 {
     using SafeERC20 for IERC20;
+    using EnumerableSet for EnumerableSet.AddressSet;
 
     // ==================== 커스텀 에러 ====================
 
-    error BelowMinimumStakeAmount();
-    error NoStakeFound();
-    error InvalidRewardTokenIndex();
-    error InvalidTokenAddress();
-    error AmountMustBeGreaterThanZero();
-    error RewardTokenAlreadyAdded();
-    error InvalidRewardToken();
-    error CannotUseStakingTokenAsReward();
+    error CSPBelowMinimumStakeAmount();
+    error CSPNoStakeFound();
+    error CSPCanNotZeroAddress();
+    error CSPCanNotZeroValue();
+    error CSPRewardTokenAlreadyAdded();
+    error CSPInvalidRewardToken();
+    error CSPCanNotUseStakingToken();
+    error CSPOnlyRouter();
+    error CSPNoWithdrawableAmount();
 
     // ==================== Roles ====================
 
@@ -69,37 +78,20 @@ contract CrossStakingPool is
     // 스테이킹 토큰 (CROSS)
     IERC20 public stakingToken;
 
-    /**
-     * @dev 보상 토큰 정보
-     */
-    struct RewardToken {
-        address tokenAddress;
-        uint rewardPerTokenStored; // 누적 토큰당 보상
-        uint lastBalance; // 마지막 기록 잔액
-    }
+    // CrossStaking 주소 (Router 확인용)
+    address public crossStaking;
 
-    /**
-     * @dev 사용자별 보상 정보
-     */
-    struct UserReward {
-        uint rewardPerTokenPaid; // 예치 시점의 rewardPerToken
-        uint rewards; // 누적 보상
-    }
+    // 보상 토큰 주소 집합 (EnumerableSet 사용)
+    EnumerableSet.AddressSet private _rewardTokenAddresses;
 
-    // 보상 토큰 배열
-    RewardToken[] public rewardTokens;
-
-    // 보상 토큰 주소 -> 인덱스 매핑 (O(1) lookup)
-    mapping(address => uint) public tokenToIndex;
-
-    // 보상 토큰 등록 여부
-    mapping(address => bool) public isRewardToken;
+    // 보상 토큰 주소 -> 데이터 매핑
+    mapping(address => RewardToken) private _rewardTokenData;
 
     // 사용자별 예치 금액
     mapping(address => uint) public balances;
 
     // 사용자별, 보상토큰별 정보
-    mapping(address => mapping(uint => UserReward)) public userRewards;
+    mapping(address => mapping(address => UserReward)) public userRewards;
 
     // 전체 예치량
     uint public totalStaked;
@@ -110,14 +102,20 @@ contract CrossStakingPool is
     event Unstaked(address indexed user, uint amount);
     event RewardClaimed(address indexed user, address indexed rewardToken, uint amount);
     event RewardTokenAdded(address indexed rewardToken);
+    event RewardTokenRemoved(address indexed rewardToken);
     event RewardDeposited(address indexed sender, address indexed rewardToken, uint amount);
     event RewardDistributed(address indexed rewardToken, uint amount);
+    event EmergencyWithdraw(address indexed rewardToken, address indexed to, uint amount);
 
     // ==================== Initializer ====================
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
+    }
+
+    fallback() external {
+        revert("Not allowed");
     }
 
     /**
@@ -127,8 +125,8 @@ contract CrossStakingPool is
      * @param _initialDelay 관리자 변경 딜레이 (초)
      */
     function initialize(IERC20 _stakingToken, address _admin, uint48 _initialDelay) external initializer {
-        require(address(_stakingToken) != address(0), InvalidTokenAddress());
-        require(_admin != address(0), "Invalid admin address");
+        require(address(_stakingToken) != address(0), CSPCanNotZeroAddress());
+        require(_admin != address(0), CSPCanNotZeroAddress());
 
         __AccessControlDefaultAdminRules_init(_initialDelay, _admin);
         __Pausable_init();
@@ -136,6 +134,7 @@ contract CrossStakingPool is
         __UUPSUpgradeable_init();
 
         stakingToken = _stakingToken;
+        crossStaking = _admin; // admin은 CrossStaking 컨트랙트
 
         // 기본 역할 부여
         _grantRole(PAUSER_ROLE, _admin);
@@ -150,17 +149,18 @@ contract CrossStakingPool is
      * @dev 추가 스테이킹 시 기존 금액에 누적됨
      */
     function stake(uint amount) external nonReentrant whenNotPaused {
-        require(amount >= MIN_STAKE_AMOUNT, BelowMinimumStakeAmount());
+        _stake(msg.sender, msg.sender, amount);
+    }
 
-        _syncReward();
-        _updateRewards(msg.sender);
-
-        stakingToken.safeTransferFrom(msg.sender, address(this), amount);
-
-        balances[msg.sender] += amount;
-        totalStaked += amount;
-
-        emit Staked(msg.sender, amount);
+    /**
+     * @notice 다른 계정을 위해 스테이킹 (Router 전용)
+     * @param account 스테이킹될 계정
+     * @param amount 예치할 CROSS 수량
+     * @dev msg.sender가 등록된 Router인지 확인
+     */
+    function stakeFor(address account, uint amount) external nonReentrant whenNotPaused {
+        _checkDelegate(account);
+        _stake(msg.sender, account, amount);
     }
 
     /**
@@ -168,20 +168,17 @@ contract CrossStakingPool is
      * @dev 누적된 모든 보상을 함께 수령
      */
     function unstake() external nonReentrant whenNotPaused {
-        require(balances[msg.sender] > 0, NoStakeFound());
+        _unstake(msg.sender, msg.sender);
+    }
 
-        uint amount = balances[msg.sender];
-
-        _syncReward();
-        _updateRewards(msg.sender);
-        _claimRewards(msg.sender);
-
-        stakingToken.safeTransfer(msg.sender, amount);
-
-        totalStaked -= amount;
-        delete balances[msg.sender];
-
-        emit Unstaked(msg.sender, amount);
+    /**
+     * @notice 다른 계정을 위해 언스테이킹 (Router 전용)
+     * @param account 언스테이킹할 계정
+     * @dev msg.sender가 등록된 Router인지 확인
+     */
+    function unstakeFor(address account) external nonReentrant whenNotPaused {
+        _checkDelegate(account);
+        _unstake(msg.sender, account);
     }
 
     /**
@@ -189,7 +186,7 @@ contract CrossStakingPool is
      * @dev CROSS 토큰은 그대로 예치 상태로 유지
      */
     function claimRewards() external nonReentrant whenNotPaused {
-        require(balances[msg.sender] > 0, NoStakeFound());
+        require(balances[msg.sender] > 0, CSPNoStakeFound());
 
         _syncReward();
         _updateRewards(msg.sender);
@@ -198,15 +195,19 @@ contract CrossStakingPool is
 
     /**
      * @notice 특정 보상 토큰만 클레임
-     * @param rewardTokenIndex 클레임할 보상 토큰 인덱스
+     * @param tokenAddress 클레임할 보상 토큰 주소
+     * @dev 제거된 토큰도 기존 보상은 claim 가능
      */
-    function claimReward(uint rewardTokenIndex) external nonReentrant whenNotPaused {
-        require(balances[msg.sender] > 0, NoStakeFound());
-        require(rewardTokenIndex < rewardTokens.length, InvalidRewardTokenIndex());
+    function claimReward(address tokenAddress) external nonReentrant whenNotPaused {
+        require(balances[msg.sender] > 0, CSPNoStakeFound());
+        // 제거된 토큰도 claim 가능하도록 _rewardTokenData 존재 여부만 체크
+        require(_rewardTokenData[tokenAddress].tokenAddress != address(0), CSPInvalidRewardToken());
 
-        _syncReward(rewardTokenIndex);
-        _updateReward(rewardTokenIndex, msg.sender);
-        _claimReward(rewardTokenIndex, msg.sender);
+        // 제거되지 않은 토큰만 sync
+        if (_rewardTokenAddresses.contains(tokenAddress)) _syncReward(tokenAddress);
+
+        _updateReward(tokenAddress, msg.sender);
+        _claimReward(tokenAddress, msg.sender);
     }
 
     /**
@@ -215,11 +216,57 @@ contract CrossStakingPool is
      * @return rewards 각 보상 토큰별 pending 금액 배열
      */
     function pendingRewards(address user) external view returns (uint[] memory rewards) {
-        rewards = new uint[](rewardTokens.length);
+        uint length = _rewardTokenAddresses.length();
+        rewards = new uint[](length);
 
-        for (uint i = 0; i < rewardTokens.length; i++) {
-            rewards[i] = _calculatePendingReward(i, user);
+        for (uint i = 0; i < length; i++) {
+            address tokenAddress = _rewardTokenAddresses.at(i);
+            rewards[i] = _calculatePendingReward(tokenAddress, user);
         }
+    }
+
+    /**
+     * @notice 보상 토큰 주소 조회 (인덱스로)
+     * @param index 인덱스
+     * @return tokenAddress 보상 토큰 주소
+     */
+    function rewardTokenAt(uint index) external view returns (address) {
+        return _rewardTokenAddresses.at(index);
+    }
+
+    /**
+     * @notice 보상 토큰 데이터 조회
+     * @param tokenAddress 보상 토큰 주소
+     * @return 보상 토큰 데이터
+     */
+    function getRewardToken(address tokenAddress) external view returns (RewardToken memory) {
+        require(_rewardTokenAddresses.contains(tokenAddress), CSPInvalidRewardToken());
+        return _rewardTokenData[tokenAddress];
+    }
+
+    /**
+     * @notice 보상 토큰 등록 여부 확인
+     * @param tokenAddress 확인할 보상 토큰 주소
+     * @return 등록 여부
+     */
+    function isRewardToken(address tokenAddress) external view returns (bool) {
+        return _rewardTokenAddresses.contains(tokenAddress);
+    }
+
+    /**
+     * @notice 보상 토큰 주소 목록 조회
+     * @return 모든 보상 토큰 주소 배열
+     */
+    function getRewardTokens() external view returns (address[] memory) {
+        return _rewardTokenAddresses.values();
+    }
+
+    /**
+     * @notice 보상 토큰 길이 조회
+     * @return 보상 토큰 개수
+     */
+    function rewardTokensLength() external view returns (uint) {
+        return _rewardTokenAddresses.length();
     }
 
     // ==================== 관리자 함수 ====================
@@ -229,42 +276,76 @@ contract CrossStakingPool is
      * @param tokenAddress 추가할 보상 토큰 주소
      */
     function addRewardToken(address tokenAddress) external onlyRole(REWARD_MANAGER_ROLE) {
-        require(tokenAddress != address(0), InvalidTokenAddress());
-        require(tokenAddress != address(stakingToken), CannotUseStakingTokenAsReward());
-        require(!isRewardToken[tokenAddress], RewardTokenAlreadyAdded());
+        require(tokenAddress != address(0), CSPCanNotZeroAddress());
+        require(tokenAddress != address(stakingToken), CSPCanNotUseStakingToken());
+        require(_rewardTokenAddresses.add(tokenAddress), CSPRewardTokenAlreadyAdded());
 
-        uint index = rewardTokens.length;
-        rewardTokens.push(RewardToken({tokenAddress: tokenAddress, rewardPerTokenStored: 0, lastBalance: 0}));
-
-        tokenToIndex[tokenAddress] = index;
-        isRewardToken[tokenAddress] = true;
+        _rewardTokenData[tokenAddress] = RewardToken({
+            tokenAddress: tokenAddress,
+            rewardPerTokenStored: 0,
+            lastBalance: 0,
+            removedDistributedAmount: 0,
+            isRemoved: false
+        });
 
         emit RewardTokenAdded(tokenAddress);
-    }
-
-    /**
-     * @notice 보상 입금
-     * @param tokenAddress 보상 토큰 주소
-     * @param amount 입금할 수량
-     * @dev 직접 transfer된 금액도 다음 동기화 시 자동 반영됨
-     */
-    function depositReward(address tokenAddress, uint amount) external {
-        require(amount > 0, AmountMustBeGreaterThanZero());
-        require(isRewardToken[tokenAddress], InvalidRewardToken());
-
-        IERC20(tokenAddress).safeTransferFrom(msg.sender, address(this), amount);
-
-        uint index = tokenToIndex[tokenAddress];
-        _syncReward(index);
-
-        emit RewardDeposited(msg.sender, tokenAddress, amount);
     }
 
     /**
      * @notice 보상 토큰 개수 조회
      */
     function rewardTokenCount() external view returns (uint) {
-        return rewardTokens.length;
+        return _rewardTokenAddresses.length();
+    }
+
+    /**
+     * @notice 보상 토큰 제거
+     * @param tokenAddress 제거할 보상 토큰 주소
+     * @dev 기존 누적 보상은 여전히 claim 가능
+     */
+    function removeRewardToken(address tokenAddress) external onlyRole(REWARD_MANAGER_ROLE) {
+        require(_rewardTokenAddresses.contains(tokenAddress), CSPInvalidRewardToken());
+
+        // 마지막 동기화
+        _syncReward(tokenAddress);
+
+        // 제거 시점의 실제 잔액 저장
+        RewardToken storage rt = _rewardTokenData[tokenAddress];
+        uint currentBalance = IERC20(tokenAddress).balanceOf(address(this));
+        rt.removedDistributedAmount = currentBalance;
+        rt.isRemoved = true;
+
+        // EnumerableSet에서 제거
+        _rewardTokenAddresses.remove(tokenAddress);
+
+        emit RewardTokenRemoved(tokenAddress);
+    }
+
+    /**
+     * @notice 비상 출금 가능 금액 조회
+     * @param tokenAddress 보상 토큰 주소
+     * @return 출금 가능 금액 (제거 이후 입금액)
+     */
+    function getEmergencyWithdrawableAmount(address tokenAddress) public view returns (uint) {
+        RewardToken storage rt = _rewardTokenData[tokenAddress];
+        if (!rt.isRemoved) return 0; // 제거되지 않은 토큰
+
+        uint currentBalance = IERC20(tokenAddress).balanceOf(address(this));
+        return currentBalance > rt.removedDistributedAmount ? currentBalance - rt.removedDistributedAmount : 0;
+    }
+
+    /**
+     * @notice 비상 출금 (제거된 토큰의 제거 이후 입금액만)
+     * @param tokenAddress 보상 토큰 주소
+     * @param to 출금 받을 주소
+     */
+    function emergencyWithdraw(address tokenAddress, address to) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        uint amount = getEmergencyWithdrawableAmount(tokenAddress);
+        require(amount > 0, CSPNoWithdrawableAmount());
+        require(to != address(0), CSPCanNotZeroAddress());
+
+        IERC20(tokenAddress).safeTransfer(to, amount);
+        emit EmergencyWithdraw(tokenAddress, to, amount);
     }
 
     /**
@@ -288,27 +369,29 @@ contract CrossStakingPool is
      * @dev 모든 보상 토큰 동기화
      */
     function _syncReward() internal {
-        for (uint i = 0; i < rewardTokens.length; i++) {
-            _syncReward(i);
+        uint length = _rewardTokenAddresses.length();
+        for (uint i = 0; i < length; i++) {
+            address tokenAddress = _rewardTokenAddresses.at(i);
+            _syncReward(tokenAddress);
         }
     }
 
     /**
      * @dev 새 보상 감지 및 rewardPerToken 업데이트
-     * @param rewardTokenIndex 보상 토큰 인덱스
+     * @param tokenAddress 보상 토큰 주소
      */
-    function _syncReward(uint rewardTokenIndex) internal {
-        RewardToken storage rt = rewardTokens[rewardTokenIndex];
+    function _syncReward(address tokenAddress) internal {
+        // 스테이킹이 없는상태에서는 동기화하지 않음
+        if (totalStaked == 0) return;
+
+        RewardToken storage rt = _rewardTokenData[tokenAddress];
 
         uint currentBalance = IERC20(rt.tokenAddress).balanceOf(address(this));
 
-        if (currentBalance > rt.lastBalance) {
+        if (currentBalance > rt.lastBalance && totalStaked > 0) {
             uint newReward = currentBalance - rt.lastBalance;
-
-            if (totalStaked > 0) {
-                rt.rewardPerTokenStored += (newReward * PRECISION) / totalStaked;
-                emit RewardDistributed(rt.tokenAddress, newReward);
-            }
+            rt.rewardPerTokenStored += (newReward * PRECISION) / totalStaked;
+            emit RewardDistributed(rt.tokenAddress, newReward);
         }
 
         rt.lastBalance = currentBalance;
@@ -320,19 +403,21 @@ contract CrossStakingPool is
      * @dev 모든 보상 토큰에 대해 사용자 보상 업데이트
      */
     function _updateRewards(address user) internal {
-        for (uint i = 0; i < rewardTokens.length; i++) {
-            _updateReward(i, user);
+        uint length = _rewardTokenAddresses.length();
+        for (uint i = 0; i < length; i++) {
+            address tokenAddress = _rewardTokenAddresses.at(i);
+            _updateReward(tokenAddress, user);
         }
     }
 
     /**
      * @dev 사용자 보상 계산 및 체크포인트 갱신
-     * @param rewardTokenIndex 보상 토큰 인덱스
+     * @param tokenAddress 보상 토큰 주소
      * @param user 사용자 주소
      */
-    function _updateReward(uint rewardTokenIndex, address user) internal {
-        RewardToken storage rt = rewardTokens[rewardTokenIndex];
-        UserReward storage ur = userRewards[user][rewardTokenIndex];
+    function _updateReward(address tokenAddress, address user) internal {
+        RewardToken storage rt = _rewardTokenData[tokenAddress];
+        UserReward storage ur = userRewards[user][tokenAddress];
 
         uint userBalance = balances[user];
 
@@ -346,13 +431,13 @@ contract CrossStakingPool is
 
     /**
      * @dev Pending 보상 계산 (view)
-     * @param rewardTokenIndex 보상 토큰 인덱스
+     * @param tokenAddress 보상 토큰 주소
      * @param user 사용자 주소
      * @return 계산된 pending 보상
      */
-    function _calculatePendingReward(uint rewardTokenIndex, address user) internal view returns (uint) {
-        UserReward storage ur = userRewards[user][rewardTokenIndex];
-        RewardToken storage rt = rewardTokens[rewardTokenIndex];
+    function _calculatePendingReward(address tokenAddress, address user) internal view returns (uint) {
+        UserReward storage ur = userRewards[user][tokenAddress];
+        RewardToken storage rt = _rewardTokenData[tokenAddress];
 
         uint userBalance = balances[user];
         if (userBalance == 0) return ur.rewards;
@@ -375,30 +460,83 @@ contract CrossStakingPool is
      * @dev 모든 보상 토큰 클레임
      */
     function _claimRewards(address user) internal {
-        for (uint i = 0; i < rewardTokens.length; i++) {
-            _claimReward(i, user);
+        uint length = _rewardTokenAddresses.length();
+        for (uint i = 0; i < length; i++) {
+            address tokenAddress = _rewardTokenAddresses.at(i);
+            _claimReward(tokenAddress, user);
         }
     }
 
     /**
      * @dev 보상 전송 및 잔액 동기화
-     * @param rewardTokenIndex 보상 토큰 인덱스
+     * @param tokenAddress 보상 토큰 주소
      * @param user 사용자 주소
      */
-    function _claimReward(uint rewardTokenIndex, address user) internal {
-        UserReward storage ur = userRewards[user][rewardTokenIndex];
+    function _claimReward(address tokenAddress, address user) internal {
+        UserReward storage ur = userRewards[user][tokenAddress];
         uint reward = ur.rewards;
 
         if (reward > 0) {
             ur.rewards = 0;
 
-            RewardToken storage rt = rewardTokens[rewardTokenIndex];
+            RewardToken storage rt = _rewardTokenData[tokenAddress];
             IERC20(rt.tokenAddress).safeTransfer(user, reward);
 
-            rt.lastBalance = IERC20(rt.tokenAddress).balanceOf(address(this));
+            rt.lastBalance -= reward;
+
+            // 제거된 토큰이면 분배 예정량 차감
+            if (rt.isRemoved) rt.removedDistributedAmount -= reward;
 
             emit RewardClaimed(user, rt.tokenAddress, reward);
         }
+    }
+
+    // ==================== 내부 함수: Stake/Unstake ====================
+
+    /**
+     * @dev 내부 스테이킹 로직
+     * @param payer 토큰을 전송하는 주소
+     * @param account 스테이킹될 계정
+     * @param amount 예치할 수량
+     */
+    function _stake(address payer, address account, uint amount) internal {
+        require(amount >= MIN_STAKE_AMOUNT, CSPBelowMinimumStakeAmount());
+
+        _syncReward();
+        _updateRewards(account);
+
+        stakingToken.safeTransferFrom(payer, address(this), amount);
+
+        balances[account] += amount;
+        totalStaked += amount;
+
+        emit Staked(account, amount);
+    }
+
+    /**
+     * @dev 내부 언스테이킹 로직
+     * @param account 언스테이킹할 계정
+     */
+    function _unstake(address, /* caller */ address account) internal {
+        require(balances[account] > 0, CSPNoStakeFound());
+
+        uint amount = balances[account];
+
+        _syncReward();
+        _updateRewards(account);
+        _claimRewards(account);
+
+        totalStaked -= amount;
+        stakingToken.safeTransfer(account, amount);
+
+        delete balances[account];
+
+        emit Unstaked(account, amount);
+    }
+
+    function _checkDelegate(address account) internal view {
+        require(account != address(0), CSPCanNotZeroAddress());
+        require(msg.sender == ICrossStaking(crossStaking).router(), CSPOnlyRouter());
     }
 
     // ==================== UUPS ====================
@@ -412,6 +550,8 @@ contract CrossStakingPool is
 
     /**
      * @dev 향후 업그레이드를 위한 storage gap
+     * 현재 사용: 6 slots
+     * Gap: 50 - 6 = 44 slots
      */
-    uint[43] private __gap;
+    uint[44] private __gap;
 }

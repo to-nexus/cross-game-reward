@@ -85,11 +85,11 @@ abstract contract CrossStakingPoolBase is Test {
 
     /**
      * @notice 보상 입금 helper
+     * @dev 직접 transfer하면 _syncReward가 자동 감지
      */
     function _depositReward(address rewardToken, uint amount) internal {
         vm.startPrank(owner);
-        IERC20(rewardToken).approve(address(pool), amount);
-        pool.depositReward(rewardToken, amount);
+        IERC20(rewardToken).transfer(address(pool), amount);
         vm.stopPrank();
     }
 

@@ -19,8 +19,8 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
 
         uint[] memory rewards = pool.pendingRewards(user1);
 
-        assertApproxEqAbs(rewards[0], 100 ether, 1 ether, "Reward token 1 should accumulate");
-        assertApproxEqAbs(rewards[1], 50 ether, 0.5 ether, "Reward token 2 should accumulate");
+        assertEq(rewards[0], 100 ether, "Reward token 1 should accumulate");
+        assertEq(rewards[1], 50 ether, "Reward token 2 should accumulate");
     }
 
     function testRewardAccumulationWithVerySmallStake() public {
@@ -30,7 +30,7 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
         _depositReward(address(rewardToken1), 1000 ether);
 
         uint[] memory rewards = pool.pendingRewards(user1);
-        assertApproxEqAbs(rewards[0], 1000 ether, 1 ether, "Small stake should get all rewards");
+        assertEq(rewards[0], 1000 ether, "Small stake should get all rewards");
     }
 
     function testRewardAccumulationWithVeryLargeStake() public {
@@ -40,7 +40,7 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
         _depositReward(address(rewardToken1), 10000 ether);
 
         uint[] memory rewards = pool.pendingRewards(user1);
-        assertApproxEqAbs(rewards[0], 10000 ether, 1 ether, "Large stake should get all rewards");
+        assertEq(rewards[0], 10000 ether, "Large stake should get all rewards");
     }
 
     // ==================== 보상 클레임 테스트 ====================
@@ -62,12 +62,8 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
         uint rewardBalance2After = rewardToken2.balanceOf(user1);
         vm.stopPrank();
 
-        assertApproxEqAbs(
-            rewardBalance1After - rewardBalance1Before, 100 ether, 1 ether, "Should receive reward token 1"
-        );
-        assertApproxEqAbs(
-            rewardBalance2After - rewardBalance2Before, 50 ether, 0.5 ether, "Should receive reward token 2"
-        );
+        assertEq(rewardBalance1After - rewardBalance1Before, 100 ether, "Should receive reward token 1");
+        assertEq(rewardBalance2After - rewardBalance2Before, 50 ether, "Should receive reward token 2");
     }
 
     function testClaimSpecificReward() public {
@@ -79,16 +75,16 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
 
         // 첫 번째 보상만 claim
         vm.prank(user1);
-        pool.claimReward(0);
+        pool.claimReward(address(rewardToken1));
 
-        assertApproxEqAbs(rewardToken1.balanceOf(user1), 100 ether, 1 ether, "Claimed reward1");
+        assertEq(rewardToken1.balanceOf(user1), 100 ether, "Claimed reward1");
         assertEq(rewardToken2.balanceOf(user1), 0, "Not claimed reward2 yet");
 
         // 두 번째 보상 claim
         vm.prank(user1);
-        pool.claimReward(1);
+        pool.claimReward(address(rewardToken2));
 
-        assertApproxEqAbs(rewardToken2.balanceOf(user1), 50 ether, 1 ether, "Claimed reward2");
+        assertEq(rewardToken2.balanceOf(user1), 50 ether, "Claimed reward2");
     }
 
     function testMultipleClaimsAccumulate() public {
@@ -100,7 +96,7 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
 
         vm.prank(user1);
         pool.claimRewards();
-        assertApproxEqAbs(rewardToken1.balanceOf(user1), 50 ether, 1 ether, "First claim");
+        assertEq(rewardToken1.balanceOf(user1), 50 ether, "First claim");
 
         _warpSeconds(50);
 
@@ -109,7 +105,7 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
 
         vm.prank(user1);
         pool.claimRewards();
-        assertApproxEqAbs(rewardToken1.balanceOf(user1), 100 ether, 1 ether, "Claims accumulate");
+        assertEq(rewardToken1.balanceOf(user1), 100 ether, "Claims accumulate");
     }
 
     // ==================== 다중 사용자 보상 분배 테스트 ====================
@@ -131,8 +127,8 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
 
         // User1: (10 / 20) × 200 = 100 ether
         // User2: (10 / 20) × 200 = 100 ether
-        assertApproxEqAbs(rewardsUser1[0], 100 ether, 1 ether, "User1 gets 50% (equal stakes)");
-        assertApproxEqAbs(rewardsUser2[0], 100 ether, 1 ether, "User2 gets 50% (equal stakes)");
+        assertEq(rewardsUser1[0], 100 ether, "User1 gets 50% (equal stakes)");
+        assertEq(rewardsUser2[0], 100 ether, "User2 gets 50% (equal stakes)");
     }
 
     function testThreeUsersComplexScenario() public {
@@ -227,28 +223,32 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
         // 스테이커 없이 보상 입금
         _depositReward(address(rewardToken1), 100 ether);
 
-        // 첫 스테이커가 들어와도 이전 보상은 받지 못함
+        // 첫 스테이커가 들어오면 이전 보상을 받음
         _userStake(user1, 10 ether);
 
         uint[] memory rewards = pool.pendingRewards(user1);
-        assertEq(rewards[0], 0, "No rewards when deposited with 0 stakers");
+        assertEq(rewards[0], 100 ether, "First staker gets all rewards deposited when pool was empty");
     }
 
     function testInvalidRewardTokenIndex() public {
         _userStake(user1, 10 ether);
 
         vm.prank(user1);
-        vm.expectRevert(CrossStakingPool.InvalidRewardTokenIndex.selector);
-        pool.claimReward(999);
+        vm.expectRevert(CrossStakingPool.CSPInvalidRewardToken.selector);
+        pool.claimReward(address(0xdead));
     }
 
-    function testZeroAmountDeposit() public {
-        vm.startPrank(owner);
-        rewardToken1.approve(address(pool), 0);
+    function testZeroAmountTransfer() public {
+        _userStake(user1, 10 ether);
 
-        vm.expectRevert(CrossStakingPool.AmountMustBeGreaterThanZero.selector);
-        pool.depositReward(address(rewardToken1), 0);
+        // 0 금액 transfer는 아무 효과 없음
+        vm.startPrank(owner);
+        rewardToken1.transfer(address(pool), 0);
         vm.stopPrank();
+
+        // 보상이 없는지 확인
+        uint[] memory rewards = pool.pendingRewards(user1);
+        assertEq(rewards[0], 0, "No reward for 0 transfer");
     }
 
     function testPendingRewardsAfterClaim() public {
@@ -266,7 +266,7 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
         // New reward
         _depositReward(address(rewardToken1), 50 ether);
         rewards = pool.pendingRewards(user1);
-        assertApproxEqAbs(rewards[0], 50 ether, 1 ether, "New rewards should accumulate");
+        assertEq(rewards[0], 50 ether, "New rewards should accumulate");
     }
 
     // ==================== 직접 Transfer 감지 테스트 ====================
@@ -274,7 +274,7 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
     function testDirectTransferDetection() public {
         _userStake(user1, 10 ether);
 
-        // 직접 transfer (depositReward 호출 없이)
+        // 직접 transfer
         vm.prank(owner);
         rewardToken1.transfer(address(pool), 100 ether);
 
@@ -283,7 +283,7 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
 
         // 반영됨
         uint[] memory rewardsAfter = pool.pendingRewards(user1);
-        assertApproxEqAbs(rewardsAfter[0], 100 ether, 1 ether, "Direct transfer detected on next action");
+        assertEq(rewardsAfter[0], 100 ether, "Direct transfer detected on next action");
     }
 
     function testDirectTransferWithDepositReward() public {
@@ -293,13 +293,13 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
         vm.prank(owner);
         rewardToken1.transfer(address(pool), 50 ether);
 
-        // 그 다음 depositReward 호출
+        // 그 다음 추가 transfer
         // RewardDistributed 이벤트는 실제 델타(150)를 기록
         _depositReward(address(rewardToken1), 100 ether);
 
-        // 실제 보상 확인 (직접 transfer 50 + depositReward 100 = 150)
+        // 실제 보상 확인 (직접 transfer 50 + 추가 transfer 100 = 150)
         uint[] memory rewards = pool.pendingRewards(user1);
-        assertApproxEqAbs(rewards[0], 150 ether, 1 ether, "Total rewards should include direct transfer");
+        assertEq(rewards[0], 150 ether, "Total rewards should include direct transfer");
     }
 
     function testMultipleDirectTransfers() public {
@@ -316,6 +316,6 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
         _userStake(user2, 10 ether);
 
         uint[] memory rewards = pool.pendingRewards(user1);
-        assertApproxEqAbs(rewards[0], 100 ether, 1 ether, "All direct transfers should be detected");
+        assertEq(rewards[0], 100 ether, "All direct transfers should be detected");
     }
 }

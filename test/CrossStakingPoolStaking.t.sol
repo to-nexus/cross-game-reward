@@ -28,7 +28,7 @@ contract CrossStakingPoolStakingTest is CrossStakingPoolBase {
         vm.startPrank(user1);
         crossToken.approve(address(pool), stakeAmount);
 
-        vm.expectRevert(CrossStakingPool.BelowMinimumStakeAmount.selector);
+        vm.expectRevert(CrossStakingPool.CSPBelowMinimumStakeAmount.selector);
         pool.stake(stakeAmount);
         vm.stopPrank();
     }
@@ -183,13 +183,13 @@ contract CrossStakingPoolStakingTest is CrossStakingPoolBase {
 
     function testCannotUnstakeWithoutStake() public {
         vm.prank(user1);
-        vm.expectRevert(CrossStakingPool.NoStakeFound.selector);
+        vm.expectRevert(CrossStakingPool.CSPNoStakeFound.selector);
         pool.unstake();
     }
 
     function testCannotClaimWithoutStake() public {
         vm.prank(user1);
-        vm.expectRevert(CrossStakingPool.NoStakeFound.selector);
+        vm.expectRevert(CrossStakingPool.CSPNoStakeFound.selector);
         pool.claimRewards();
     }
 
@@ -231,11 +231,11 @@ contract CrossStakingPoolStakingTest is CrossStakingPoolBase {
 
     // ==================== 기본 조회 함수 테스트 ====================
 
-    function testStakingTokenAddress() public {
+    function testStakingTokenAddress() public view {
         assertEq(address(pool.stakingToken()), address(crossToken), "Staking token should be CROSS");
     }
 
-    function testRewardTokenCount() public {
+    function testRewardTokenCount() public view {
         assertEq(pool.rewardTokenCount(), 2, "Should have 2 reward tokens");
     }
 }

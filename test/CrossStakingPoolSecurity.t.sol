@@ -73,7 +73,7 @@ contract CrossStakingPoolSecurityTest is CrossStakingPoolBase {
     function testCannotStakeZeroAmount() public {
         vm.startPrank(user1);
         crossToken.approve(address(pool), 0);
-        vm.expectRevert(CrossStakingPool.BelowMinimumStakeAmount.selector);
+        vm.expectRevert(CrossStakingPool.CSPBelowMinimumStakeAmount.selector);
         pool.stake(0);
         vm.stopPrank();
     }
@@ -96,8 +96,7 @@ contract CrossStakingPoolSecurityTest is CrossStakingPoolBase {
 
         // 1 wei 보상
         vm.startPrank(owner);
-        rewardToken1.approve(address(pool), 1);
-        pool.depositReward(address(rewardToken1), 1);
+        rewardToken1.transfer(address(pool), 1);
         vm.stopPrank();
 
         uint[] memory rewards = pool.pendingRewards(user1);
@@ -197,16 +196,16 @@ contract CrossStakingPoolSecurityTest is CrossStakingPoolBase {
         // totalStaked = 0일 때 보상 입금
         _depositReward(address(rewardToken1), 1000 ether);
 
-        // 풀에는 보상이 있지만 분배되지 않음
+        // 첫 스테이커가 이전 보상을 모두 받음
         _userStake(user1, 100 ether);
 
         uint[] memory rewards = pool.pendingRewards(user1);
-        assertEq(rewards[0], 0, "Rewards deposited with 0 stakers should not be distributed");
+        assertApproxEqAbs(rewards[0], 1000 ether, 1 ether, "First staker gets rewards deposited when pool was empty");
 
         // 이후 보상은 정상 분배
         _depositReward(address(rewardToken1), 100 ether);
         rewards = pool.pendingRewards(user1);
-        assertApproxEqAbs(rewards[0], 100 ether, 1 ether, "New rewards should distribute normally");
+        assertApproxEqAbs(rewards[0], 1100 ether, 1 ether, "New rewards added to existing");
     }
 
     // ==================== 엣지 케이스 검증 ====================
@@ -329,10 +328,10 @@ contract CrossStakingPoolSecurityTest is CrossStakingPoolBase {
         pool.addRewardToken(address(rewardToken3));
         vm.stopPrank();
 
-        // 인덱스 확인
-        assertEq(pool.tokenToIndex(address(rewardToken1)), 0, "RewardToken1 index");
-        assertEq(pool.tokenToIndex(address(rewardToken2)), 1, "RewardToken2 index");
-        assertEq(pool.tokenToIndex(address(rewardToken3)), 2, "RewardToken3 index");
+        // 주소 확인
+        assertEq(pool.rewardTokenAt(0), address(rewardToken1), "RewardToken1 index");
+        assertEq(pool.rewardTokenAt(1), address(rewardToken2), "RewardToken2 index");
+        assertEq(pool.rewardTokenAt(2), address(rewardToken3), "RewardToken3 index");
 
         // isRewardToken 확인
         assertTrue(pool.isRewardToken(address(rewardToken1)), "RewardToken1 registered");
@@ -351,7 +350,7 @@ contract CrossStakingPoolSecurityTest is CrossStakingPoolBase {
         // 미만: 실패
         vm.startPrank(user1);
         crossToken.approve(address(pool), belowMin);
-        vm.expectRevert(CrossStakingPool.BelowMinimumStakeAmount.selector);
+        vm.expectRevert(CrossStakingPool.CSPBelowMinimumStakeAmount.selector);
         pool.stake(belowMin);
 
         // 정확히: 성공
@@ -374,11 +373,14 @@ contract CrossStakingPoolSecurityTest is CrossStakingPoolBase {
         _userStake(user1, 100 ether);
 
         // 0 보상 입금 시도
+        // 0 금액은 transfer 자체가 실패하거나 아무 효과 없음
         vm.startPrank(owner);
-        rewardToken1.approve(address(pool), 0);
-        vm.expectRevert(CrossStakingPool.AmountMustBeGreaterThanZero.selector);
-        pool.depositReward(address(rewardToken1), 0);
+        rewardToken1.transfer(address(pool), 0);
         vm.stopPrank();
+
+        // 보상이 추가되지 않았는지 확인
+        uint[] memory rewards = pool.pendingRewards(user1);
+        assertEq(rewards[0], 0, "No reward should be added for 0 amount");
     }
 
     // ==================== 상태 일관성 검증 ====================

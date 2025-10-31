@@ -95,18 +95,16 @@ contract DeployWithRewards is Script {
         }
 
         // 6. 초기 보상 토큰 공급 (선택사항)
+        // 직접 transfer하면 _syncReward가 자동 감지
         for (uint i = 0; i < rewardTokens.length; i++) {
             if (initialRewardAmounts[i] > 0) {
-                IERC20 rewardToken = IERC20(rewardTokens[i]);
+            IERC20 rewardToken = IERC20(rewardTokens[i]);
 
-                // approve
-                rewardToken.approve(address(pool), initialRewardAmounts[i]);
+                // 직접 transfer
+                rewardToken.transfer(address(pool), initialRewardAmounts[i]);
 
-                // deposit
-                pool.depositReward(rewardTokens[i], initialRewardAmounts[i]);
-
-                console.log("Deposited reward:", rewardTokens[i]);
-                console.log("  Amount:", initialRewardAmounts[i]);
+                console.log("Transferred reward:", rewardTokens[i]);
+            console.log("  Amount:", initialRewardAmounts[i]);
             }
         }
 

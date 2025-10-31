@@ -1,0 +1,186 @@
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.28;
+
+import {CrossStaking} from "../src/CrossStaking.sol";
+import {CrossStakingPool} from "../src/CrossStakingPool.sol";
+import {CrossStakingRouter} from "../src/CrossStakingRouter.sol";
+import {WCROSS} from "../src/WCROSS.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {Test} from "forge-std/Test.sol";
+
+contract WCROSSTest is Test {
+    CrossStaking public crossStaking;
+    CrossStakingPool public poolImplementation;
+    CrossStakingRouter public router;
+    WCROSS public wcross;
+
+    address public owner;
+    address public user1;
+    address public user2;
+
+    function setUp() public {
+        owner = address(this);
+        user1 = makeAddr("user1");
+        user2 = makeAddr("user2");
+
+        // Give users native CROSS
+        vm.deal(user1, 1000 ether);
+        vm.deal(user2, 1000 ether);
+
+        // Deploy system
+        poolImplementation = new CrossStakingPool();
+
+        CrossStaking implementation = new CrossStaking();
+        bytes memory initData =
+            abi.encodeWithSelector(CrossStaking.initialize.selector, address(poolImplementation), owner, 2 days);
+        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
+        crossStaking = CrossStaking(address(proxy));
+
+        router = new CrossStakingRouter(address(crossStaking));
+        wcross = WCROSS(payable(crossStaking.wcross()));
+        crossStaking.setRouter(address(router));
+    }
+
+    // ==================== Deposit (Router만 가능) ====================
+
+    function testDepositViaRouter() public {
+        vm.deal(address(router), 10 ether);
+
+        vm.prank(address(router));
+        wcross.deposit{value: 10 ether}();
+
+        assertEq(wcross.balanceOf(address(router)), 10 ether, "WCROSS minted");
+        assertEq(address(wcross).balance, 10 ether, "Contract balance");
+    }
+
+    function testReceiveViaRouter() public {
+        vm.deal(address(router), 5 ether);
+
+        vm.prank(address(router));
+        (bool success,) = address(wcross).call{value: 5 ether}("");
+        assertTrue(success, "Transfer succeeded");
+
+        assertEq(wcross.balanceOf(address(router)), 5 ether, "WCROSS minted via receive");
+    }
+
+    function testCannotDepositByNonRouter() public {
+        vm.prank(user1);
+        vm.expectRevert(WCROSS.WCROSSUnauthorized.selector);
+        wcross.deposit{value: 10 ether}();
+    }
+
+    function testCannotDepositZero() public {
+        vm.prank(address(router));
+        vm.expectRevert(WCROSS.WCROSSInsufficientBalance.selector);
+        wcross.deposit{value: 0}();
+    }
+
+    // ==================== Withdraw (Router만 가능) ====================
+
+    function testWithdrawViaRouter() public {
+        // Deposit first
+        vm.deal(address(router), 10 ether);
+        vm.prank(address(router));
+        wcross.deposit{value: 10 ether}();
+
+        // Withdraw
+        uint balanceBefore = address(router).balance;
+        vm.prank(address(router));
+        wcross.withdraw(10 ether);
+
+        assertEq(wcross.balanceOf(address(router)), 0, "WCROSS burned");
+        assertEq(address(router).balance, balanceBefore + 10 ether, "Native CROSS returned");
+    }
+
+    function testCannotWithdrawByNonRouter() public {
+        // Setup: transfer some WCROSS to user1
+        vm.deal(address(router), 10 ether);
+        vm.prank(address(router));
+        wcross.deposit{value: 10 ether}();
+
+        vm.prank(address(router));
+        wcross.transfer(user1, 5 ether);
+
+        // User1 tries to withdraw
+        vm.prank(user1);
+        vm.expectRevert(WCROSS.WCROSSUnauthorized.selector);
+        wcross.withdraw(5 ether);
+    }
+
+    function testCannotWithdrawMoreThanBalance() public {
+        vm.deal(address(router), 5 ether);
+        vm.prank(address(router));
+        wcross.deposit{value: 5 ether}();
+
+        vm.prank(address(router));
+        vm.expectRevert(WCROSS.WCROSSInsufficientBalance.selector);
+        wcross.withdraw(10 ether);
+    }
+
+    // ==================== Transfer (ERC20 표준) ====================
+
+    function testTransferBetweenUsers() public {
+        // Router deposits
+        vm.deal(address(router), 10 ether);
+        vm.prank(address(router));
+        wcross.deposit{value: 10 ether}();
+
+        // Router transfers to user1
+        vm.prank(address(router));
+        wcross.transfer(user1, 4 ether);
+
+        // User1 transfers to user2
+        vm.prank(user1);
+        wcross.transfer(user2, 2 ether);
+
+        assertEq(wcross.balanceOf(address(router)), 6 ether, "Router balance");
+        assertEq(wcross.balanceOf(user1), 2 ether, "User1 balance");
+        assertEq(wcross.balanceOf(user2), 2 ether, "User2 balance");
+    }
+
+    // ==================== Integration with Router ====================
+
+    function testDepositForIntegration() public {
+        uint poolId;
+        address poolAddress;
+
+        // Create pool
+        (poolId, poolAddress) = crossStaking.createPool(address(wcross), 2 days);
+
+        // User stakes via router
+        vm.startPrank(user1);
+        wcross.approve(address(router), type(uint).max);
+        router.stakeNative{value: 10 ether}(poolId);
+        vm.stopPrank();
+
+        // Verify WCROSS was minted and staked
+        CrossStakingPool pool = CrossStakingPool(poolAddress);
+        assertEq(pool.balances(user1), 10 ether, "Staked via router");
+    }
+
+    function testWithdrawForIntegration() public {
+        // Setup: stake first
+        (uint poolId, address poolAddress) = crossStaking.createPool(address(wcross), 2 days);
+
+        vm.startPrank(user1);
+        wcross.approve(address(router), type(uint).max);
+        router.stakeNative{value: 10 ether}(poolId);
+        vm.stopPrank();
+
+        // Unstake
+        uint balanceBefore = user1.balance;
+        vm.prank(user1);
+        router.unstakeNative(poolId);
+
+        // Verify native CROSS returned
+        assertEq(user1.balance, balanceBefore + 10 ether, "Native CROSS returned");
+
+        CrossStakingPool pool = CrossStakingPool(poolAddress);
+        assertEq(pool.balances(user1), 0, "Unstaked");
+    }
+}
+
+// Receive function for testing
+contract RouterMock {
+    receive() external payable {}
+}
