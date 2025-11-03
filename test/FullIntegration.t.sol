@@ -64,7 +64,7 @@ contract FullIntegrationTest is Test {
         dai = new MockERC20("Dai Stablecoin", "DAI");
 
         // Create native pool
-        (nativePoolId, nativePoolAddress) = crossStaking.createPool(address(wcross));
+        (nativePoolId, nativePoolAddress) = crossStaking.createPool(address(wcross), 1 ether);
 
         // Add reward tokens
         crossStaking.addRewardToken(nativePoolId, address(usdt));
@@ -151,7 +151,7 @@ contract FullIntegrationTest is Test {
     function testMultiplePoolsSimultaneously() public {
         // Create another pool for ERC20
         MockERC20 stakingToken = new MockERC20("Staking", "STK");
-        (uint erc20PoolId, address erc20PoolAddress) = crossStaking.createPool(address(stakingToken));
+        (uint erc20PoolId, address erc20PoolAddress) = crossStaking.createPool(address(stakingToken), 1 ether);
 
         crossStaking.addRewardToken(erc20PoolId, address(usdt));
 

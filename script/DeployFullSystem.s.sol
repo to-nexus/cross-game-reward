@@ -23,13 +23,12 @@ contract DeployFullSystem is Script {
     uint48 public constant INITIAL_DELAY = 2 days;
 
     function run() external {
-        uint deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
+        address deployer = msg.sender;
 
         console.log("Deployer:", deployer);
         console.log("Chain ID:", block.chainid);
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         // 1. CrossStakingPool Implementation 배포
         CrossStakingPool poolImplementation = new CrossStakingPool();
@@ -82,10 +81,9 @@ contract DeployWithPools is Script {
     uint48 public constant POOL_DELAY = 1 days;
 
     function run() external {
-        uint deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
+        address deployer = msg.sender;
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         // 1. Pool Implementation 배포
         CrossStakingPool poolImplementation = new CrossStakingPool();
@@ -108,7 +106,7 @@ contract DeployWithPools is Script {
         crossStaking.setRouter(address(router));
 
         // 6. Native CROSS 풀 생성
-        (uint nativePoolId, address nativePoolAddress) = crossStaking.createPool(address(wcross));
+        (uint nativePoolId, address nativePoolAddress) = crossStaking.createPool(address(wcross), 1 ether);
 
         console.log("\n=== Full Deployment Summary ===");
         console.log("WCROSS:", address(wcross));

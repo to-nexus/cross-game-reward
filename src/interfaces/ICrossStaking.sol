@@ -36,7 +36,9 @@ interface ICrossStaking {
     function nextPoolId() external view returns (uint);
 
     /// @notice Creates a new staking pool
-    function createPool(address stakingToken) external returns (uint poolId, address poolAddress);
+    function createPool(address stakingToken, uint minStakeAmount)
+        external
+        returns (uint poolId, address poolAddress);
 
     /// @notice Adds a reward token to a pool
     function addRewardToken(uint poolId, address rewardToken) external;

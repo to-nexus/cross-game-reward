@@ -21,11 +21,9 @@ contract DeployCrossStakingPool is Script {
     uint48 public constant INITIAL_DELAY = 2 days; // 관리자 변경 딜레이
 
     function run() external {
-        // 환경 변수에서 배포자 개인키 로드
-        uint deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
+        address deployer = msg.sender;
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         // 1. Implementation 배포
         CrossStakingPool implementation = new CrossStakingPool();
@@ -64,14 +62,12 @@ contract DeployWithRewards is Script {
     uint48 public constant INITIAL_DELAY = 2 days;
 
     function run() external {
-        // 환경 변수 로드
-        uint deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
+        address deployer = msg.sender;
 
         // 네트워크별 설정 로드
         loadNetworkConfig();
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         // 1. Implementation 배포
         CrossStakingPool implementation = new CrossStakingPool();

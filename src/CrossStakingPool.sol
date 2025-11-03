@@ -89,9 +89,6 @@ contract CrossStakingPool is
 
     // ==================== Constants ====================
 
-    /// @notice Minimum amount required for staking
-    uint public constant MIN_STAKE_AMOUNT = 1 ether;
-
     /// @notice Precision multiplier for reward calculations
     uint private constant PRECISION = 1e18;
 
@@ -102,6 +99,9 @@ contract CrossStakingPool is
 
     /// @notice CrossStaking contract address (used for router validation)
     address public crossStaking;
+
+    /// @notice Minimum amount required for staking
+    uint public minStakeAmount;
 
     /// @notice Set of reward token addresses
     EnumerableSet.AddressSet private _rewardTokenAddresses;
@@ -182,9 +182,11 @@ contract CrossStakingPool is
      *      Pool's DEFAULT_ADMIN_ROLE = CrossStaking's owner (via owner() override)
      *      STAKING_ROOT_ROLE is granted to CrossStaking contract for pool management
      * @param _stakingToken Address of the token to be staked
+     * @param _minStakeAmount Minimum amount required for staking
      */
-    function initialize(IERC20 _stakingToken) external initializer {
+    function initialize(IERC20 _stakingToken, uint _minStakeAmount) external initializer {
         require(address(_stakingToken) != address(0), CSPCanNotZeroAddress());
+        require(_minStakeAmount > 0, CSPCanNotZeroValue());
 
         // msg.sender is always CrossStaking contract
         crossStaking = msg.sender;
@@ -196,6 +198,7 @@ contract CrossStakingPool is
         __UUPSUpgradeable_init();
 
         stakingToken = _stakingToken;
+        minStakeAmount = _minStakeAmount;
 
         // Grant STAKING_ROOT_ROLE to CrossStaking contract for pool management
         _grantRole(STAKING_ROOT_ROLE, crossStaking);
@@ -582,7 +585,7 @@ contract CrossStakingPool is
      * @param amount Amount to stake
      */
     function _stake(address payer, address account, uint amount) internal {
-        require(amount >= MIN_STAKE_AMOUNT, CSPBelowMinimumStakeAmount());
+        require(amount >= minStakeAmount, CSPBelowMinimumStakeAmount());
 
         _syncReward();
         _updateRewards(account);
@@ -637,8 +640,8 @@ contract CrossStakingPool is
 
     /**
      * @dev Storage gap for future upgrades
-     *      Currently used: 6 slots
-     *      Gap: 50 - 6 = 44 slots
+     *      Currently used: 7 slots (stakingToken, crossStaking, minStakeAmount, _rewardTokenAddresses, _rewardTokenData, balances, userRewards, totalStaked)
+     *      Gap: 50 - 7 = 43 slots
      */
-    uint[44] private __gap;
+    uint[43] private __gap;
 }

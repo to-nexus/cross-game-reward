@@ -36,6 +36,9 @@ contract CrossStaking is Initializable, AccessControlDefaultAdminRulesUpgradeabl
     /// @notice Thrown when a zero address is provided where it's not allowed
     error CSCanNotZeroAddress();
 
+    /// @notice Thrown when a zero value is provided where it's not allowed
+    error CSCanNotZeroValue();
+
     // ==================== Events ====================
 
     /// @notice Emitted when a new staking pool is created
@@ -120,21 +123,24 @@ contract CrossStaking is Initializable, AccessControlDefaultAdminRulesUpgradeabl
      *      Pool's DEFAULT_ADMIN_ROLE references CrossStaking's DEFAULT_ADMIN_ROLE
      *      CrossStaking receives STAKING_ROOT_ROLE for pool management
      * @param stakingToken Address of the token to be staked in the pool
+     * @param minStakeAmount Minimum amount required for staking (in wei)
      * @return poolId ID of the newly created pool
      * @return poolAddress Address of the newly created pool
      */
-    function createPool(address stakingToken)
+    function createPool(address stakingToken, uint minStakeAmount)
         external
         onlyRole(MANAGER_ROLE)
         returns (uint poolId, address poolAddress)
     {
         require(stakingToken != address(0), CSCanNotZeroAddress());
+        require(minStakeAmount > 0, CSCanNotZeroValue());
 
         poolId = nextPoolId++;
 
         // Deploy pool as UUPS proxy
         // Pool will set CrossStaking as msg.sender and get owner from defaultAdmin()
-        bytes memory initData = abi.encodeWithSelector(CrossStakingPool.initialize.selector, IERC20(stakingToken));
+        bytes memory initData =
+            abi.encodeWithSelector(CrossStakingPool.initialize.selector, IERC20(stakingToken), minStakeAmount);
 
         ERC1967Proxy proxy = new ERC1967Proxy(poolImplementation, initData);
         poolAddress = address(proxy);

@@ -59,7 +59,7 @@ abstract contract CrossStakingPoolBase is Test {
         crossStaking = CrossStaking(address(proxy));
 
         // 풀 생성 (CrossStaking을 통해)
-        (uint poolId, address poolAddress) = crossStaking.createPool(address(crossToken));
+        (uint poolId, address poolAddress) = crossStaking.createPool(address(crossToken), 1 ether);
         pool = CrossStakingPool(poolAddress);
 
         // 사용자들에게 CROSS 토큰 전송
