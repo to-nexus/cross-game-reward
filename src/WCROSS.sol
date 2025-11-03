@@ -70,13 +70,8 @@ contract WCROSS is ERC20 {
      *      Burns WCROSS tokens and returns equivalent native CROSS
      * @param amount Amount of WCROSS to unwrap
      */
-    function withdraw(uint amount) public {
-        require(msg.sender == staking.router(), WCROSSUnauthorized());
-        require(balanceOf(msg.sender) >= amount, WCROSSInsufficientBalance());
-        _burn(msg.sender, amount);
-
-        (bool success,) = msg.sender.call{value: amount}("");
-        require(success, WCROSSTransferFailed());
+    function withdraw(uint amount) external {
+        withdrawTo(amount, msg.sender);
     }
 
     /**
@@ -88,8 +83,6 @@ contract WCROSS is ERC20 {
      */
     function withdrawTo(uint amount, address to) public {
         require(msg.sender == staking.router(), WCROSSUnauthorized());
-        require(balanceOf(msg.sender) >= amount, WCROSSInsufficientBalance());
-        require(to != address(0), WCROSSTransferFailed());
         _burn(msg.sender, amount);
 
         (bool success,) = to.call{value: amount}("");

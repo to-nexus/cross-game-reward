@@ -146,7 +146,7 @@ contract CrossStakingRouter is ICrossStakingRouter {
         CrossStakingPool pool = _getPool(poolId);
         IERC20 stakingToken = pool.stakingToken();
 
-        _stakeERC20(poolId, pool, stakingToken, amount, msg.sender);
+        _stakeERC20(poolId, pool, stakingToken, amount);
     }
 
     /**
@@ -168,7 +168,7 @@ contract CrossStakingRouter is ICrossStakingRouter {
         // Approve Router via EIP-2612 permit
         IERC20Permit(address(stakingToken)).permit(msg.sender, address(this), amount, deadline, v, r, s);
 
-        _stakeERC20(poolId, pool, stakingToken, amount, msg.sender);
+        _stakeERC20(poolId, pool, stakingToken, amount);
     }
 
     /**
@@ -242,7 +242,14 @@ contract CrossStakingRouter is ICrossStakingRouter {
         require(address(pool.stakingToken()) == address(wcross), CSRNotWCROSSPool());
     }
 
-    function _stakeERC20(uint poolId, CrossStakingPool pool, IERC20 token, uint amount, address account) internal {
+    /**
+     * @dev Stakes ERC20 tokens from user and stakes into the pool
+     * @param poolId ID of the pool to stake into
+     * @param pool Pool contract instance
+     * @param token ERC20 token contract instance
+     * @param amount Amount of tokens to stake
+     */
+    function _stakeERC20(uint poolId, CrossStakingPool pool, IERC20 token, uint amount) internal {
         // Transfer tokens from user and stake to pool
         token.safeTransferFrom(msg.sender, address(this), amount);
         token.forceApprove(address(pool), amount);

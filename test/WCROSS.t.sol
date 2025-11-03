@@ -8,6 +8,8 @@ import {WCROSS} from "../src/WCROSS.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {Test} from "forge-std/Test.sol";
 
+import {IERC20Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
+
 contract WCROSSTest is Test {
     CrossStaking public crossStaking;
     CrossStakingPool public poolImplementation;
@@ -112,7 +114,9 @@ contract WCROSSTest is Test {
         wcross.deposit{value: 5 ether}();
 
         vm.prank(address(router));
-        vm.expectRevert(WCROSS.WCROSSInsufficientBalance.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(IERC20Errors.ERC20InsufficientBalance.selector, address(router), 5 ether, 10 ether)
+        );
         wcross.withdraw(10 ether);
     }
 
