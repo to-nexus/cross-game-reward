@@ -33,8 +33,7 @@ contract CrossStakingTest is Test {
 
         // Deploy CrossStaking as UUPS proxy
         CrossStaking implementation = new CrossStaking();
-        bytes memory initData =
-            abi.encodeWithSelector(CrossStaking.initialize.selector, address(poolImplementation), owner, 2 days);
+        bytes memory initData = abi.encodeCall(CrossStaking.initialize, (address(poolImplementation), owner, 2 days));
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
         crossStaking = CrossStaking(address(proxy));
 

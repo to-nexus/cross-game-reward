@@ -7,6 +7,8 @@ import {IWCROSS} from "./interfaces/IWCROSS.sol";
 
 import {ICrossStakingRouter} from "./interfaces/ICrossStakingRouter.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
+import {IERC20Permit} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /**
@@ -91,14 +93,6 @@ contract CrossStakingRouter is ICrossStakingRouter {
         wcross = IWCROSS(crossStaking.wcross());
     }
 
-    // ==================== Receive Function ====================
-
-    /**
-     * @notice Receives native CROSS
-     * @dev Required for unstaking native CROSS
-     */
-    receive() external payable {}
-
     // ==================== Native CROSS Staking ====================
 
     /**
@@ -132,19 +126,11 @@ contract CrossStakingRouter is ICrossStakingRouter {
         uint stakedAmount = pool.balances(msg.sender);
         require(stakedAmount > 0, CSRNoStakeFound());
 
-        // Unstake from pool (WCROSS + rewards sent to msg.sender)
+        // Unstake from pool (WCROSS sent to Router, rewards sent to msg.sender)
         pool.unstakeFor(msg.sender);
 
-        // Router takes msg.sender's WCROSS and unwraps
-        uint wcrossBalance = IERC20(address(wcross)).balanceOf(msg.sender);
-        require(wcrossBalance >= stakedAmount, CSRTransferFailed());
-
-        IERC20(address(wcross)).safeTransferFrom(msg.sender, address(this), wcrossBalance);
-        wcross.withdraw(wcrossBalance);
-
-        // Send native CROSS to msg.sender
-        (bool success,) = msg.sender.call{value: wcrossBalance}("");
-        require(success, CSRTransferFailed());
+        // Router unwraps and sends native CROSS directly to user
+        wcross.withdrawTo(stakedAmount, msg.sender);
 
         emit UnstakedNative(msg.sender, poolId, stakedAmount);
     }
@@ -172,20 +158,51 @@ contract CrossStakingRouter is ICrossStakingRouter {
     }
 
     /**
+     * @notice Stakes ERC20 tokens using EIP-2612 permit
+     * @dev Performs permit + transfer + stake in a single transaction (for tokens supporting EIP-2612)
+     * @param poolId ID of the pool to stake into
+     * @param amount Amount of tokens to stake
+     * @param deadline Permit signature deadline
+     * @param v Permit signature v
+     * @param r Permit signature r
+     * @param s Permit signature s
+     */
+    function stakeERC20WithPermit(uint poolId, uint amount, uint deadline, uint8 v, bytes32 r, bytes32 s) external {
+        require(amount > 0, CSRInvalidAmount());
+
+        CrossStakingPool pool = _getPool(poolId);
+        IERC20 stakingToken = pool.stakingToken();
+
+        // Approve Router via EIP-2612 permit
+        IERC20Permit(address(stakingToken)).permit(msg.sender, address(this), amount, deadline, v, r, s);
+
+        // Transfer tokens from user and stake to pool
+        stakingToken.safeTransferFrom(msg.sender, address(this), amount);
+        stakingToken.forceApprove(address(pool), amount);
+        pool.stakeFor(msg.sender, amount);
+
+        emit StakedERC20(msg.sender, poolId, address(stakingToken), amount);
+    }
+
+    /**
      * @notice Unstakes ERC20 tokens
      * @dev Unstakes all staked tokens and claims rewards
      * @param poolId ID of the pool to unstake from
      */
     function unstakeERC20(uint poolId) external {
         CrossStakingPool pool = _getPool(poolId);
+        IERC20 stakingToken = pool.stakingToken();
 
         uint stakedAmount = pool.balances(msg.sender);
         require(stakedAmount > 0, CSRNoStakeFound());
 
-        // Unstake (includes rewards)
+        // Unstake (staking tokens sent to Router, rewards to msg.sender)
         pool.unstakeFor(msg.sender);
 
-        emit UnstakedERC20(msg.sender, poolId, address(pool.stakingToken()), stakedAmount);
+        // Transfer staking tokens from Router to user
+        stakingToken.safeTransfer(msg.sender, stakedAmount);
+
+        emit UnstakedERC20(msg.sender, poolId, address(stakingToken), stakedAmount);
     }
 
     // ==================== View Functions ====================

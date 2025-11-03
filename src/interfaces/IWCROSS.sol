@@ -12,6 +12,9 @@ interface IWCROSS is IERC20 {
     /// @notice Wraps native CROSS to WCROSS
     function deposit() external payable;
 
-    /// @notice Unwraps WCROSS to native CROSS
+    /// @notice Unwraps WCROSS to native CROSS (sends to msg.sender)
     function withdraw(uint amount) external;
+
+    /// @notice Unwraps WCROSS to native CROSS and sends to specified address
+    function withdrawTo(uint amount, address to) external;
 }

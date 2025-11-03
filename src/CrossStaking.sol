@@ -139,8 +139,7 @@ contract CrossStaking is Initializable, AccessControlDefaultAdminRulesUpgradeabl
 
         // Deploy pool as UUPS proxy
         // Pool will set CrossStaking as msg.sender and get owner from defaultAdmin()
-        bytes memory initData =
-            abi.encodeWithSelector(CrossStakingPool.initialize.selector, IERC20(stakingToken), minStakeAmount);
+        bytes memory initData = abi.encodeCall(CrossStakingPool.initialize, (IERC20(stakingToken), minStakeAmount));
 
         ERC1967Proxy proxy = new ERC1967Proxy(poolImplementation, initData);
         poolAddress = address(proxy);

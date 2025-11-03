@@ -72,7 +72,7 @@ contract CrossStakingPoolAdminTest is CrossStakingPoolBase {
 
         // 검증: 보상이 입금되었는지
         uint[] memory rewards = pool.pendingRewards(user2);
-        assertApproxEqAbs(rewards[0], 100 ether, 1 ether, "Anyone can transfer rewards");
+        assertApproxEqAbs(rewards[0], 100 ether, 100, "Anyone can transfer rewards");
     }
 
     // ==================== Remove Reward Token ====================
@@ -93,7 +93,7 @@ contract CrossStakingPoolAdminTest is CrossStakingPoolBase {
         pool.claimReward(address(rewardToken1));
 
         // Verify claimed
-        assertApproxEqAbs(rewardToken1.balanceOf(user1), 100 ether, 1 ether, "Can still claim after removal");
+        assertApproxEqAbs(rewardToken1.balanceOf(user1), 100 ether, 100, "Can still claim after removal");
     }
 
     function testCannotRemoveNonExistentToken() public {
@@ -125,7 +125,7 @@ contract CrossStakingPoolAdminTest is CrossStakingPoolBase {
         vm.prank(user1);
         pool.claimReward(address(rewardToken1));
 
-        assertApproxEqAbs(rewardToken1.balanceOf(user1), 100 ether, 1 ether, "No new rewards after removal");
+        assertApproxEqAbs(rewardToken1.balanceOf(user1), 100 ether, 100, "No new rewards after removal");
     }
 
     // ==================== Emergency Withdraw ====================
@@ -157,7 +157,7 @@ contract CrossStakingPoolAdminTest is CrossStakingPoolBase {
         // 사용자는 여전히 claim 가능
         vm.prank(user1);
         pool.claimReward(address(rewardToken1));
-        assertApproxEqAbs(rewardToken1.balanceOf(user1), 100 ether, 1 ether, "User can still claim");
+        assertApproxEqAbs(rewardToken1.balanceOf(user1), 100 ether, 100, "User can still claim");
     }
 
     function testEmergencyWithdrawAfterUserClaim() public {

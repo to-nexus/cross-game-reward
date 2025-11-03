@@ -48,12 +48,7 @@ abstract contract CrossStakingPoolBase is Test {
         CrossStakingPool poolImplementation = new CrossStakingPool();
         CrossStaking stakingImplementation = new CrossStaking();
 
-        bytes memory initData = abi.encodeWithSelector(
-            CrossStaking.initialize.selector,
-            address(poolImplementation),
-            owner,
-            2 days // initialDelay for CrossStaking admin
-        );
+        bytes memory initData = abi.encodeCall(CrossStaking.initialize, (address(poolImplementation), owner, 2 days));
 
         ERC1967Proxy proxy = new ERC1967Proxy(address(stakingImplementation), initData);
         crossStaking = CrossStaking(address(proxy));

@@ -31,8 +31,7 @@ contract WCROSSTest is Test {
         poolImplementation = new CrossStakingPool();
 
         CrossStaking implementation = new CrossStaking();
-        bytes memory initData =
-            abi.encodeWithSelector(CrossStaking.initialize.selector, address(poolImplementation), owner, 2 days);
+        bytes memory initData = abi.encodeCall(CrossStaking.initialize, (address(poolImplementation), owner, 2 days));
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
         crossStaking = CrossStaking(address(proxy));
 
@@ -77,19 +76,19 @@ contract WCROSSTest is Test {
 
     // ==================== Withdraw (Router만 가능) ====================
 
-    function testWithdrawViaRouter() public {
+    function testWithdrawToViaRouter() public {
         // Deposit first
         vm.deal(address(router), 10 ether);
         vm.prank(address(router));
         wcross.deposit{value: 10 ether}();
 
-        // Withdraw
-        uint balanceBefore = address(router).balance;
+        // Withdraw directly to user (withdrawTo)
+        uint balanceBefore = user1.balance;
         vm.prank(address(router));
-        wcross.withdraw(10 ether);
+        wcross.withdrawTo(10 ether, user1);
 
-        assertEq(wcross.balanceOf(address(router)), 0, "WCROSS burned");
-        assertEq(address(router).balance, balanceBefore + 10 ether, "Native CROSS returned");
+        assertEq(wcross.balanceOf(address(router)), 0, "WCROSS burned from router");
+        assertEq(user1.balance, balanceBefore + 10 ether, "Native CROSS sent to user");
     }
 
     function testCannotWithdrawByNonRouter() public {

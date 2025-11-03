@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import {AccessControlDefaultAdminRulesUpgradeable} from
-    "@openzeppelin/contracts-upgradeable/access/extensions/AccessControlDefaultAdminRulesUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
@@ -15,8 +13,11 @@ import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet
 
 import {ICrossStaking} from "./interfaces/ICrossStaking.sol";
 import {ICrossStakingPool} from "./interfaces/ICrossStakingPool.sol";
+
+import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import {AccessControlDefaultAdminRulesUpgradeable as AccessControl} from
     "@openzeppelin/contracts-upgradeable/access/extensions/AccessControlDefaultAdminRulesUpgradeable.sol";
+import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 
 /**
  * @title CrossStakingPool
@@ -44,7 +45,7 @@ import {AccessControlDefaultAdminRulesUpgradeable as AccessControl} from
  */
 contract CrossStakingPool is
     Initializable,
-    AccessControlDefaultAdminRulesUpgradeable,
+    AccessControl,
     PausableUpgradeable,
     ReentrancyGuardTransientUpgradeable,
     UUPSUpgradeable,
@@ -600,9 +601,10 @@ contract CrossStakingPool is
 
     /**
      * @dev Internal unstaking logic
+     * @param caller Address receiving the unstaked tokens
      * @param account Address to unstake for
      */
-    function _unstake(address, /* caller */ address account) internal {
+    function _unstake(address caller, address account) internal {
         require(balances[account] > 0, CSPNoStakeFound());
 
         uint amount = balances[account];
@@ -612,7 +614,7 @@ contract CrossStakingPool is
         _claimRewards(account);
 
         totalStaked -= amount;
-        stakingToken.safeTransfer(account, amount);
+        stakingToken.safeTransfer(caller, amount);
 
         delete balances[account];
 
@@ -635,6 +637,22 @@ contract CrossStakingPool is
      * @param newImplementation Address of the new implementation
      */
     function _authorizeUpgrade(address newImplementation) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
+
+    /**
+     * @dev Overrides the hasRole function to return the owner of the pool
+     * @param role The role to check
+     * @param account The account to check
+     * @return True if the account has the role, false otherwise
+     */
+    function hasRole(bytes32 role, address account)
+        public
+        view
+        override(AccessControlUpgradeable, IAccessControl)
+        returns (bool)
+    {
+        if (role == DEFAULT_ADMIN_ROLE) return account == owner();
+        return super.hasRole(role, account);
+    }
 
     // ==================== Storage Gap ====================
 

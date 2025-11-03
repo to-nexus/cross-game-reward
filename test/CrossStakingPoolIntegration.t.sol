@@ -97,7 +97,7 @@ contract CrossStakingPoolIntegrationTest is CrossStakingPoolBase {
         // 총 입금: 100 + 150 + 300 = 550 ether
         uint totalRewards = user1Total + user2Total + user3Total;
 
-        assertApproxEqAbs(totalRewards, 550 ether, 1 ether, "Total rewards match deposits");
+        assertApproxEqAbs(totalRewards, 550 ether, 100, "Total rewards match deposits");
 
         // 모든 CROSS 반환 확인
         assertEq(pool.totalStaked(), 0, "All CROSS unstaked from pool");
@@ -132,14 +132,14 @@ contract CrossStakingPoolIntegrationTest is CrossStakingPoolBase {
         // User3: 300/600 = 50%
 
         // RewardToken1: 900 total
-        assertApproxEqAbs(rewards1[0], 150 ether, 1 ether, "User1 reward1: 16.67%");
-        assertApproxEqAbs(rewards2[0], 300 ether, 1 ether, "User2 reward1: 33.33%");
-        assertApproxEqAbs(rewards3[0], 450 ether, 1 ether, "User3 reward1: 50%");
+        assertApproxEqAbs(rewards1[0], 150 ether, 100, "User1 reward1: 16.67%");
+        assertApproxEqAbs(rewards2[0], 300 ether, 100, "User2 reward1: 33.33%");
+        assertApproxEqAbs(rewards3[0], 450 ether, 100, "User3 reward1: 50%");
 
         // RewardToken2: 900 total
-        assertApproxEqAbs(rewards1[1], 150 ether, 1 ether, "User1 reward2: 16.67%");
-        assertApproxEqAbs(rewards2[1], 300 ether, 1 ether, "User2 reward2: 33.33%");
-        assertApproxEqAbs(rewards3[1], 450 ether, 1 ether, "User3 reward2: 50%");
+        assertApproxEqAbs(rewards1[1], 150 ether, 100, "User1 reward2: 16.67%");
+        assertApproxEqAbs(rewards2[1], 300 ether, 100, "User2 reward2: 33.33%");
+        assertApproxEqAbs(rewards3[1], 450 ether, 100, "User3 reward2: 50%");
     }
 
     function testDynamicStakingAndUnstaking() public {
@@ -166,12 +166,12 @@ contract CrossStakingPoolIntegrationTest is CrossStakingPoolBase {
         uint[] memory rewards3 = pool.pendingRewards(user3);
 
         // First reward: user1 got 100/300, user2 got 200/300
-        assertApproxEqAbs(user1Rewards, 100 ether, 2 ether, "User1 first reward");
+        assertApproxEqAbs(user1Rewards, 100 ether, 100, "User1 first reward");
 
         // Second reward: user2 (200/500) = 200, user3 (300/500) = 300
         // User2 total: 200 (first) + 200 (second) = 400
-        assertApproxEqAbs(rewards2[0], 400 ether, 1 ether, "User2 both rewards");
-        assertApproxEqAbs(rewards3[0], 300 ether, 1 ether, "User3 only second reward");
+        assertApproxEqAbs(rewards2[0], 400 ether, 100, "User2 both rewards");
+        assertApproxEqAbs(rewards3[0], 300 ether, 100, "User3 only second reward");
     }
 
     function testRepeatedStakeAndClaim() public {
@@ -191,7 +191,7 @@ contract CrossStakingPoolIntegrationTest is CrossStakingPoolBase {
         }
 
         uint totalClaimed = rewardToken1.balanceOf(user1);
-        assertApproxEqAbs(totalClaimed, 500 ether, 10 ether, "Should accumulate all claims");
+        assertApproxEqAbs(totalClaimed, 500 ether, 0.001 ether, "Should accumulate all claims");
 
         // Final balance
         assertEq(pool.balances(user1), 50 ether, "Should have accumulated stakes");
@@ -207,14 +207,14 @@ contract CrossStakingPoolIntegrationTest is CrossStakingPoolBase {
         }
 
         uint[] memory rewards = pool.pendingRewards(user1);
-        assertApproxEqAbs(rewards[0], 5200 ether, 100 ether, "1 year of rewards");
+        assertApproxEqAbs(rewards[0], 5200 ether, 0.01 ether, "1 year of rewards");
 
         // Unstake after 1 year
         vm.prank(user1);
         pool.unstake();
 
         assertEq(crossToken.balanceOf(user1), 1000 ether, "Should get all CROSS back");
-        assertApproxEqAbs(rewardToken1.balanceOf(user1), 5200 ether, 100 ether, "Should get all rewards");
+        assertApproxEqAbs(rewardToken1.balanceOf(user1), 5200 ether, 0.01 ether, "Should get all rewards");
     }
 
     // ==================== 스트레스 테스트 ====================
@@ -234,7 +234,7 @@ contract CrossStakingPoolIntegrationTest is CrossStakingPoolBase {
         // 각 사용자는 100 ether씩 받아야 함
         for (uint i = 0; i < 10; i++) {
             uint[] memory rewards = pool.pendingRewards(users[i]);
-            assertApproxEqAbs(rewards[0], 100 ether, 2 ether, "Equal distribution");
+            assertApproxEqAbs(rewards[0], 100 ether, 100, "Equal distribution");
         }
     }
 
@@ -247,7 +247,7 @@ contract CrossStakingPoolIntegrationTest is CrossStakingPoolBase {
         }
 
         uint[] memory rewards = pool.pendingRewards(user1);
-        assertApproxEqAbs(rewards[0], 1000 ether, 10 ether, "Accumulated many small rewards");
+        assertApproxEqAbs(rewards[0], 1000 ether, 0.001 ether, "Accumulated many small rewards");
     }
 
     // ==================== 엣지 케이스 통합 ====================
@@ -273,7 +273,7 @@ contract CrossStakingPoolIntegrationTest is CrossStakingPoolBase {
         _depositReward(address(rewardToken1), 10000 ether); // 더 작은 금액으로 조정
 
         uint[] memory rewards = pool.pendingRewards(user1);
-        assertApproxEqAbs(rewards[0], 10000 ether, 1 ether, "Should handle large rewards");
+        assertApproxEqAbs(rewards[0], 10000 ether, 100, "Should handle large rewards");
 
         // 매우 큰 스테이킹과 작은 보상
         _userStake(user2, 1000 ether);
@@ -296,7 +296,7 @@ contract CrossStakingPoolIntegrationTest is CrossStakingPoolBase {
 
         // User1이 총 1000 ether를 받았어야 함
         uint totalClaimed = rewardToken1.balanceOf(user1);
-        assertApproxEqAbs(totalClaimed, 1000 ether, 10 ether, "Sequential claims should be accurate");
+        assertApproxEqAbs(totalClaimed, 1000 ether, 0.001 ether, "Sequential claims should be accurate");
     }
 
     // ==================== 실제 사용 패턴 시뮬레이션 ====================

@@ -65,7 +65,7 @@ contract WCROSS is ERC20 {
     }
 
     /**
-     * @notice Unwraps WCROSS to native CROSS
+     * @notice Unwraps WCROSS to native CROSS (sends to msg.sender)
      * @dev Only callable by the authorized router
      *      Burns WCROSS tokens and returns equivalent native CROSS
      * @param amount Amount of WCROSS to unwrap
@@ -76,6 +76,23 @@ contract WCROSS is ERC20 {
         _burn(msg.sender, amount);
 
         (bool success,) = msg.sender.call{value: amount}("");
+        require(success, WCROSSTransferFailed());
+    }
+
+    /**
+     * @notice Unwraps WCROSS to native CROSS and sends to specified address
+     * @dev Only callable by the authorized router
+     *      Burns WCROSS from msg.sender and sends native CROSS to recipient
+     * @param amount Amount of WCROSS to unwrap
+     * @param to Address to receive the unwrapped native CROSS
+     */
+    function withdrawTo(uint amount, address to) public {
+        require(msg.sender == staking.router(), WCROSSUnauthorized());
+        require(balanceOf(msg.sender) >= amount, WCROSSInsufficientBalance());
+        require(to != address(0), WCROSSTransferFailed());
+        _burn(msg.sender, amount);
+
+        (bool success,) = to.call{value: amount}("");
         require(success, WCROSSTransferFailed());
     }
 }

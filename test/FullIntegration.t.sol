@@ -47,8 +47,7 @@ contract FullIntegrationTest is Test {
 
         // Deploy CrossStaking as UUPS proxy (WCROSS를 생성함)
         CrossStaking implementation = new CrossStaking();
-        bytes memory initData =
-            abi.encodeWithSelector(CrossStaking.initialize.selector, address(poolImplementation), admin, 2 days);
+        bytes memory initData = abi.encodeCall(CrossStaking.initialize, (address(poolImplementation), admin, 2 days));
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
         crossStaking = CrossStaking(address(proxy));
 
@@ -119,21 +118,21 @@ contract FullIntegrationTest is Test {
         assertEq(aliceStaked, 100 ether, "Alice staked");
 
         // Alice: 1000 USDT (alone) + 200 USDC (1/3) + 200 DAI (1/4) = 1400+
-        assertApproxEqAbs(aliceRewards[0], 1000 ether, 1 ether, "Alice USDT");
-        assertApproxEqAbs(aliceRewards[1], 200 ether, 1 ether, "Alice USDC");
-        assertApproxEqAbs(aliceRewards[2], 200 ether, 1 ether, "Alice DAI");
+        assertApproxEqAbs(aliceRewards[0], 1000 ether, 100, "Alice USDT");
+        assertApproxEqAbs(aliceRewards[1], 200 ether, 100, "Alice USDC");
+        assertApproxEqAbs(aliceRewards[2], 200 ether, 100, "Alice DAI");
 
         // Bob: 0 USDT + 400 USDC (2/3) + 400 DAI (2/4) = 800
         (, uint[] memory bobRewards) = router.getUserStakingInfo(nativePoolId, bob);
         assertEq(bobRewards[0], 0, "Bob no USDT");
-        assertApproxEqAbs(bobRewards[1], 400 ether, 1 ether, "Bob USDC");
-        assertApproxEqAbs(bobRewards[2], 400 ether, 1 ether, "Bob DAI");
+        assertApproxEqAbs(bobRewards[1], 400 ether, 100, "Bob USDC");
+        assertApproxEqAbs(bobRewards[2], 400 ether, 100, "Bob DAI");
 
         // Carol: 0 USDT + 0 USDC + 200 DAI (1/4) = 200
         (, uint[] memory carolRewards) = router.getUserStakingInfo(nativePoolId, carol);
         assertEq(carolRewards[0], 0, "Carol no USDT");
         assertEq(carolRewards[1], 0, "Carol no USDC");
-        assertApproxEqAbs(carolRewards[2], 200 ether, 1 ether, "Carol DAI");
+        assertApproxEqAbs(carolRewards[2], 200 ether, 100, "Carol DAI");
 
         // Alice unstakes
         uint aliceBalanceBefore = alice.balance;
@@ -141,9 +140,9 @@ contract FullIntegrationTest is Test {
         router.unstakeNative(nativePoolId);
 
         assertEq(alice.balance, aliceBalanceBefore + 100 ether, "Alice got native CROSS");
-        assertApproxEqAbs(usdt.balanceOf(alice), 1000 ether, 1 ether, "Alice got USDT");
-        assertApproxEqAbs(usdc.balanceOf(alice), 200 ether, 1 ether, "Alice got USDC");
-        assertApproxEqAbs(dai.balanceOf(alice), 200 ether, 1 ether, "Alice got DAI");
+        assertApproxEqAbs(usdt.balanceOf(alice), 1000 ether, 100, "Alice got USDT");
+        assertApproxEqAbs(usdc.balanceOf(alice), 200 ether, 100, "Alice got USDC");
+        assertApproxEqAbs(dai.balanceOf(alice), 200 ether, 100, "Alice got DAI");
     }
 
     // ==================== 다중 풀 시나리오 ====================
@@ -179,8 +178,8 @@ contract FullIntegrationTest is Test {
         (, uint[] memory aliceRewards) = router.getUserStakingInfo(nativePoolId, alice);
         (, uint[] memory bobRewards) = router.getUserStakingInfo(erc20PoolId, bob);
 
-        assertApproxEqAbs(aliceRewards[0], 100 ether, 1 ether, "Alice native pool rewards");
-        assertApproxEqAbs(bobRewards[0], 200 ether, 1 ether, "Bob ERC20 pool rewards");
+        assertApproxEqAbs(aliceRewards[0], 100 ether, 100, "Alice native pool rewards");
+        assertApproxEqAbs(bobRewards[0], 200 ether, 100, "Bob ERC20 pool rewards");
     }
 
     // ==================== 실전 시나리오 ====================
@@ -226,21 +225,21 @@ contract FullIntegrationTest is Test {
 
         // Alice: 200 USDT (2/3) + 200 USDC (1/3) + 300 DAI (1/3) = 700
         (, uint[] memory aliceRewards) = router.getUserStakingInfo(nativePoolId, alice);
-        assertApproxEqAbs(aliceRewards[0], 200 ether, 1 ether, "Alice USDT");
-        assertApproxEqAbs(aliceRewards[1], 200 ether, 1 ether, "Alice USDC");
-        assertApproxEqAbs(aliceRewards[2], 300 ether, 1 ether, "Alice DAI");
+        assertApproxEqAbs(aliceRewards[0], 200 ether, 100, "Alice USDT");
+        assertApproxEqAbs(aliceRewards[1], 200 ether, 100, "Alice USDC");
+        assertApproxEqAbs(aliceRewards[2], 300 ether, 100, "Alice DAI");
 
         // Bob: 100 USDT (1/3) + 100 USDC (1/6) + 150 DAI (1/6) = 350
         (, uint[] memory bobRewards) = router.getUserStakingInfo(nativePoolId, bob);
-        assertApproxEqAbs(bobRewards[0], 100 ether, 1 ether, "Bob USDT");
-        assertApproxEqAbs(bobRewards[1], 100 ether, 1 ether, "Bob USDC");
-        assertApproxEqAbs(bobRewards[2], 150 ether, 1 ether, "Bob DAI");
+        assertApproxEqAbs(bobRewards[0], 100 ether, 100, "Bob USDT");
+        assertApproxEqAbs(bobRewards[1], 100 ether, 100, "Bob USDC");
+        assertApproxEqAbs(bobRewards[2], 150 ether, 100, "Bob DAI");
 
         // Carol: 0 USDT + 300 USDC (1/2) + 450 DAI (1/2) = 750
         (, uint[] memory carolRewards) = router.getUserStakingInfo(nativePoolId, carol);
         assertEq(carolRewards[0], 0, "Carol no USDT");
-        assertApproxEqAbs(carolRewards[1], 300 ether, 1 ether, "Carol USDC");
-        assertApproxEqAbs(carolRewards[2], 450 ether, 1 ether, "Carol DAI");
+        assertApproxEqAbs(carolRewards[1], 300 ether, 100, "Carol USDC");
+        assertApproxEqAbs(carolRewards[2], 450 ether, 100, "Carol DAI");
 
         // All unstake
         vm.prank(alice);
@@ -288,13 +287,13 @@ contract FullIntegrationTest is Test {
         (, uint[] memory bobRewards) = router.getUserStakingInfo(nativePoolId, bob);
         (, uint[] memory carolRewards) = router.getUserStakingInfo(nativePoolId, carol);
 
-        assertApproxEqAbs(aliceRewards[0], 100 ether, 1 ether, "Alice gets 100");
-        assertApproxEqAbs(bobRewards[0], 200 ether, 1 ether, "Bob gets 200");
-        assertApproxEqAbs(carolRewards[0], 300 ether, 1 ether, "Carol gets 300");
+        assertApproxEqAbs(aliceRewards[0], 100 ether, 100, "Alice gets 100");
+        assertApproxEqAbs(bobRewards[0], 200 ether, 100, "Bob gets 200");
+        assertApproxEqAbs(carolRewards[0], 300 ether, 100, "Carol gets 300");
 
         // Verify total = 600
         uint totalRewards = aliceRewards[0] + bobRewards[0] + carolRewards[0];
-        assertApproxEqAbs(totalRewards, 600 ether, 3 ether, "Total rewards match");
+        assertApproxEqAbs(totalRewards, 600 ether, 100, "Total rewards match");
     }
 
     // ==================== 에지 케이스 ====================
@@ -313,7 +312,7 @@ contract FullIntegrationTest is Test {
         vm.prank(alice);
         router.unstakeNative(nativePoolId);
 
-        assertApproxEqAbs(usdt.balanceOf(alice), 100 ether, 1 ether, "Alice got first rewards");
+        assertApproxEqAbs(usdt.balanceOf(alice), 100 ether, 100, "Alice got first rewards");
 
         // Reward 2 (Alice가 없는 동안 입금 - Alice가 받음!)
         usdt.transfer(nativePoolAddress, 100 ether);
@@ -353,9 +352,9 @@ contract FullIntegrationTest is Test {
 
         // Alice should have 100 USDT, 200 USDC, 300 DAI
         (, uint[] memory rewards) = router.getUserStakingInfo(nativePoolId, alice);
-        assertApproxEqAbs(rewards[0], 100 ether, 1 ether, "Alice USDT");
-        assertApproxEqAbs(rewards[1], 200 ether, 1 ether, "Alice USDC");
-        assertApproxEqAbs(rewards[2], 300 ether, 1 ether, "Alice DAI");
+        assertApproxEqAbs(rewards[0], 100 ether, 100, "Alice USDT");
+        assertApproxEqAbs(rewards[1], 200 ether, 100, "Alice USDC");
+        assertApproxEqAbs(rewards[2], 300 ether, 100, "Alice DAI");
     }
 
     // ==================== 보안 검증 ====================
