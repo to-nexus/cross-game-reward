@@ -81,8 +81,5 @@ interface ICrossStakingPool {
     function getRewardTokens() external view returns (address[] memory);
 
     /// @notice Returns the number of reward tokens
-    function rewardTokensLength() external view returns (uint);
-
-    /// @notice Returns the number of reward tokens
     function rewardTokenCount() external view returns (uint);
 }

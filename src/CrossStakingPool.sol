@@ -83,6 +83,9 @@ contract CrossStakingPool is
     /// @notice Thrown when attempting emergency withdraw with no withdrawable amount
     error CSPNoWithdrawableAmount();
 
+    /// @notice Thrown when attempting to call a function that is not allowed
+    error CSPNotAllowedFunction();
+
     // ==================== Roles ====================
 
     /// @notice Role identifier for CrossStaking contract (root admin for pool management)
@@ -145,16 +148,11 @@ contract CrossStakingPool is
     /// @param rewardToken Address of the removed reward token
     event RewardTokenRemoved(address indexed rewardToken);
 
-    /// @notice Emitted when rewards are deposited to the pool
-    /// @param sender Address that deposited the rewards
-    /// @param rewardToken Address of the reward token
-    /// @param amount Amount of rewards deposited
-    event RewardDeposited(address indexed sender, address indexed rewardToken, uint amount);
-
     /// @notice Emitted when rewards are distributed to stakers
     /// @param rewardToken Address of the reward token
     /// @param amount Amount of rewards distributed
-    event RewardDistributed(address indexed rewardToken, uint amount);
+    /// @param totalStaked Total amount of tokens staked in the pool
+    event RewardDistributed(address indexed rewardToken, uint amount, uint totalStaked);
 
     /// @notice Emitted when admin performs emergency withdrawal
     /// @param rewardToken Address of the reward token
@@ -173,7 +171,7 @@ contract CrossStakingPool is
      * @notice Fallback function to reject direct calls
      */
     fallback() external {
-        revert("Not allowed");
+        revert CSPNotAllowedFunction();
     }
 
     /**
@@ -293,9 +291,12 @@ contract CrossStakingPool is
         uint length = _rewardTokenAddresses.length();
         rewards = new uint[](length);
 
-        for (uint i = 0; i < length; i++) {
+        for (uint i = 0; i < length;) {
             address tokenAddress = _rewardTokenAddresses.at(i);
             rewards[i] = _calculatePendingReward(tokenAddress, user);
+            unchecked {
+                ++i;
+            }
         }
     }
 
@@ -339,7 +340,7 @@ contract CrossStakingPool is
      * @notice Retrieves the number of reward tokens
      * @return Number of reward tokens
      */
-    function rewardTokensLength() external view returns (uint) {
+    function rewardTokenCount() external view returns (uint) {
         return _rewardTokenAddresses.length();
     }
 
@@ -365,14 +366,6 @@ contract CrossStakingPool is
         });
 
         emit RewardTokenAdded(tokenAddress);
-    }
-
-    /**
-     * @notice Retrieves the number of reward tokens
-     * @return Number of reward tokens
-     */
-    function rewardTokenCount() external view returns (uint) {
-        return _rewardTokenAddresses.length();
     }
 
     /**
@@ -454,9 +447,12 @@ contract CrossStakingPool is
      */
     function _syncReward() internal {
         uint length = _rewardTokenAddresses.length();
-        for (uint i = 0; i < length; i++) {
+        for (uint i = 0; i < length;) {
             address tokenAddress = _rewardTokenAddresses.at(i);
             _syncReward(tokenAddress);
+            unchecked {
+                ++i;
+            }
         }
     }
 
@@ -472,10 +468,10 @@ contract CrossStakingPool is
 
         uint currentBalance = IERC20(rt.tokenAddress).balanceOf(address(this));
 
-        if (currentBalance > rt.lastBalance && totalStaked > 0) {
+        if (currentBalance > rt.lastBalance) {
             uint newReward = currentBalance - rt.lastBalance;
             rt.rewardPerTokenStored += (newReward * PRECISION) / totalStaked;
-            emit RewardDistributed(rt.tokenAddress, newReward);
+            emit RewardDistributed(rt.tokenAddress, newReward, totalStaked);
         }
 
         rt.lastBalance = currentBalance;
@@ -489,9 +485,12 @@ contract CrossStakingPool is
      */
     function _updateRewards(address user) internal {
         uint length = _rewardTokenAddresses.length();
-        for (uint i = 0; i < length; i++) {
+        for (uint i = 0; i < length;) {
             address tokenAddress = _rewardTokenAddresses.at(i);
             _updateReward(tokenAddress, user);
+            unchecked {
+                ++i;
+            }
         }
     }
 
@@ -547,9 +546,12 @@ contract CrossStakingPool is
      */
     function _claimRewards(address user) internal {
         uint length = _rewardTokenAddresses.length();
-        for (uint i = 0; i < length; i++) {
+        for (uint i = 0; i < length;) {
             address tokenAddress = _rewardTokenAddresses.at(i);
             _claimReward(tokenAddress, user);
+            unchecked {
+                ++i;
+            }
         }
     }
 

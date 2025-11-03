@@ -35,9 +35,6 @@ contract CrossStakingRouter is ICrossStakingRouter {
     /// @notice Thrown when a transfer fails
     error CSRTransferFailed();
 
-    /// @notice Thrown when accessing a non-existent pool
-    error CSRPoolNotFound();
-
     /// @notice Thrown when attempting native operations on a non-WCROSS pool
     error CSRNotWCROSSPool();
 
@@ -149,12 +146,7 @@ contract CrossStakingRouter is ICrossStakingRouter {
         CrossStakingPool pool = _getPool(poolId);
         IERC20 stakingToken = pool.stakingToken();
 
-        // Transfer tokens from msg.sender and stake to pool
-        stakingToken.safeTransferFrom(msg.sender, address(this), amount);
-        stakingToken.forceApprove(address(pool), amount);
-        pool.stakeFor(msg.sender, amount);
-
-        emit StakedERC20(msg.sender, poolId, address(stakingToken), amount);
+        _stakeERC20(poolId, pool, stakingToken, amount, msg.sender);
     }
 
     /**
@@ -176,12 +168,7 @@ contract CrossStakingRouter is ICrossStakingRouter {
         // Approve Router via EIP-2612 permit
         IERC20Permit(address(stakingToken)).permit(msg.sender, address(this), amount, deadline, v, r, s);
 
-        // Transfer tokens from user and stake to pool
-        stakingToken.safeTransferFrom(msg.sender, address(this), amount);
-        stakingToken.forceApprove(address(pool), amount);
-        pool.stakeFor(msg.sender, amount);
-
-        emit StakedERC20(msg.sender, poolId, address(stakingToken), amount);
+        _stakeERC20(poolId, pool, stakingToken, amount, msg.sender);
     }
 
     /**
@@ -253,5 +240,14 @@ contract CrossStakingRouter is ICrossStakingRouter {
     function _getPoolAndValidateWCROSS(uint poolId) internal view returns (CrossStakingPool pool) {
         pool = _getPool(poolId);
         require(address(pool.stakingToken()) == address(wcross), CSRNotWCROSSPool());
+    }
+
+    function _stakeERC20(uint poolId, CrossStakingPool pool, IERC20 token, uint amount, address account) internal {
+        // Transfer tokens from user and stake to pool
+        token.safeTransferFrom(msg.sender, address(this), amount);
+        token.forceApprove(address(pool), amount);
+        pool.stakeFor(msg.sender, amount);
+
+        emit StakedERC20(msg.sender, poolId, address(token), amount);
     }
 }
