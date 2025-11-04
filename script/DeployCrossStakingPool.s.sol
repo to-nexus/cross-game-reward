@@ -18,7 +18,7 @@ import "forge-std/Script.sol";
 contract DeployCrossStakingPool is Script {
     // 배포할 네트워크의 CROSS 토큰 주소를 여기에 설정
     address public constant CROSS_TOKEN = address(0); // TODO: 실제 CROSS 토큰 주소로 변경
-    uint48 public constant INITIAL_DELAY = 2 days; // 관리자 변경 딜레이
+    uint256 public constant MIN_STAKE_AMOUNT = 1 ether;
 
     function run() external {
         address deployer = msg.sender;
@@ -31,7 +31,7 @@ contract DeployCrossStakingPool is Script {
 
         // 2. Initialize data 준비
         bytes memory initData =
-            abi.encodeWithSelector(CrossStakingPool.initialize.selector, IERC20(CROSS_TOKEN), deployer, INITIAL_DELAY);
+            abi.encodeWithSelector(CrossStakingPool.initialize.selector, IERC20(CROSS_TOKEN), MIN_STAKE_AMOUNT);
 
         // 3. Proxy 배포
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
@@ -44,7 +44,7 @@ contract DeployCrossStakingPool is Script {
         console.log("Implementation Address:", address(implementation));
         console.log("Staking token (CROSS):", address(pool.stakingToken()));
         console.log("Default Admin:", deployer);
-        console.log("Admin Delay:", INITIAL_DELAY);
+        console.log("Min Stake Amount:", MIN_STAKE_AMOUNT);
 
         vm.stopBroadcast();
     }
@@ -56,10 +56,10 @@ contract DeployCrossStakingPool is Script {
  */
 contract DeployWithRewards is Script {
     // 네트워크별 토큰 주소 설정
-    address public crossToken;
-    address[] public rewardTokens;
+    IERC20 public crossToken;
+    IERC20[] public rewardTokens;
     uint[] public initialRewardAmounts;
-    uint48 public constant INITIAL_DELAY = 2 days;
+    uint256 public constant MIN_STAKE_AMOUNT = 1 ether;
 
     function run() external {
         address deployer = msg.sender;
@@ -75,7 +75,7 @@ contract DeployWithRewards is Script {
 
         // 2. Initialize data 준비
         bytes memory initData =
-            abi.encodeWithSelector(CrossStakingPool.initialize.selector, IERC20(crossToken), deployer, INITIAL_DELAY);
+            abi.encodeWithSelector(CrossStakingPool.initialize.selector, crossToken, MIN_STAKE_AMOUNT);
 
         // 3. Proxy 배포
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
@@ -87,7 +87,7 @@ contract DeployWithRewards is Script {
         // 5. 보상 토큰 추가
         for (uint i = 0; i < rewardTokens.length; i++) {
             pool.addRewardToken(rewardTokens[i]);
-            console.log("Added reward token:", rewardTokens[i]);
+            console.log("Added reward token:", address(rewardTokens[i]));
         }
 
         // 6. 초기 보상 토큰 공급 (선택사항)
@@ -99,7 +99,7 @@ contract DeployWithRewards is Script {
                 // 직접 transfer
                 rewardToken.transfer(address(pool), initialRewardAmounts[i]);
 
-                console.log("Transferred reward:", rewardTokens[i]);
+                console.log("Transferred reward:", address(rewardToken));
                 console.log("  Amount:", initialRewardAmounts[i]);
             }
         }
@@ -107,9 +107,10 @@ contract DeployWithRewards is Script {
         console.log("\n=== Deployment Summary ===");
         console.log("Pool Proxy Address:", address(pool));
         console.log("Implementation Address:", address(implementation));
-        console.log("CROSS Token:", crossToken);
+        console.log("CROSS Token:", address(crossToken));
         console.log("Number of reward tokens:", rewardTokens.length);
         console.log("Default Admin:", deployer);
+        console.log("Min Stake Amount:", MIN_STAKE_AMOUNT);
 
         vm.stopBroadcast();
     }
@@ -134,11 +135,11 @@ contract DeployWithRewards is Script {
 
     function loadMainnetConfig() internal {
         // TODO: 메인넷 주소로 변경
-        crossToken = address(0);
+        crossToken = IERC20(address(0));
 
-        rewardTokens = new address[](2);
-        rewardTokens[0] = address(0); // 보상 토큰 1
-        rewardTokens[1] = address(0); // 보상 토큰 2
+        rewardTokens = new IERC20[](2);
+        rewardTokens[0] = IERC20(address(0)); // 보상 토큰 1
+        rewardTokens[1] = IERC20(address(0)); // 보상 토큰 2
 
         initialRewardAmounts = new uint[](2);
         initialRewardAmounts[0] = 10000 ether;
@@ -147,10 +148,10 @@ contract DeployWithRewards is Script {
 
     function loadSepoliaConfig() internal {
         // TODO: Sepolia 테스트넷 주소로 변경
-        crossToken = address(0);
+        crossToken = IERC20(address(0));
 
-        rewardTokens = new address[](1);
-        rewardTokens[0] = address(0);
+        rewardTokens = new IERC20[](1);
+        rewardTokens[0] = IERC20(address(0));
 
         initialRewardAmounts = new uint[](1);
         initialRewardAmounts[0] = 1000 ether;
@@ -158,10 +159,10 @@ contract DeployWithRewards is Script {
 
     function loadLocalConfig() internal {
         // 로컬 개발 환경 - 실제 주소는 배포 후 설정
-        crossToken = vm.envAddress("CROSS_TOKEN_ADDRESS");
+        crossToken = IERC20(vm.envAddress("CROSS_TOKEN_ADDRESS"));
 
-        rewardTokens = new address[](1);
-        rewardTokens[0] = vm.envAddress("REWARD_TOKEN_ADDRESS");
+        rewardTokens = new IERC20[](1);
+        rewardTokens[0] = IERC20(address(vm.envAddress("REWARD_TOKEN_ADDRESS")));
 
         initialRewardAmounts = new uint[](1);
         initialRewardAmounts[0] = 10000 ether;

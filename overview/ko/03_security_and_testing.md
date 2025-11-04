@@ -96,10 +96,17 @@ function _authorizeUpgrade(address newImplementation)
 **Storage Gap:**
 ```solidity
 uint[50] private __gap;  // CrossStaking
-uint[43] private __gap;  // CrossStakingPool
+uint[41] private __gap;  // CrossStakingPool
 ```
 
-### 6. Custom Errors
+### 6. 제거된 보상 토큰 자동 정산
+
+- 보상 토큰을 제거하면 주소가 `_removedRewardTokenAddresses`에 보관되고 활성 목록에서 제외됩니다.
+- `_unstake` 흐름은 `_updateRemovedRewards`와 `_claimRemovedRewards`를 호출해 제거된 토큰까지 자동 정산·지급합니다.
+- 스테이킹을 유지한 채 부분 청구하려면 기존과 동일하게 `claimReward`/`claimRewards`를 호출해야 하며, 이때는 활성 토큰만 동기화됩니다.
+- 회귀 테스트 `testRemovedRewardTokenClaimedOnUnstake`와 `testClaimRemovedRewardAfterUnstakeDoesNotRevert`가 동작을 검증합니다.
+
+### 7. Custom Errors
 
 **장점:**
 - 가스 절약 (~100-200 gas/호출)
@@ -116,7 +123,7 @@ WCROSS - WCROSS
 예: CSPNoStakeFound, CSRInvalidAmount
 ```
 
-### 7. Router Check
+### 8. Router Check
 
 **CrossStakingPool:**
 ```solidity
@@ -388,15 +395,17 @@ CrossStakingPool (92개):
 
 ---
 
+## 🗝️ 운영 및 거버넌스 주의
+- `DEFAULT_ADMIN_ROLE` 보유자는 Router 교체, 새 풀 구현 지정, 업그레이드 승인 등 핵심 권한을 독점함 (`CrossStaking`, `CrossStakingPool`). 멀티시그 또는 거버넌스 설계를 권장.
+- `pause` 상태에서는 스테이킹·언스테이킹·클레임 모두 차단되므로, 긴급 상황에서 자금 인출 정책을 사전에 정의해야 함.
+
+---
+
 ## ✨ 결론
 
-**Cross Staking Protocol은:**
-
-- ✅ 159개 테스트 100% 통과
-- ✅ 포괄적 보안 메커니즘
-- ✅ 수학적 정확성 검증
-- ✅ Production-ready
-
-**보안 신뢰도:** 매우 높음 ⭐⭐⭐⭐⭐
+**현재 상태 요약**
+- ✅ Foundry 기반 159개 테스트 통과 (2025-11-03)
+- ✅ OZ 기반 방어 계층·재진입 보호 적용
+- ✅ 제거된 보상 토큰은 언스테이킹 시 자동 정산되어 미지급 위험 제거
 
 **다음**: [test/README.md](../test/README.md)

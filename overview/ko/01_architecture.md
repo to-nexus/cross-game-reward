@@ -113,12 +113,14 @@ setRouter(address _router)
 ```solidity
 IERC20 public stakingToken;                        // 스테이킹 토큰
 address public crossStaking;                       // CrossStaking 참조
+uint public minStakeAmount;                        // 최소 스테이킹 수량
 mapping(address => uint) public balances;          // 사용자 예치량
 uint public totalStaked;                           // 전체 예치량
 
-EnumerableSet.AddressSet private _rewardTokenAddresses;  // 보상 토큰 목록
-mapping(address => RewardToken) private _rewardTokenData; // 보상 토큰 데이터
-mapping(address => mapping(address => UserReward)) public userRewards; // 사용자 보상
+EnumerableSet.AddressSet private _rewardTokenAddresses;         // 활성 보상 토큰 목록
+EnumerableSet.AddressSet private _removedRewardTokenAddresses;  // 제거된 보상 토큰 목록
+mapping(IERC20 => RewardToken) private _rewardTokenData;        // 보상 토큰 데이터
+mapping(address => mapping(IERC20 => UserReward)) public userRewards; // 사용자 보상
 ```
 
 **주요 함수:**
@@ -128,8 +130,13 @@ stakeFor(address account, uint amount)    // Router 전용
 unstake()
 unstakeFor(address account)               // Router 전용
 claimRewards()
-claimReward(address tokenAddress)
+claimReward(IERC20 token)
+addRewardToken(IERC20 token)
+removeRewardToken(IERC20 token)
+emergencyWithdraw(IERC20 token, address to)
 ```
+
+> 제거된 보상 토큰은 `_removedRewardTokenAddresses`로 이동하며, `_unstake` 과정에서 자동 정산·지급됩니다.
 
 **Roles:**
 - DEFAULT_ADMIN_ROLE (CrossStaking)
@@ -264,7 +271,7 @@ stakingToken.safeTransfer(msg.sender, amount);
 
 **모든 주요 액션에 이벤트:**
 - Staked, Unstaked
-- RewardDistributed
+- RewardSynced
 - RewardClaimed
 - PoolCreated
 - PoolStatusChanged
@@ -296,7 +303,7 @@ function _authorizeUpgrade(address newImplementation)
 **Storage Gap:**
 ```solidity
 uint[50] private __gap;  // CrossStaking
-uint[43] private __gap;  // CrossStakingPool
+uint[41] private __gap;  // CrossStakingPool
 ```
 
 ### Router 교체

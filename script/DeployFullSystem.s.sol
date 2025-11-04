@@ -5,7 +5,9 @@ import "../src/CrossStaking.sol";
 import "../src/CrossStakingPool.sol";
 import "../src/CrossStakingRouter.sol";
 import "../src/WCROSS.sol";
+import "../src/interfaces/ICrossStakingPool.sol";
 import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "forge-std/Script.sol";
 
 /**
@@ -37,7 +39,7 @@ contract DeployFullSystem is Script {
         // 2. CrossStaking Implementation & Proxy 배포 (WCROSS를 생성함)
         CrossStaking crossStakingImpl = new CrossStaking();
         bytes memory initData = abi.encodeWithSelector(
-            CrossStaking.initialize.selector, address(poolImplementation), deployer, INITIAL_DELAY
+            CrossStaking.initialize.selector, ICrossStakingPool(address(poolImplementation)), deployer, INITIAL_DELAY
         );
         ERC1967Proxy crossStakingProxy = new ERC1967Proxy(address(crossStakingImpl), initData);
         CrossStaking crossStaking = CrossStaking(address(crossStakingProxy));
@@ -49,7 +51,7 @@ contract DeployFullSystem is Script {
         console.log("3. Router deployed:", address(router));
 
         // 4. WCROSS 주소 확인 (CrossStaking이 생성함)
-        IWCROSS wcross = IWCROSS(crossStaking.wcross());
+        IWCROSS wcross = crossStaking.wcross();
         console.log("4. WCROSS deployed by CrossStaking:", address(wcross));
 
         // 5. Router 등록
@@ -91,7 +93,7 @@ contract DeployWithPools is Script {
         // 2. CrossStaking 배포 (UUPS - WCROSS를 생성함)
         CrossStaking crossStakingImpl = new CrossStaking();
         bytes memory initData = abi.encodeWithSelector(
-            CrossStaking.initialize.selector, address(poolImplementation), deployer, INITIAL_DELAY
+            CrossStaking.initialize.selector, ICrossStakingPool(address(poolImplementation)), deployer, INITIAL_DELAY
         );
         ERC1967Proxy crossStakingProxy = new ERC1967Proxy(address(crossStakingImpl), initData);
         CrossStaking crossStaking = CrossStaking(address(crossStakingProxy));
@@ -100,20 +102,20 @@ contract DeployWithPools is Script {
         CrossStakingRouter router = new CrossStakingRouter(address(crossStaking));
 
         // 4. WCROSS 주소 확인
-        IWCROSS wcross = IWCROSS(crossStaking.wcross());
+        IWCROSS wcross = crossStaking.wcross();
 
         // 5. Router 등록
         crossStaking.setRouter(address(router));
 
         // 6. Native CROSS 풀 생성
-        (uint nativePoolId, address nativePoolAddress) = crossStaking.createPool(address(wcross), 1 ether);
+        (uint nativePoolId, ICrossStakingPool nativePool) = crossStaking.createPool(IERC20(address(wcross)), 1 ether);
 
         console.log("\n=== Full Deployment Summary ===");
         console.log("WCROSS:", address(wcross));
         console.log("CrossStaking:", address(crossStaking));
         console.log("Router:", address(router));
         console.log("Native Pool ID:", nativePoolId);
-        console.log("Native Pool Address:", nativePoolAddress);
+        console.log("Native Pool Address:", address(nativePool));
 
         vm.stopBroadcast();
     }

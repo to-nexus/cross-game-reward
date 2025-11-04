@@ -2,10 +2,11 @@
 pragma solidity 0.8.28;
 
 import "./base/CrossStakingPoolBase.t.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /**
  * @title CrossStakingPoolAdminTest
- * @notice 관리자 기능 테스트 (권한, pause, 보상 토큰 관리)
+ * @notice Admin feature tests covering roles, pause, and reward token management
  */
 contract CrossStakingPoolAdminTest is CrossStakingPoolBase {
     MockERC20 public rewardToken3;
@@ -16,61 +17,61 @@ contract CrossStakingPoolAdminTest is CrossStakingPoolBase {
         rewardToken3.transfer(owner, 10000 ether);
     }
 
-    // ==================== 보상 토큰 관리 테스트 ====================
+    // ==================== Reward token management tests ====================
 
     function testAddRewardToken() public {
-        crossStaking.addRewardToken(1, address(rewardToken3));
+        crossStaking.addRewardToken(1, rewardToken3);
 
         assertEq(pool.rewardTokenCount(), 3, "Should have 3 reward tokens");
-        assertTrue(pool.isRewardToken(address(rewardToken3)), "Should be registered as reward token");
+        assertTrue(pool.isRewardToken(rewardToken3), "Should be registered as reward token");
     }
 
     function testAddRewardTokenOnlyByManager() public {
         vm.prank(user1);
         vm.expectRevert();
-        pool.addRewardToken(address(rewardToken3));
+        pool.addRewardToken(rewardToken3);
     }
 
     function testCannotAddSameRewardTokenTwice() public {
-        crossStaking.addRewardToken(1, address(rewardToken3));
+        crossStaking.addRewardToken(1, rewardToken3);
 
         vm.expectRevert(CrossStakingPool.CSPRewardTokenAlreadyAdded.selector);
-        crossStaking.addRewardToken(1, address(rewardToken3));
+        crossStaking.addRewardToken(1, rewardToken3);
     }
 
     function testCannotAddZeroAddressAsRewardToken() public {
         vm.expectRevert(CrossStakingPool.CSPCanNotZeroAddress.selector);
-        crossStaking.addRewardToken(1, address(0));
+        crossStaking.addRewardToken(1, IERC20(address(0)));
     }
 
     function testCannotAddStakingTokenAsReward() public {
         vm.expectRevert(CrossStakingPool.CSPCanNotUseStakingToken.selector);
-        crossStaking.addRewardToken(1, address(crossToken));
+        crossStaking.addRewardToken(1, crossToken);
     }
 
     function testRewardTokenIndexMapping() public {
-        crossStaking.addRewardToken(1, address(rewardToken3));
+        crossStaking.addRewardToken(1, rewardToken3);
 
         // Check if token is registered
-        assertTrue(pool.isRewardToken(address(rewardToken3)), "Third token should be registered");
+        assertTrue(pool.isRewardToken(rewardToken3), "Third token should be registered");
 
         // Check token at index 2
-        assertEq(pool.rewardTokenAt(2), address(rewardToken3), "Third token should be at index 2");
+        assertEq(address(pool.rewardTokenAt(2)), address(rewardToken3), "Third token should be at index 2");
     }
 
-    // ==================== 보상 입금 권한 테스트 ====================
+    // ==================== Reward deposit permissions ====================
 
     function testDirectTransferReward() public {
-        // 먼저 user2가 스테이킹
+        // User2 stakes first
         _userStake(user2, 10 ether);
 
-        // 누구나 직접 transfer로 보상 입금 가능
+        // Any address can transfer rewards directly
         vm.startPrank(user1);
         rewardToken1.mint(user1, 100 ether);
         rewardToken1.transfer(address(pool), 100 ether);
         vm.stopPrank();
 
-        // 검증: 보상이 입금되었는지
+        // Verify rewards are credited
         uint[] memory rewards = pool.pendingRewards(user2);
         assertApproxEqAbs(rewards[0], 100 ether, 100, "Anyone can transfer rewards");
     }
@@ -82,15 +83,15 @@ contract CrossStakingPoolAdminTest is CrossStakingPoolBase {
         _depositReward(address(rewardToken1), 100 ether);
 
         // Remove reward token via CrossStaking
-        crossStaking.removeRewardToken(1, address(rewardToken1));
+        crossStaking.removeRewardToken(1, rewardToken1);
 
         // Verify removed from set
-        assertFalse(pool.isRewardToken(address(rewardToken1)), "Should be removed from set");
-        assertEq(pool.rewardTokenCount(), 1, "Count decreased"); // rewardToken2 남음
+        assertFalse(pool.isRewardToken(rewardToken1), "Should be removed from set");
+        assertEq(pool.rewardTokenCount(), 1, "Count decreased"); // rewardToken2 remains
 
         // But can still claim existing rewards
         vm.prank(user1);
-        pool.claimReward(address(rewardToken1));
+        pool.claimReward(rewardToken1);
 
         // Verify claimed
         assertApproxEqAbs(rewardToken1.balanceOf(user1), 100 ether, 100, "Can still claim after removal");
@@ -98,13 +99,13 @@ contract CrossStakingPoolAdminTest is CrossStakingPoolBase {
 
     function testCannotRemoveNonExistentToken() public {
         vm.expectRevert(CrossStakingPool.CSPInvalidRewardToken.selector);
-        crossStaking.removeRewardToken(1, address(rewardToken3));
+        crossStaking.removeRewardToken(1, rewardToken3);
     }
 
     function testOnlyRewardManagerCanRemove() public {
         vm.prank(user1);
         vm.expectRevert();
-        crossStaking.removeRewardToken(1, address(rewardToken1));
+        crossStaking.removeRewardToken(1, rewardToken1);
     }
 
     function testRemovedTokenNoNewRewards() public {
@@ -112,7 +113,7 @@ contract CrossStakingPoolAdminTest is CrossStakingPoolBase {
         _depositReward(address(rewardToken1), 100 ether);
 
         // Remove token via CrossStaking
-        crossStaking.removeRewardToken(1, address(rewardToken1));
+        crossStaking.removeRewardToken(1, rewardToken1);
 
         // Try to add new rewards (won't be distributed because not in set)
         rewardToken1.mint(owner, 50 ether);
@@ -123,7 +124,7 @@ contract CrossStakingPoolAdminTest is CrossStakingPoolBase {
 
         // user1 should only have original 100, not 150
         vm.prank(user1);
-        pool.claimReward(address(rewardToken1));
+        pool.claimReward(rewardToken1);
 
         assertApproxEqAbs(rewardToken1.balanceOf(user1), 100 ether, 100, "No new rewards after removal");
     }
@@ -135,28 +136,28 @@ contract CrossStakingPoolAdminTest is CrossStakingPoolBase {
         _depositReward(address(rewardToken1), 100 ether);
 
         // Remove token via CrossStaking
-        crossStaking.removeRewardToken(1, address(rewardToken1));
+        crossStaking.removeRewardToken(1, rewardToken1);
 
-        // 실수로 추가 입금
+        // Accidentally deposit additional rewards
         rewardToken1.mint(owner, 50 ether);
         rewardToken1.transfer(address(pool), 50 ether);
 
-        // 비상 출금 가능 확인
-        uint withdrawable = pool.getEmergencyWithdrawableAmount(address(rewardToken1));
+        // Check withdrawable amount
+        uint withdrawable = pool.getEmergencyWithdrawableAmount(rewardToken1);
         assertEq(withdrawable, 50 ether, "Should be able to withdraw extra deposit");
 
-        // 비상 출금
+        // Perform emergency withdrawal
         uint ownerBalanceBefore = rewardToken1.balanceOf(owner);
         vm.prank(owner);
-        pool.emergencyWithdraw(address(rewardToken1), owner);
+        pool.emergencyWithdraw(rewardToken1, owner);
 
-        // 출금 확인
+        // Confirm withdrawal result
         assertEq(rewardToken1.balanceOf(owner) - ownerBalanceBefore, 50 ether, "Emergency withdraw succeeded");
-        assertEq(pool.getEmergencyWithdrawableAmount(address(rewardToken1)), 0, "No more withdrawable");
+        assertEq(pool.getEmergencyWithdrawableAmount(rewardToken1), 0, "No more withdrawable");
 
-        // 사용자는 여전히 claim 가능
+        // User can still claim rewards
         vm.prank(user1);
-        pool.claimReward(address(rewardToken1));
+        pool.claimReward(rewardToken1);
         assertApproxEqAbs(rewardToken1.balanceOf(user1), 100 ether, 100, "User can still claim");
     }
 
@@ -165,46 +166,46 @@ contract CrossStakingPoolAdminTest is CrossStakingPoolBase {
         _depositReward(address(rewardToken1), 100 ether);
 
         // Remove token (removed balance = 100) via CrossStaking
-        crossStaking.removeRewardToken(1, address(rewardToken1));
+        crossStaking.removeRewardToken(1, rewardToken1);
 
-        // 실수로 50 추가 입금 (total balance = 150)
+        // Accidentally add 50 more (total balance becomes 150)
         rewardToken1.mint(owner, 50 ether);
         rewardToken1.transfer(address(pool), 50 ether);
 
-        // User claim (balance 감소, distributed amount도 차감됨)
+        // User claims (reduces on-chain balance and distributed amount)
         vm.prank(user1);
-        pool.claimReward(address(rewardToken1));
+        pool.claimReward(rewardToken1);
 
-        // 출금 가능 = 현재잔액 - (제거시점잔액 - claim된금액)
-        uint withdrawable = pool.getEmergencyWithdrawableAmount(address(rewardToken1));
+        // Withdrawable = current balance - (balance at removal - claimed amount)
+        uint withdrawable = pool.getEmergencyWithdrawableAmount(rewardToken1);
         assertEq(withdrawable, 50 ether, "Still 50 withdrawable after user claim");
 
-        // 비상 출금 (owner가 DEFAULT_ADMIN_ROLE을 가지고 있으므로 직접 호출 가능)
+        // Owner with DEFAULT_ADMIN_ROLE can perform the withdrawal directly
         uint ownerBalanceBefore = rewardToken1.balanceOf(owner);
-        pool.emergencyWithdraw(address(rewardToken1), owner);
+        pool.emergencyWithdraw(rewardToken1, owner);
         assertEq(rewardToken1.balanceOf(owner) - ownerBalanceBefore, 50 ether, "Withdraw only extra deposits");
     }
 
     function testCannotEmergencyWithdrawNonRemovedToken() public view {
-        // 제거되지 않은 토큰은 출금 불가
-        uint withdrawable = pool.getEmergencyWithdrawableAmount(address(rewardToken1));
+        // Cannot withdraw rewards for a token that is still registered
+        uint withdrawable = pool.getEmergencyWithdrawableAmount(rewardToken1);
         assertEq(withdrawable, 0, "Non-removed token has 0 withdrawable");
     }
 
     function testCannotEmergencyWithdrawZero() public {
         // Remove but no extra deposits via CrossStaking
-        crossStaking.removeRewardToken(1, address(rewardToken1));
+        crossStaking.removeRewardToken(1, rewardToken1);
 
         // No extra deposits - owner can call emergencyWithdraw directly
         vm.expectRevert(CrossStakingPool.CSPNoWithdrawableAmount.selector);
-        pool.emergencyWithdraw(address(rewardToken1), owner);
+        pool.emergencyWithdraw(rewardToken1, owner);
     }
 
     function testOnlyAdminCanEmergencyWithdraw() public {
         _userStake(user1, 10 ether);
         _depositReward(address(rewardToken1), 100 ether);
 
-        crossStaking.removeRewardToken(1, address(rewardToken1));
+        crossStaking.removeRewardToken(1, rewardToken1);
 
         rewardToken1.mint(owner, 50 ether);
         rewardToken1.transfer(address(pool), 50 ether);
@@ -212,10 +213,10 @@ contract CrossStakingPoolAdminTest is CrossStakingPoolBase {
         // Non-admin cannot withdraw
         vm.prank(user1);
         vm.expectRevert();
-        pool.emergencyWithdraw(address(rewardToken1), user1);
+        pool.emergencyWithdraw(rewardToken1, user1);
     }
 
-    // ==================== Pause 기능 테스트 ====================
+    // ==================== Pause feature tests ====================
 
     function testPause() public {
         crossStaking.setPoolActive(1, false);
@@ -283,50 +284,50 @@ contract CrossStakingPoolAdminTest is CrossStakingPoolBase {
         assertEq(pool.balances(user1), 10 ether, "Should be able to stake after unpause");
     }
 
-    // ==================== 역할 기반 접근 제어 테스트 ====================
+    // ==================== Role-based access control tests ====================
 
     function testOwnerHasDefaultAdminRole() public view {
-        // owner는 CrossStaking 컨트랙트
+        // Owner is the CrossStaking contract
         assertTrue(pool.hasRole(pool.DEFAULT_ADMIN_ROLE(), owner), "CrossStaking should have DEFAULT_ADMIN_ROLE");
     }
 
     function testCrossStakingHasStakingRootRole() public view {
-        // CrossStaking 컨트랙트가 STAKING_ROOT_ROLE을 가짐
+        // CrossStaking contract holds STAKING_ROOT_ROLE
         assertTrue(
             pool.hasRole(pool.STAKING_ROOT_ROLE(), address(crossStaking)), "CrossStaking should have STAKING_ROOT_ROLE"
         );
     }
 
     function testOnlyStakingRootCanPause() public {
-        // user1은 STAKING_ROOT_ROLE이 없으므로 pause 불가
+        // User1 lacks STAKING_ROOT_ROLE so cannot pause
         vm.prank(user1);
         vm.expectRevert();
         pool.pause();
 
-        // CrossStaking만 pause 가능 (setPoolActive를 통해)
+        // Only CrossStaking can pause via setPoolActive
         crossStaking.setPoolActive(1, false);
         assertTrue(pool.paused(), "CrossStaking with STAKING_ROOT_ROLE can pause");
     }
 
     function testOnlyStakingRootCanAddRewardToken() public {
-        // user1은 STAKING_ROOT_ROLE이 없으므로 보상 토큰 추가 불가
+        // User1 without STAKING_ROOT_ROLE cannot add a reward token
         vm.prank(user1);
         vm.expectRevert();
-        pool.addRewardToken(address(rewardToken3));
+        pool.addRewardToken(rewardToken3);
 
-        // CrossStaking을 통해 추가 가능
-        crossStaking.addRewardToken(1, address(rewardToken3));
+        // CrossStaking can add the token via the factory
+        crossStaking.addRewardToken(1, rewardToken3);
         assertEq(pool.rewardTokenCount(), 3, "CrossStaking with STAKING_ROOT_ROLE can add reward token");
     }
 
     function testGrantStakingRootRole() public {
-        // Owner(DEFAULT_ADMIN)가 다른 주소에 STAKING_ROOT_ROLE 부여 가능
+        // Owner (DEFAULT_ADMIN) can grant STAKING_ROOT_ROLE to another address
         bytes32 role = pool.STAKING_ROOT_ROLE();
         pool.grantRole(role, user1);
 
         assertTrue(pool.hasRole(role, user1), "User1 should have STAKING_ROOT_ROLE");
 
-        // user1이 pause 가능
+        // User1 can now pause
         vm.prank(user1);
         pool.pause();
         assertTrue(pool.paused(), "User1 with STAKING_ROOT_ROLE can pause");
@@ -343,19 +344,19 @@ contract CrossStakingPoolAdminTest is CrossStakingPoolBase {
         pool.pause();
     }
 
-    // ==================== UUPS 업그레이드 권한 테스트 ====================
+    // ==================== UUPS upgrade authorization tests ====================
 
     function testUpgradeAuthorization() public view {
-        // owner는 DEFAULT_ADMIN_ROLE을 가지고 있으므로 업그레이드 가능
+        // Owner has DEFAULT_ADMIN_ROLE, so upgrades are permitted
         assertTrue(pool.hasRole(pool.DEFAULT_ADMIN_ROLE(), owner), "Owner should be able to upgrade");
     }
 
     function testNonAdminCannotUpgrade() public view {
-        // user1은 DEFAULT_ADMIN_ROLE이 없으므로 업그레이드 불가
+        // User1 lacks DEFAULT_ADMIN_ROLE, so upgrades are not allowed
         assertFalse(pool.hasRole(pool.DEFAULT_ADMIN_ROLE(), user1), "User1 should not be able to upgrade");
     }
 
-    // ==================== 초기화 테스트 ====================
+    // ==================== Initialization tests ====================
 
     function testInitialConfiguration() public view {
         assertEq(address(pool.stakingToken()), address(crossToken), "Staking token should be set");

@@ -5,10 +5,12 @@ import "../src/CrossStaking.sol";
 import "../src/CrossStakingPool.sol";
 import "../src/CrossStakingRouter.sol";
 import "../src/WCROSS.sol";
+import "../src/interfaces/ICrossStakingPool.sol";
 import "./mocks/MockERC20.sol";
 import "./mocks/MockERC20Permit.sol";
 import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import "forge-std/Test.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 contract CrossStakingRouterTest is Test {
     CrossStaking public crossStaking;
@@ -18,7 +20,7 @@ contract CrossStakingRouterTest is Test {
 
     MockERC20 public rewardToken;
     MockERC20 public stakingToken;
-    MockERC20Permit public permitToken; // EIP-2612 지원 토큰
+    MockERC20Permit public permitToken; // EIP-2612 compatible token
 
     address public owner;
     address public user1;
@@ -26,13 +28,13 @@ contract CrossStakingRouterTest is Test {
     uint public user1PrivateKey;
 
     uint public nativePoolId;
-    address public nativePoolAddress;
+    ICrossStakingPool public nativePool;
 
     uint public erc20PoolId;
-    address public erc20PoolAddress;
+    ICrossStakingPool public erc20Pool;
 
     uint public permitPoolId;
-    address public permitPoolAddress;
+    ICrossStakingPool public permitPool;
 
     function setUp() public {
         owner = address(this);
@@ -50,14 +52,15 @@ contract CrossStakingRouterTest is Test {
         // Deploy core contracts
         poolImplementation = new CrossStakingPool();
 
-        // Deploy CrossStaking as UUPS proxy (WCROSS를 생성함)
+        // Deploy CrossStaking as a UUPS proxy (instantiates WCROSS)
         CrossStaking implementation = new CrossStaking();
-        bytes memory initData = abi.encodeCall(CrossStaking.initialize, (address(poolImplementation), owner, 2 days));
+        bytes memory initData =
+            abi.encodeCall(CrossStaking.initialize, (ICrossStakingPool(address(poolImplementation)), owner, 2 days));
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
         crossStaking = CrossStaking(address(proxy));
 
         router = new CrossStakingRouter(address(crossStaking));
-        wcross = WCROSS(payable(crossStaking.wcross()));
+        wcross = WCROSS(payable(address(crossStaking.wcross())));
 
         // Setup router
         crossStaking.setRouter(address(router));
@@ -68,14 +71,14 @@ contract CrossStakingRouterTest is Test {
         permitToken = new MockERC20Permit("Permit Token", "PTK");
 
         // Create pools
-        (nativePoolId, nativePoolAddress) = crossStaking.createPool(address(wcross), 1 ether);
-        (erc20PoolId, erc20PoolAddress) = crossStaking.createPool(address(stakingToken), 1 ether);
-        (permitPoolId, permitPoolAddress) = crossStaking.createPool(address(permitToken), 1 ether);
+        (nativePoolId, nativePool) = crossStaking.createPool(IERC20(address(wcross)), 1 ether);
+        (erc20PoolId, erc20Pool) = crossStaking.createPool(IERC20(address(stakingToken)), 1 ether);
+        (permitPoolId, permitPool) = crossStaking.createPool(IERC20(address(permitToken)), 1 ether);
 
         // Add reward tokens
-        crossStaking.addRewardToken(nativePoolId, address(rewardToken));
-        crossStaking.addRewardToken(erc20PoolId, address(rewardToken));
-        crossStaking.addRewardToken(permitPoolId, address(rewardToken));
+        crossStaking.addRewardToken(nativePoolId, IERC20(address(rewardToken)));
+        crossStaking.addRewardToken(erc20PoolId, IERC20(address(rewardToken)));
+        crossStaking.addRewardToken(permitPoolId, IERC20(address(rewardToken)));
 
         // Mint staking tokens for users
         stakingToken.mint(user1, 1000 ether);
@@ -84,7 +87,7 @@ contract CrossStakingRouterTest is Test {
         permitToken.mint(user2, 1000 ether);
     }
 
-    // ==================== Native CROSS 스테이킹 ====================
+    // ==================== Native CROSS staking ====================
 
     function testStakeNative() public {
         uint amount = 10 ether;
@@ -98,7 +101,7 @@ contract CrossStakingRouterTest is Test {
         vm.stopPrank();
 
         // Verify
-        CrossStakingPool pool = CrossStakingPool(nativePoolAddress);
+        CrossStakingPool pool = CrossStakingPool(address(nativePool));
         assertEq(pool.balances(user1), amount, "User staked");
         assertEq(pool.totalStaked(), amount, "Total staked");
     }
@@ -112,7 +115,7 @@ contract CrossStakingRouterTest is Test {
         router.stakeNative{value: 2 ether}(nativePoolId);
         vm.stopPrank();
 
-        CrossStakingPool pool = CrossStakingPool(nativePoolAddress);
+        CrossStakingPool pool = CrossStakingPool(address(nativePool));
         assertEq(pool.balances(user1), 10 ether, "Total user stake");
     }
 
@@ -137,7 +140,7 @@ contract CrossStakingRouterTest is Test {
 
         // Add rewards
         rewardToken.mint(owner, 100 ether);
-        rewardToken.transfer(nativePoolAddress, 100 ether);
+        rewardToken.transfer(address(nativePool), 100 ether);
 
         // Unstake
         uint balanceBefore = user1.balance;
@@ -146,7 +149,7 @@ contract CrossStakingRouterTest is Test {
         vm.stopPrank();
 
         // Verify
-        CrossStakingPool pool = CrossStakingPool(nativePoolAddress);
+        CrossStakingPool pool = CrossStakingPool(address(nativePool));
         assertEq(pool.balances(user1), 0, "Unstaked");
         assertEq(user1.balance, balanceBefore + 10 ether, "Native CROSS returned");
         assertApproxEqAbs(rewardToken.balanceOf(user1), 100 ether, 10, "Rewards claimed");
@@ -158,7 +161,7 @@ contract CrossStakingRouterTest is Test {
         router.unstakeNative(nativePoolId);
     }
 
-    // ==================== ERC20 스테이킹 ====================
+    // ==================== ERC20 staking ====================
 
     function testStakeERC20() public {
         uint amount = 50 ether;
@@ -168,7 +171,7 @@ contract CrossStakingRouterTest is Test {
         router.stakeERC20(erc20PoolId, amount);
         vm.stopPrank();
 
-        CrossStakingPool pool = CrossStakingPool(erc20PoolAddress);
+        CrossStakingPool pool = CrossStakingPool(address(erc20Pool));
         assertEq(pool.balances(user1), amount, "User staked");
     }
 
@@ -181,7 +184,7 @@ contract CrossStakingRouterTest is Test {
         router.stakeERC20(erc20PoolId, 10 ether);
         vm.stopPrank();
 
-        CrossStakingPool pool = CrossStakingPool(erc20PoolAddress);
+        CrossStakingPool pool = CrossStakingPool(address(erc20Pool));
         assertEq(pool.balances(user1), 60 ether, "Total stake");
     }
 
@@ -194,14 +197,14 @@ contract CrossStakingRouterTest is Test {
 
         // Add rewards
         rewardToken.mint(owner, 100 ether);
-        rewardToken.transfer(erc20PoolAddress, 100 ether);
+        rewardToken.transfer(address(erc20Pool), 100 ether);
 
         // Unstake
         uint balanceBefore = stakingToken.balanceOf(user1);
         vm.prank(user1);
         router.unstakeERC20(erc20PoolId);
 
-        CrossStakingPool pool = CrossStakingPool(erc20PoolAddress);
+        CrossStakingPool pool = CrossStakingPool(address(erc20Pool));
         assertEq(pool.balances(user1), 0, "Unstaked");
         assertEq(stakingToken.balanceOf(user1), balanceBefore + 50 ether, "Tokens returned");
         assertApproxEqAbs(rewardToken.balanceOf(user1), 100 ether, 10, "Rewards claimed");
@@ -219,7 +222,7 @@ contract CrossStakingRouterTest is Test {
         router.stakeERC20(erc20PoolId, 0);
     }
 
-    // ==================== View 함수 ====================
+    // ==================== View functions ====================
 
     function testGetUserStakingInfo() public {
         // Stake
@@ -230,7 +233,7 @@ contract CrossStakingRouterTest is Test {
 
         // Add rewards
         rewardToken.mint(owner, 50 ether);
-        rewardToken.transfer(nativePoolAddress, 50 ether);
+        rewardToken.transfer(address(nativePool), 50 ether);
 
         (uint stakedAmount, uint[] memory pendingRewards) = router.getUserStakingInfo(nativePoolId, user1);
 
@@ -244,7 +247,7 @@ contract CrossStakingRouterTest is Test {
         assertFalse(router.isNativePool(erc20PoolId), "Not native pool");
     }
 
-    // ==================== 복잡한 시나리오 ====================
+    // ==================== Complex scenarios ====================
 
     function testMultiUserNativeStaking() public {
         // User1 stakes
@@ -261,7 +264,7 @@ contract CrossStakingRouterTest is Test {
 
         // Add rewards
         rewardToken.mint(owner, 90 ether);
-        rewardToken.transfer(nativePoolAddress, 90 ether);
+        rewardToken.transfer(address(nativePool), 90 ether);
 
         // User1 unstakes
         uint user1BalanceBefore = user1.balance;
@@ -294,14 +297,14 @@ contract CrossStakingRouterTest is Test {
         vm.stopPrank();
 
         // Verify both pools
-        CrossStakingPool nativePool = CrossStakingPool(nativePoolAddress);
-        CrossStakingPool erc20Pool = CrossStakingPool(erc20PoolAddress);
+        CrossStakingPool nativePoolContract = CrossStakingPool(address(nativePool));
+        CrossStakingPool erc20PoolContract = CrossStakingPool(address(erc20Pool));
 
-        assertEq(nativePool.balances(user1), 5 ether, "Native pool stake");
-        assertEq(erc20Pool.balances(user2), 50 ether, "ERC20 pool stake");
+        assertEq(nativePoolContract.balances(user1), 5 ether, "Native pool stake");
+        assertEq(erc20PoolContract.balances(user2), 50 ether, "ERC20 pool stake");
     }
 
-    // ==================== ERC20 Permit 스테이킹 ====================
+    // ==================== ERC20 permit staking ====================
 
     /// @notice Helper function to generate EIP-2612 permit signature
     function _getPermitSignature(
@@ -338,7 +341,7 @@ contract CrossStakingRouterTest is Test {
         router.stakeERC20WithPermit(permitPoolId, amount, deadline, v, r, s);
 
         // Verify
-        CrossStakingPool pool = CrossStakingPool(permitPoolAddress);
+        CrossStakingPool pool = CrossStakingPool(address(permitPool));
         assertEq(pool.balances(user1), amount, "User staked with permit");
         assertEq(pool.totalStaked(), amount, "Total staked");
         assertEq(permitToken.balanceOf(user1), 950 ether, "Tokens deducted");
@@ -360,7 +363,7 @@ contract CrossStakingRouterTest is Test {
         router.stakeERC20WithPermit(permitPoolId, 30 ether, deadline, v2, r2, s2);
 
         // Verify
-        CrossStakingPool pool = CrossStakingPool(permitPoolAddress);
+        CrossStakingPool pool = CrossStakingPool(address(permitPool));
         assertEq(pool.balances(user1), 50 ether, "Total staked with permit");
     }
 
@@ -413,7 +416,7 @@ contract CrossStakingRouterTest is Test {
 
         // Add rewards
         rewardToken.mint(owner, 100 ether);
-        rewardToken.transfer(permitPoolAddress, 100 ether);
+        rewardToken.transfer(address(permitPool), 100 ether);
 
         // Unstake
         uint balanceBefore = permitToken.balanceOf(user1);
@@ -421,7 +424,7 @@ contract CrossStakingRouterTest is Test {
         router.unstakeERC20(permitPoolId);
 
         // Verify
-        CrossStakingPool pool = CrossStakingPool(permitPoolAddress);
+        CrossStakingPool pool = CrossStakingPool(address(permitPool));
         assertEq(pool.balances(user1), 0, "Unstaked");
         assertEq(permitToken.balanceOf(user1), balanceBefore + amount, "Tokens returned");
         assertApproxEqAbs(rewardToken.balanceOf(user1), 100 ether, 10, "Rewards claimed");
@@ -444,7 +447,7 @@ contract CrossStakingRouterTest is Test {
 
         // Add rewards
         rewardToken.mint(owner, 100 ether);
-        rewardToken.transfer(permitPoolAddress, 100 ether);
+        rewardToken.transfer(address(permitPool), 100 ether);
 
         // Both users unstake
         vm.prank(user1);
@@ -502,7 +505,7 @@ contract CrossStakingRouterTest is Test {
         vm.prank(user1);
         router.stakeERC20WithPermit(permitPoolId, amount, deadline, v, r, s);
 
-        CrossStakingPool pool = CrossStakingPool(permitPoolAddress);
+        CrossStakingPool pool = CrossStakingPool(address(permitPool));
         assertEq(pool.balances(user1), 30 ether, "First stake succeeded");
 
         // Try to reuse same signature - should fail (nonce increased)
@@ -555,7 +558,7 @@ contract CrossStakingRouterTest is Test {
         vm.prank(user1);
         router.stakeERC20WithPermit(permitPoolId, amount, deadline, v, r, s);
 
-        CrossStakingPool pool = CrossStakingPool(permitPoolAddress);
+        CrossStakingPool pool = CrossStakingPool(address(permitPool));
         assertEq(pool.balances(user1), amount, "Staked with short deadline");
     }
 }

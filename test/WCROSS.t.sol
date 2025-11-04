@@ -3,12 +3,14 @@ pragma solidity 0.8.28;
 
 import {CrossStaking} from "../src/CrossStaking.sol";
 import {CrossStakingPool} from "../src/CrossStakingPool.sol";
+import {ICrossStakingPool} from "../src/interfaces/ICrossStakingPool.sol";
 import {CrossStakingRouter} from "../src/CrossStakingRouter.sol";
 import {WCROSS} from "../src/WCROSS.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {Test} from "forge-std/Test.sol";
 
 import {IERC20Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 contract WCROSSTest is Test {
     CrossStaking public crossStaking;
@@ -33,16 +35,17 @@ contract WCROSSTest is Test {
         poolImplementation = new CrossStakingPool();
 
         CrossStaking implementation = new CrossStaking();
-        bytes memory initData = abi.encodeCall(CrossStaking.initialize, (address(poolImplementation), owner, 2 days));
+        bytes memory initData =
+            abi.encodeCall(CrossStaking.initialize, (ICrossStakingPool(address(poolImplementation)), owner, 2 days));
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
         crossStaking = CrossStaking(address(proxy));
 
         router = new CrossStakingRouter(address(crossStaking));
-        wcross = WCROSS(payable(crossStaking.wcross()));
+        wcross = WCROSS(payable(address(crossStaking.wcross())));
         crossStaking.setRouter(address(router));
     }
 
-    // ==================== Deposit (Router만 가능) ====================
+    // ==================== Deposit (router only) ====================
 
     function testDepositViaRouter() public {
         vm.deal(address(router), 10 ether);
@@ -76,7 +79,7 @@ contract WCROSSTest is Test {
         wcross.deposit{value: 0}();
     }
 
-    // ==================== Withdraw (Router만 가능) ====================
+    // ==================== Withdraw (router only) ====================
 
     function testWithdrawToViaRouter() public {
         // Deposit first
@@ -120,7 +123,7 @@ contract WCROSSTest is Test {
         wcross.withdraw(10 ether);
     }
 
-    // ==================== Transfer (ERC20 표준) ====================
+    // ==================== Transfer (ERC20 standard) ====================
 
     function testTransferBetweenUsers() public {
         // Router deposits
@@ -145,10 +148,10 @@ contract WCROSSTest is Test {
 
     function testDepositForIntegration() public {
         uint poolId;
-        address poolAddress;
+        ICrossStakingPool poolAddress;
 
         // Create pool
-        (poolId, poolAddress) = crossStaking.createPool(address(wcross), 1 ether);
+        (poolId, poolAddress) = crossStaking.createPool(IERC20(address(wcross)), 1 ether);
 
         // User stakes via router
         vm.startPrank(user1);
@@ -157,13 +160,13 @@ contract WCROSSTest is Test {
         vm.stopPrank();
 
         // Verify WCROSS was minted and staked
-        CrossStakingPool pool = CrossStakingPool(poolAddress);
+        CrossStakingPool pool = CrossStakingPool(address(poolAddress));
         assertEq(pool.balances(user1), 10 ether, "Staked via router");
     }
 
     function testWithdrawForIntegration() public {
         // Setup: stake first
-        (uint poolId, address poolAddress) = crossStaking.createPool(address(wcross), 1 ether);
+        (uint poolId, ICrossStakingPool poolAddress) = crossStaking.createPool(IERC20(address(wcross)), 1 ether);
 
         vm.startPrank(user1);
         wcross.approve(address(router), type(uint).max);
@@ -178,7 +181,7 @@ contract WCROSSTest is Test {
         // Verify native CROSS returned
         assertEq(user1.balance, balanceBefore + 10 ether, "Native CROSS returned");
 
-        CrossStakingPool pool = CrossStakingPool(poolAddress);
+        CrossStakingPool pool = CrossStakingPool(address(poolAddress));
         assertEq(pool.balances(user1), 0, "Unstaked");
     }
 }

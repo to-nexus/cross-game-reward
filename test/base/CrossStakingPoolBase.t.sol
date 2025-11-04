@@ -3,13 +3,15 @@ pragma solidity 0.8.28;
 
 import "../../src/CrossStaking.sol";
 import "../../src/CrossStakingPool.sol";
+import "../../src/interfaces/ICrossStakingPool.sol";
 import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "forge-std/Test.sol";
 
 /**
  * @title MockERC20
- * @notice 테스트용 ERC20 토큰
+ * @notice Simple ERC20 token for testing
  */
 contract MockERC20 is ERC20 {
     constructor(string memory name, string memory symbol) ERC20(name, symbol) {
@@ -23,8 +25,8 @@ contract MockERC20 is ERC20 {
 
 /**
  * @title CrossStakingPoolBase
- * @notice 모든 테스트의 공통 base 컨트랙트
- * @dev setUp, helper 함수 제공
+ * @notice Shared base contract used by all pool tests
+ * @dev Provides setup and convenience helpers
  */
 abstract contract CrossStakingPoolBase is Test {
     CrossStaking public crossStaking;
@@ -39,42 +41,43 @@ abstract contract CrossStakingPoolBase is Test {
     address public user3 = address(4);
 
     function setUp() public virtual {
-        // 토큰 배포
+        // Deploy mock tokens
         crossToken = new MockERC20("CROSS Token", "CROSS");
         rewardToken1 = new MockERC20("Reward Token 1", "RWD1");
         rewardToken2 = new MockERC20("Reward Token 2", "RWD2");
 
-        // CrossStaking 배포 (UUPS 패턴)
+        // Deploy CrossStaking via UUPS pattern
         CrossStakingPool poolImplementation = new CrossStakingPool();
         CrossStaking stakingImplementation = new CrossStaking();
 
-        bytes memory initData = abi.encodeCall(CrossStaking.initialize, (address(poolImplementation), owner, 2 days));
+        bytes memory initData =
+            abi.encodeCall(CrossStaking.initialize, (ICrossStakingPool(address(poolImplementation)), owner, 2 days));
 
         ERC1967Proxy proxy = new ERC1967Proxy(address(stakingImplementation), initData);
         crossStaking = CrossStaking(address(proxy));
 
-        // 풀 생성 (CrossStaking을 통해)
-        (uint poolId, address poolAddress) = crossStaking.createPool(address(crossToken), 1 ether);
-        pool = CrossStakingPool(poolAddress);
+        // Create pool through the CrossStaking factory
+        (uint poolId, ICrossStakingPool poolInterface) = crossStaking.createPool(IERC20(address(crossToken)), 1 ether);
+        pool = CrossStakingPool(address(poolInterface));
 
-        // 사용자들에게 CROSS 토큰 전송
+        // Distribute CROSS tokens to users
         crossToken.transfer(user1, 1000 ether);
         crossToken.transfer(user2, 1000 ether);
         crossToken.transfer(user3, 1000 ether);
 
-        // owner에게 보상 토큰 전송
+        // Allocate reward tokens to the owner account
         rewardToken1.transfer(owner, 100000 ether);
         rewardToken2.transfer(owner, 100000 ether);
 
-        // 풀에 보상 토큰 등록 (CrossStaking을 통해)
-        crossStaking.addRewardToken(poolId, address(rewardToken1));
-        crossStaking.addRewardToken(poolId, address(rewardToken2));
+        // Register reward tokens via CrossStaking
+        crossStaking.addRewardToken(poolId, IERC20(address(rewardToken1)));
+        crossStaking.addRewardToken(poolId, IERC20(address(rewardToken2)));
     }
 
-    // ==================== Helper 함수 ====================
+    // ==================== Helper functions ====================
 
     /**
-     * @notice 사용자의 스테이킹 helper
+     * @notice Helper to stake on behalf of a user
      */
     function _userStake(address user, uint amount) internal {
         vm.startPrank(user);
@@ -84,8 +87,8 @@ abstract contract CrossStakingPoolBase is Test {
     }
 
     /**
-     * @notice 보상 입금 helper
-     * @dev 직접 transfer하면 _syncReward가 자동 감지
+     * @notice Helper to deposit rewards into the pool
+     * @dev Direct transfers are detected automatically by _syncReward
      */
     function _depositReward(address rewardToken, uint amount) internal {
         vm.startPrank(owner);
@@ -94,14 +97,14 @@ abstract contract CrossStakingPoolBase is Test {
     }
 
     /**
-     * @notice 시간 이동 helper
+     * @notice Helper to advance time by whole days
      */
     function _warpDays(uint days_) internal {
         vm.warp(block.timestamp + days_ * 1 days);
     }
 
     /**
-     * @notice 시간 이동 helper (초 단위)
+     * @notice Helper to advance time by seconds
      */
     function _warpSeconds(uint seconds_) internal {
         vm.warp(block.timestamp + seconds_);

@@ -1,23 +1,19 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-
-import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {
+    AccessControlDefaultAdminRulesUpgradeable as AccessControl,
+    AccessControlUpgradeable,
+    IAccessControl
+} from "@openzeppelin/contracts-upgradeable/access/extensions/AccessControlDefaultAdminRulesUpgradeable.sol";
+import {Initializable, UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import {ReentrancyGuardTransientUpgradeable} from
     "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardTransientUpgradeable.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {IERC20, SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
-import {ICrossStaking} from "./interfaces/ICrossStaking.sol";
-import {ICrossStakingPool} from "./interfaces/ICrossStakingPool.sol";
-
-import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
-import {AccessControlDefaultAdminRulesUpgradeable as AccessControl} from
-    "@openzeppelin/contracts-upgradeable/access/extensions/AccessControlDefaultAdminRulesUpgradeable.sol";
-import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
+import {ICrossStaking, ICrossStakingPool} from "./interfaces/ICrossStaking.sol";
 
 /**
  * @title CrossStakingPool
@@ -107,58 +103,61 @@ contract CrossStakingPool is
     /// @notice Minimum amount required for staking
     uint public minStakeAmount;
 
-    /// @notice Set of reward token addresses
+    /// @notice Set of active reward token addresses
     EnumerableSet.AddressSet private _rewardTokenAddresses;
 
-    /// @notice Mapping from reward token address to reward token data
-    mapping(address => RewardToken) private _rewardTokenData;
+    /// @notice Set of removed reward token addresses (still claimable)
+    EnumerableSet.AddressSet private _removedRewardTokenAddresses;
+
+    /// @notice Mapping from reward token to reward token data
+    mapping(IERC20 => RewardToken) private _rewardTokenData;
 
     /// @notice Mapping from user address to staked balance
     mapping(address => uint) public balances;
 
-    /// @notice Mapping from user address to reward token address to user reward data
-    mapping(address => mapping(address => UserReward)) public userRewards;
+    /// @notice Mapping from user address to reward token to user reward data
+    mapping(address => mapping(IERC20 => UserReward)) public userRewards;
 
     /// @notice Total amount of tokens staked in the pool
     uint public totalStaked;
 
     // ==================== Events ====================
 
-    /// @notice Emitted when a user stakes tokens
-    /// @param user Address of the user who staked
+    /// @notice Emitted when a account stakes tokens
+    /// @param account Address of the account who staked
     /// @param amount Amount of tokens staked
-    event Staked(address indexed user, uint amount);
+    event Staked(address indexed account, uint amount);
 
-    /// @notice Emitted when a user unstakes tokens
-    /// @param user Address of the user who unstaked
+    /// @notice Emitted when a account unstakes tokens
+    /// @param account Address of the account who unstaked
     /// @param amount Amount of tokens unstaked
-    event Unstaked(address indexed user, uint amount);
+    event Unstaked(address indexed account, uint amount);
 
-    /// @notice Emitted when a user claims rewards
-    /// @param user Address of the user who claimed
-    /// @param rewardToken Address of the reward token claimed
+    /// @notice Emitted when a account claims rewards
+    /// @param account Address of the account who claimed
+    /// @param token Address of the reward token claimed
     /// @param amount Amount of reward tokens claimed
-    event RewardClaimed(address indexed user, address indexed rewardToken, uint amount);
+    event RewardClaimed(address indexed account, IERC20 indexed token, uint amount);
 
     /// @notice Emitted when a new reward token is added
-    /// @param rewardToken Address of the added reward token
-    event RewardTokenAdded(address indexed rewardToken);
+    /// @param token Address of the added reward token
+    event RewardTokenAdded(IERC20 indexed token);
 
     /// @notice Emitted when a reward token is removed
-    /// @param rewardToken Address of the removed reward token
-    event RewardTokenRemoved(address indexed rewardToken);
+    /// @param token Address of the removed reward token
+    event RewardTokenRemoved(IERC20 indexed token);
 
-    /// @notice Emitted when rewards are distributed to stakers
-    /// @param rewardToken Address of the reward token
-    /// @param amount Amount of rewards distributed
+    /// @notice Emitted when rewards are synced to the pool
+    /// @param token Address of the reward token
+    /// @param amount Amount of rewards added to the pool
     /// @param totalStaked Total amount of tokens staked in the pool
-    event RewardDistributed(address indexed rewardToken, uint amount, uint totalStaked);
+    event RewardSynced(IERC20 indexed token, uint amount, uint totalStaked);
 
     /// @notice Emitted when admin performs emergency withdrawal
-    /// @param rewardToken Address of the reward token
+    /// @param token Address of the reward token
     /// @param to Address receiving the withdrawn tokens
     /// @param amount Amount withdrawn
-    event EmergencyWithdraw(address indexed rewardToken, address indexed to, uint amount);
+    event EmergencyWithdraw(IERC20 indexed token, address indexed to, uint amount);
 
     // ==================== Initializer ====================
 
@@ -260,7 +259,7 @@ contract CrossStakingPool is
     function claimRewards() external nonReentrant whenNotPaused {
         require(balances[msg.sender] > 0, CSPNoStakeFound());
 
-        _syncReward();
+        _syncRewards();
         _updateRewards(msg.sender);
         _claimRewards(msg.sender);
     }
@@ -268,18 +267,18 @@ contract CrossStakingPool is
     /**
      * @notice Claims pending rewards for a specific reward token
      * @dev Can claim rewards even for removed tokens
-     * @param tokenAddress Address of the reward token to claim
+     * @param token Address of the reward token to claim
      */
-    function claimReward(address tokenAddress) external nonReentrant whenNotPaused {
+    function claimReward(IERC20 token) external nonReentrant whenNotPaused {
         require(balances[msg.sender] > 0, CSPNoStakeFound());
         // Allow claiming even for removed tokens by checking only _rewardTokenData existence
-        require(_rewardTokenData[tokenAddress].tokenAddress != address(0), CSPInvalidRewardToken());
+        require(address(_rewardTokenData[token].token) != address(0), CSPInvalidRewardToken());
 
         // Only sync for tokens that haven't been removed
-        if (_rewardTokenAddresses.contains(tokenAddress)) _syncReward(tokenAddress);
+        if (_rewardTokenAddresses.contains(address(token))) _syncReward(token);
 
-        _updateReward(tokenAddress, msg.sender);
-        _claimReward(tokenAddress, msg.sender);
+        _updateReward(token, msg.sender);
+        _claimReward(token, msg.sender);
     }
 
     /**
@@ -292,8 +291,8 @@ contract CrossStakingPool is
         rewards = new uint[](length);
 
         for (uint i = 0; i < length;) {
-            address tokenAddress = _rewardTokenAddresses.at(i);
-            rewards[i] = _calculatePendingReward(tokenAddress, user);
+            IERC20 token = IERC20(_rewardTokenAddresses.at(i));
+            rewards[i] = _calculatePendingReward(token, user);
             unchecked {
                 ++i;
             }
@@ -303,29 +302,29 @@ contract CrossStakingPool is
     /**
      * @notice Retrieves reward token address by index
      * @param index Index in the reward token list
-     * @return tokenAddress Address of the reward token at the specified index
+     * @return Address of the reward token at the specified index
      */
-    function rewardTokenAt(uint index) external view returns (address) {
-        return _rewardTokenAddresses.at(index);
+    function rewardTokenAt(uint index) external view returns (IERC20) {
+        return IERC20(_rewardTokenAddresses.at(index));
     }
 
     /**
      * @notice Retrieves reward token data
-     * @param tokenAddress Address of the reward token
+     * @param token Address of the reward token
      * @return Reward token data struct
      */
-    function getRewardToken(address tokenAddress) external view returns (RewardToken memory) {
-        require(_rewardTokenAddresses.contains(tokenAddress), CSPInvalidRewardToken());
-        return _rewardTokenData[tokenAddress];
+    function getRewardToken(IERC20 token) external view returns (RewardToken memory) {
+        require(_rewardTokenAddresses.contains(address(token)), CSPInvalidRewardToken());
+        return _rewardTokenData[token];
     }
 
     /**
      * @notice Checks if a token is registered as a reward token
-     * @param tokenAddress Address of the token to check
+     * @param token Address of the token to check
      * @return True if the token is a registered reward token
      */
-    function isRewardToken(address tokenAddress) external view returns (bool) {
-        return _rewardTokenAddresses.contains(tokenAddress);
+    function isRewardToken(IERC20 token) external view returns (bool) {
+        return _rewardTokenAddresses.contains(address(token));
     }
 
     /**
@@ -350,59 +349,60 @@ contract CrossStakingPool is
      * @notice Adds a new reward token to the pool
      * @dev Only callable by CrossStaking contract
      *      Cannot add staking token as reward token
-     * @param tokenAddress Address of the reward token to add
+     * @param token Address of the reward token to add
      */
-    function addRewardToken(address tokenAddress) external onlyRole(STAKING_ROOT_ROLE) {
-        require(tokenAddress != address(0), CSPCanNotZeroAddress());
-        require(tokenAddress != address(stakingToken), CSPCanNotUseStakingToken());
-        require(_rewardTokenAddresses.add(tokenAddress), CSPRewardTokenAlreadyAdded());
+    function addRewardToken(IERC20 token) external onlyRole(STAKING_ROOT_ROLE) {
+        require(address(token) != address(0), CSPCanNotZeroAddress());
+        require(address(token) != address(stakingToken), CSPCanNotUseStakingToken());
+        require(_rewardTokenAddresses.add(address(token)), CSPRewardTokenAlreadyAdded());
+        _removedRewardTokenAddresses.remove(address(token));
 
-        _rewardTokenData[tokenAddress] = RewardToken({
-            tokenAddress: tokenAddress,
+        _rewardTokenData[token] = RewardToken({
+            token: token,
             rewardPerTokenStored: 0,
             lastBalance: 0,
             removedDistributedAmount: 0,
             isRemoved: false
         });
 
-        emit RewardTokenAdded(tokenAddress);
+        emit RewardTokenAdded(token);
     }
 
     /**
      * @notice Removes a reward token from the pool
      * @dev Only callable by CrossStaking contract
      *      Accumulated rewards can still be claimed after removal
-     * @param tokenAddress Address of the reward token to remove
+     * @param token Address of the reward token to remove
      */
-    function removeRewardToken(address tokenAddress) external onlyRole(STAKING_ROOT_ROLE) {
-        require(_rewardTokenAddresses.contains(tokenAddress), CSPInvalidRewardToken());
+    function removeRewardToken(IERC20 token) external onlyRole(STAKING_ROOT_ROLE) {
+        // Remove from EnumerableSet
+        require(_rewardTokenAddresses.remove(address(token)), CSPInvalidRewardToken());
 
         // Perform final synchronization
-        _syncReward(tokenAddress);
+        _syncReward(token);
 
         // Store the actual balance at removal time
-        RewardToken storage rt = _rewardTokenData[tokenAddress];
-        uint currentBalance = IERC20(tokenAddress).balanceOf(address(this));
+        RewardToken storage rt = _rewardTokenData[token];
+        uint currentBalance = token.balanceOf(address(this));
         rt.removedDistributedAmount = currentBalance;
         rt.isRemoved = true;
 
-        // Remove from EnumerableSet
-        _rewardTokenAddresses.remove(tokenAddress);
+        _removedRewardTokenAddresses.add(address(token));
 
-        emit RewardTokenRemoved(tokenAddress);
+        emit RewardTokenRemoved(token);
     }
 
     /**
      * @notice Retrieves the amount available for emergency withdrawal
      * @dev Only tokens deposited after removal can be withdrawn
-     * @param tokenAddress Address of the reward token
+     * @param token Address of the reward token
      * @return Amount available for emergency withdrawal
      */
-    function getEmergencyWithdrawableAmount(address tokenAddress) public view returns (uint) {
-        RewardToken storage rt = _rewardTokenData[tokenAddress];
+    function getEmergencyWithdrawableAmount(IERC20 token) public view returns (uint) {
+        RewardToken storage rt = _rewardTokenData[token];
         if (!rt.isRemoved) return 0; // Token not removed
 
-        uint currentBalance = IERC20(tokenAddress).balanceOf(address(this));
+        uint currentBalance = IERC20(token).balanceOf(address(this));
         return currentBalance > rt.removedDistributedAmount ? currentBalance - rt.removedDistributedAmount : 0;
     }
 
@@ -410,16 +410,16 @@ contract CrossStakingPool is
      * @notice Performs emergency withdrawal of excess tokens
      * @dev Only callable by CrossStaking's DEFAULT_ADMIN (direct call)
      *      Only withdraws tokens deposited after the token was removed
-     * @param tokenAddress Address of the reward token
+     * @param token Address of the reward token
      * @param to Address to receive the withdrawn tokens
      */
-    function emergencyWithdraw(address tokenAddress, address to) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        uint amount = getEmergencyWithdrawableAmount(tokenAddress);
+    function emergencyWithdraw(IERC20 token, address to) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        uint amount = getEmergencyWithdrawableAmount(token);
         require(amount > 0, CSPNoWithdrawableAmount());
         require(to != address(0), CSPCanNotZeroAddress());
 
-        IERC20(tokenAddress).safeTransfer(to, amount);
-        emit EmergencyWithdraw(tokenAddress, to, amount);
+        IERC20(token).safeTransfer(to, amount);
+        emit EmergencyWithdraw(token, to, amount);
     }
 
     /**
@@ -445,11 +445,11 @@ contract CrossStakingPool is
     /**
      * @dev Synchronizes all reward tokens
      */
-    function _syncReward() internal {
+    function _syncRewards() internal {
         uint length = _rewardTokenAddresses.length();
         for (uint i = 0; i < length;) {
-            address tokenAddress = _rewardTokenAddresses.at(i);
-            _syncReward(tokenAddress);
+            IERC20 token = IERC20(_rewardTokenAddresses.at(i));
+            _syncReward(token);
             unchecked {
                 ++i;
             }
@@ -458,20 +458,20 @@ contract CrossStakingPool is
 
     /**
      * @dev Detects new rewards and updates rewardPerToken
-     * @param tokenAddress Address of the reward token
+     * @param token Address of the reward token
      */
-    function _syncReward(address tokenAddress) internal {
+    function _syncReward(IERC20 token) internal {
         // Don't synchronize if there's no staking
         if (totalStaked == 0) return;
 
-        RewardToken storage rt = _rewardTokenData[tokenAddress];
+        RewardToken storage rt = _rewardTokenData[token];
 
-        uint currentBalance = IERC20(rt.tokenAddress).balanceOf(address(this));
+        uint currentBalance = rt.token.balanceOf(address(this));
 
         if (currentBalance > rt.lastBalance) {
             uint newReward = currentBalance - rt.lastBalance;
             rt.rewardPerTokenStored += (newReward * PRECISION) / totalStaked;
-            emit RewardDistributed(rt.tokenAddress, newReward, totalStaked);
+            emit RewardSynced(rt.token, newReward, totalStaked);
         }
 
         rt.lastBalance = currentBalance;
@@ -486,8 +486,8 @@ contract CrossStakingPool is
     function _updateRewards(address user) internal {
         uint length = _rewardTokenAddresses.length();
         for (uint i = 0; i < length;) {
-            address tokenAddress = _rewardTokenAddresses.at(i);
-            _updateReward(tokenAddress, user);
+            IERC20 token = IERC20(_rewardTokenAddresses.at(i));
+            _updateReward(token, user);
             unchecked {
                 ++i;
             }
@@ -496,12 +496,12 @@ contract CrossStakingPool is
 
     /**
      * @dev Calculates and updates user rewards and checkpoint
-     * @param tokenAddress Address of the reward token
+     * @param token Address of the reward token
      * @param user Address of the user
      */
-    function _updateReward(address tokenAddress, address user) internal {
-        RewardToken storage rt = _rewardTokenData[tokenAddress];
-        UserReward storage ur = userRewards[user][tokenAddress];
+    function _updateReward(IERC20 token, address user) internal {
+        RewardToken storage rt = _rewardTokenData[token];
+        UserReward storage ur = userRewards[user][token];
 
         uint userBalance = balances[user];
 
@@ -515,18 +515,18 @@ contract CrossStakingPool is
 
     /**
      * @dev Calculates pending rewards (view function)
-     * @param tokenAddress Address of the reward token
+     * @param token Address of the reward token
      * @param user Address of the user
      * @return Calculated pending rewards
      */
-    function _calculatePendingReward(address tokenAddress, address user) internal view returns (uint) {
-        UserReward storage ur = userRewards[user][tokenAddress];
-        RewardToken storage rt = _rewardTokenData[tokenAddress];
+    function _calculatePendingReward(IERC20 token, address user) internal view returns (uint) {
+        UserReward storage ur = userRewards[user][token];
+        RewardToken storage rt = _rewardTokenData[token];
 
         uint userBalance = balances[user];
         if (userBalance == 0) return ur.rewards;
 
-        uint currentBalance = IERC20(rt.tokenAddress).balanceOf(address(this));
+        uint currentBalance = IERC20(rt.token).balanceOf(address(this));
         uint currentRewardPerToken = rt.rewardPerTokenStored;
 
         if (currentBalance > rt.lastBalance && totalStaked > 0) {
@@ -547,8 +547,8 @@ contract CrossStakingPool is
     function _claimRewards(address user) internal {
         uint length = _rewardTokenAddresses.length();
         for (uint i = 0; i < length;) {
-            address tokenAddress = _rewardTokenAddresses.at(i);
-            _claimReward(tokenAddress, user);
+            IERC20 token = IERC20(_rewardTokenAddresses.at(i));
+            _claimReward(token, user);
             unchecked {
                 ++i;
             }
@@ -557,25 +557,47 @@ contract CrossStakingPool is
 
     /**
      * @dev Transfers rewards and synchronizes balance
-     * @param tokenAddress Address of the reward token
+     * @param token Address of the reward token
      * @param user Address of the user
      */
-    function _claimReward(address tokenAddress, address user) internal {
-        UserReward storage ur = userRewards[user][tokenAddress];
+    function _claimReward(IERC20 token, address user) internal {
+        UserReward storage ur = userRewards[user][token];
         uint reward = ur.rewards;
 
         if (reward > 0) {
             ur.rewards = 0;
 
-            RewardToken storage rt = _rewardTokenData[tokenAddress];
-            IERC20(rt.tokenAddress).safeTransfer(user, reward);
+            RewardToken storage rt = _rewardTokenData[token];
+            rt.token.safeTransfer(user, reward);
 
             rt.lastBalance -= reward;
 
             // Deduct from removedDistributedAmount if token was removed
             if (rt.isRemoved) rt.removedDistributedAmount -= reward;
 
-            emit RewardClaimed(user, rt.tokenAddress, reward);
+            emit RewardClaimed(user, rt.token, reward);
+        }
+    }
+
+    function _updateRemovedRewards(address user) private {
+        uint length = _removedRewardTokenAddresses.length();
+        for (uint i = 0; i < length;) {
+            IERC20 token = IERC20(_removedRewardTokenAddresses.at(i));
+            _updateReward(token, user);
+            unchecked {
+                ++i;
+            }
+        }
+    }
+
+    function _claimRemovedRewards(address user) private {
+        uint length = _removedRewardTokenAddresses.length();
+        for (uint i = 0; i < length;) {
+            IERC20 token = IERC20(_removedRewardTokenAddresses.at(i));
+            _claimReward(token, user);
+            unchecked {
+                ++i;
+            }
         }
     }
 
@@ -590,7 +612,7 @@ contract CrossStakingPool is
     function _stake(address payer, address account, uint amount) internal {
         require(amount >= minStakeAmount, CSPBelowMinimumStakeAmount());
 
-        _syncReward();
+        _syncRewards();
         _updateRewards(account);
 
         stakingToken.safeTransferFrom(payer, address(this), amount);
@@ -611,9 +633,11 @@ contract CrossStakingPool is
 
         uint amount = balances[account];
 
-        _syncReward();
+        _syncRewards();
         _updateRewards(account);
+        _updateRemovedRewards(account);
         _claimRewards(account);
+        _claimRemovedRewards(account);
 
         totalStaked -= amount;
         stakingToken.safeTransfer(caller, amount);
@@ -660,8 +684,8 @@ contract CrossStakingPool is
 
     /**
      * @dev Storage gap for future upgrades
-     *      Currently used: 7 slots (stakingToken, crossStaking, minStakeAmount, _rewardTokenAddresses, _rewardTokenData, balances, userRewards, totalStaked)
-     *      Gap: 50 - 7 = 43 slots
+     *      Currently used: 9 slots (stakingToken, crossStaking, minStakeAmount, _rewardTokenAddresses, _removedRewardTokenAddresses, _rewardTokenData, balances, userRewards, totalStaked)
+     *      Gap: 50 - 9 = 41 slots
      */
-    uint[43] private __gap;
+    uint[41] private __gap;
 }

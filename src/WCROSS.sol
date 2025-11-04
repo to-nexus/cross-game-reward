@@ -2,6 +2,7 @@
 pragma solidity 0.8.28;
 
 import {CrossStaking} from "./CrossStaking.sol";
+import {IWCROSS} from "./interfaces/IWCROSS.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 /**
@@ -14,7 +15,7 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
  * - Native CROSS is automatically wrapped when received
  * - Maintains 1:1 parity with native CROSS
  */
-contract WCROSS is ERC20 {
+contract WCROSS is ERC20, IWCROSS {
     // ==================== Errors ====================
 
     /// @notice Thrown when caller is not the authorized router

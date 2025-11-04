@@ -2,13 +2,14 @@
 pragma solidity 0.8.28;
 
 import "./base/CrossStakingPoolBase.t.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /**
  * @title CrossStakingPoolRewardsTest
- * @notice 보상 계산, 분배, 클레임 기능 테스트
+ * @notice Reward accrual, distribution, and claim tests
  */
 contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
-    // ==================== 보상 누적 테스트 ====================
+    // ==================== Reward accrual tests ====================
 
     function testRewardAccumulation() public {
         _userStake(user1, 10 ether);
@@ -24,7 +25,7 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
     }
 
     function testRewardAccumulationWithVerySmallStake() public {
-        _userStake(user1, 1 ether); // 최소 금액
+        _userStake(user1, 1 ether); // minimum stake amount
         _warpSeconds(1000);
 
         _depositReward(address(rewardToken1), 1000 ether);
@@ -43,7 +44,7 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
         assertEq(rewards[0], 10000 ether, "Large stake should get all rewards");
     }
 
-    // ==================== 보상 클레임 테스트 ====================
+    // ==================== Reward claim tests ====================
 
     function testClaimRewards() public {
         _userStake(user1, 10 ether);
@@ -73,16 +74,16 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
         _depositReward(address(rewardToken1), 100 ether);
         _depositReward(address(rewardToken2), 50 ether);
 
-        // 첫 번째 보상만 claim
+        // Claim only the first reward token
         vm.prank(user1);
-        pool.claimReward(address(rewardToken1));
+        pool.claimReward(rewardToken1);
 
         assertEq(rewardToken1.balanceOf(user1), 100 ether, "Claimed reward1");
         assertEq(rewardToken2.balanceOf(user1), 0, "Not claimed reward2 yet");
 
-        // 두 번째 보상 claim
+        // Claim the second reward token
         vm.prank(user1);
-        pool.claimReward(address(rewardToken2));
+        pool.claimReward(rewardToken2);
 
         assertEq(rewardToken2.balanceOf(user1), 50 ether, "Claimed reward2");
     }
@@ -91,7 +92,7 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
         _userStake(user1, 10 ether);
         _warpSeconds(50);
 
-        // 첫 번째 보상
+        // First reward batch
         _depositReward(address(rewardToken1), 50 ether);
 
         vm.prank(user1);
@@ -100,7 +101,7 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
 
         _warpSeconds(50);
 
-        // 두 번째 보상
+        // Second reward batch
         _depositReward(address(rewardToken1), 50 ether);
 
         vm.prank(user1);
@@ -108,7 +109,7 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
         assertEq(rewardToken1.balanceOf(user1), 100 ether, "Claims accumulate");
     }
 
-    // ==================== 다중 사용자 보상 분배 테스트 ====================
+    // ==================== Multi-user reward distribution tests ====================
 
     function testMultipleUsersRewardDistribution() public {
         // User1 stakes 10 CROSS
@@ -119,7 +120,7 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
         _userStake(user2, 10 ether);
         _warpSeconds(50);
 
-        // 보상 입금 (total 20 CROSS staked)
+        // Deposit rewards (20 CROSS total staked)
         _depositReward(address(rewardToken1), 200 ether);
 
         uint[] memory rewardsUser1 = pool.pendingRewards(user1);
@@ -140,7 +141,7 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
         _userStake(user2, 20 ether);
         _warpSeconds(50);
 
-        // t=100에 보상 입금 (total: 30 CROSS)
+        // At t=100 deposit rewards (total: 30 CROSS)
         _depositReward(address(rewardToken1), 150 ether);
 
         uint[] memory rewards1 = pool.pendingRewards(user1);
@@ -159,7 +160,7 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
         // User2: 70 CROSS
         _userStake(user2, 70 ether);
 
-        // 보상 입금 (total: 100 CROSS)
+        // Deposit rewards (total stake: 100 CROSS)
         _depositReward(address(rewardToken1), 1000 ether);
 
         uint[] memory rewards1 = pool.pendingRewards(user1);
@@ -171,7 +172,7 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
         assertApproxEqAbs(rewards2[0], 700 ether, 10, "User2: 70%");
     }
 
-    // ==================== 다중 보상 토큰 테스트 ====================
+    // ==================== Multiple reward token tests ====================
 
     function testMultipleRewardTokens() public {
         _userStake(user1, 10 ether);
@@ -185,14 +186,14 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
         assertApproxEqAbs(rewards[1], 200 ether, 10, "Reward token 2");
     }
 
-    // ==================== 시간에 따른 보상 변화 테스트 ====================
+    // ==================== Time-based reward variations ====================
 
     function testRewardBeforeAndAfterStake() public {
         // Day 1: User A stakes 100 CROSS
         _userStake(user1, 100 ether);
         _warpDays(1);
 
-        // Day 2: 보상1 100 입금
+        // Day 2: deposit reward #1 (100)
         _depositReward(address(rewardToken1), 100 ether);
         _warpDays(8);
 
@@ -200,30 +201,30 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
         _userStake(user2, 100 ether);
         _warpDays(1);
 
-        // Day 11: 보상2 200 입금
+        // Day 11: deposit reward #2 (200)
         _depositReward(address(rewardToken1), 200 ether);
         _warpDays(9);
 
-        // Day 20: 보상 확인
+        // Day 20: evaluate rewards
         uint[] memory rewardsA = pool.pendingRewards(user1);
         uint[] memory rewardsB = pool.pendingRewards(user2);
 
-        // User A: 100 (보상1, 100% 전체) + 100 (보상2, 50% 절반) = 200
-        // User B: 0 (보상1, 예치 전) + 100 (보상2, 50% 절반) = 100
+        // User A: 100 from reward1 (full share) + 100 from reward2 (50% share) = 200
+        // User B: 0 from reward1 (joined later) + 100 from reward2 (50% share) = 100
         assertApproxEqAbs(rewardsA[0], 200 ether, 10, "User A: reward1 + 50% reward2");
         assertApproxEqAbs(rewardsB[0], 100 ether, 10, "User B: only 50% reward2");
 
-        // 총합 검증
+        // Total distribution check
         assertApproxEqAbs(rewardsA[0] + rewardsB[0], 300 ether, 20, "Total distributed");
     }
 
-    // ==================== 엣지 케이스 ====================
+    // ==================== Edge cases ====================
 
     function testZeroStakers() public {
-        // 스테이커 없이 보상 입금
+        // Deposit rewards with no stakers
         _depositReward(address(rewardToken1), 100 ether);
 
-        // 첫 스테이커가 들어오면 이전 보상을 받음
+        // First staker should receive rewards accumulated while pool was empty
         _userStake(user1, 10 ether);
 
         uint[] memory rewards = pool.pendingRewards(user1);
@@ -235,18 +236,18 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
 
         vm.prank(user1);
         vm.expectRevert(CrossStakingPool.CSPInvalidRewardToken.selector);
-        pool.claimReward(address(0xdead));
+        pool.claimReward(IERC20(address(uint160(0xdead))));
     }
 
     function testZeroAmountTransfer() public {
         _userStake(user1, 10 ether);
 
-        // 0 금액 transfer는 아무 효과 없음
+        // Transferring zero should have no effect
         vm.startPrank(owner);
         rewardToken1.transfer(address(pool), 0);
         vm.stopPrank();
 
-        // 보상이 없는지 확인
+        // Verify no rewards were created
         uint[] memory rewards = pool.pendingRewards(user1);
         assertEq(rewards[0], 0, "No reward for 0 transfer");
     }
@@ -269,19 +270,19 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
         assertEq(rewards[0], 50 ether, "New rewards should accumulate");
     }
 
-    // ==================== 직접 Transfer 감지 테스트 ====================
+    // ==================== Direct transfer detection tests ====================
 
     function testDirectTransferDetection() public {
         _userStake(user1, 10 ether);
 
-        // 직접 transfer
+        // Direct transfer without helper
         vm.prank(owner);
         rewardToken1.transfer(address(pool), 100 ether);
 
-        // 누군가 stake하면 감지됨 (또는 unstake, claim)
+        // Detected when another staking action happens (stake/unstake/claim)
         _userStake(user2, 10 ether);
 
-        // 반영됨
+        // Reward should reflect the transfer
         uint[] memory rewardsAfter = pool.pendingRewards(user1);
         assertEq(rewardsAfter[0], 100 ether, "Direct transfer detected on next action");
     }
@@ -289,15 +290,15 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
     function testDirectTransferWithDepositReward() public {
         _userStake(user1, 10 ether);
 
-        // 직접 transfer 먼저
+        // Perform direct transfer first
         vm.prank(owner);
         rewardToken1.transfer(address(pool), 50 ether);
 
-        // 그 다음 추가 transfer
-        // RewardDistributed 이벤트는 실제 델타(150)를 기록
+        // Then deposit via helper
+        // RewardSynced event records the full delta (150)
         _depositReward(address(rewardToken1), 100 ether);
 
-        // 실제 보상 확인 (직접 transfer 50 + 추가 transfer 100 = 150)
+        // Verify reward equals 50 + 100 = 150
         uint[] memory rewards = pool.pendingRewards(user1);
         assertEq(rewards[0], 150 ether, "Total rewards should include direct transfer");
     }
@@ -305,21 +306,21 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
     function testMultipleDirectTransfers() public {
         _userStake(user1, 10 ether);
 
-        // 여러 번 직접 transfer
+        // Multiple direct transfers
         vm.startPrank(owner);
         rewardToken1.transfer(address(pool), 30 ether);
         rewardToken1.transfer(address(pool), 20 ether);
         rewardToken1.transfer(address(pool), 50 ether);
         vm.stopPrank();
 
-        // 한 번의 액션으로 모두 감지
+        // One additional action detects them all
         _userStake(user2, 10 ether);
 
         uint[] memory rewards = pool.pendingRewards(user1);
         assertEq(rewards[0], 100 ether, "All direct transfers should be detected");
     }
 
-    // ==================== Dust 자동 재분배 테스트 ====================
+    // ==================== Dust redistribution tests ====================
 
     /// @notice Tests that rounding dust is minimal thanks to PRECISION
     /// @dev With 1e18 PRECISION, dust is measured in wei, not ether!

@@ -5,10 +5,10 @@ import "./base/CrossStakingPoolBase.t.sol";
 
 /**
  * @title CrossStakingPoolStakingTest
- * @notice 스테이킹 및 언스테이킹 기본 기능 테스트
+ * @notice Stake and unstake behaviour tests
  */
 contract CrossStakingPoolStakingTest is CrossStakingPoolBase {
-    // ==================== 기본 스테이킹 테스트 ====================
+    // ==================== Basic staking tests ====================
 
     function testStakeBasic() public {
         uint stakeAmount = 10 ether;
@@ -23,7 +23,7 @@ contract CrossStakingPoolStakingTest is CrossStakingPoolBase {
     }
 
     function testStakeMinimumAmount() public {
-        uint stakeAmount = 0.5 ether; // 최소 금액보다 적음
+        uint stakeAmount = 0.5 ether; // below minimum requirement
 
         vm.startPrank(user1);
         crossToken.approve(address(pool), stakeAmount);
@@ -34,7 +34,7 @@ contract CrossStakingPoolStakingTest is CrossStakingPoolBase {
     }
 
     function testStakeMinimumAmountExact() public {
-        uint stakeAmount = 1 ether; // 정확히 최소 금액
+        uint stakeAmount = 1 ether; // exactly the minimum amount
 
         vm.startPrank(user1);
         crossToken.approve(address(pool), stakeAmount);
@@ -47,7 +47,7 @@ contract CrossStakingPoolStakingTest is CrossStakingPoolBase {
     function testStakeVerySmall() public {
         vm.startPrank(user1);
         crossToken.approve(address(pool), 1 ether);
-        pool.stake(1 ether); // 정확히 최소
+        pool.stake(1 ether); // exactly the minimum
         vm.stopPrank();
 
         assertEq(pool.balances(user1), 1 ether, "Should accept minimum stake");
@@ -64,19 +64,19 @@ contract CrossStakingPoolStakingTest is CrossStakingPoolBase {
         assertEq(pool.balances(user1), largeAmount, "Should accept large stake");
     }
 
-    // ==================== 추가 스테이킹 테스트 ====================
+    // ==================== Additional staking tests ====================
 
     function testAdditionalStakeAccumulates() public {
         vm.startPrank(user1);
         crossToken.approve(address(pool), 100 ether);
 
-        // 첫 번째 stake
+        // Initial stake
         pool.stake(10 ether);
         uint amountBefore = pool.balances(user1);
 
         _warpSeconds(100);
 
-        // 추가 stake
+        // Additional stake
         pool.stake(20 ether);
         uint amountAfter = pool.balances(user1);
 
@@ -87,19 +87,19 @@ contract CrossStakingPoolStakingTest is CrossStakingPoolBase {
     }
 
     function testAdditionalStakeDoesNotClaimRewards() public {
-        // 첫 번째 stake
+        // First stake
         _userStake(user1, 10 ether);
 
         _warpSeconds(100);
 
-        // 보상 입금
+        // Deposit rewards
         _depositReward(address(rewardToken1), 100 ether);
 
         vm.startPrank(user1);
         uint rewardBalanceBefore = rewardToken1.balanceOf(user1);
         assertEq(rewardBalanceBefore, 0, "Should have no claimed rewards yet");
 
-        // 추가 stake - 보상은 claim되지 않음
+        // Additional stake should not trigger a claim
         crossToken.approve(address(pool), 20 ether);
         pool.stake(20 ether);
 
@@ -109,7 +109,7 @@ contract CrossStakingPoolStakingTest is CrossStakingPoolBase {
         assertEq(rewardBalanceAfter, 0, "Additional stake should not auto-claim rewards");
     }
 
-    // ==================== 언스테이킹 테스트 ====================
+    // ==================== Unstaking tests ====================
 
     function testUnstakeFullAmount() public {
         uint stakeAmount = 10 ether;
@@ -154,7 +154,7 @@ contract CrossStakingPoolStakingTest is CrossStakingPoolBase {
         crossToken.approve(address(pool), 10 ether);
         pool.stake(10 ether);
 
-        // 즉시 unstake (시간 경과 없음)
+        // Unstake immediately with no time passing
         uint balanceBefore = crossToken.balanceOf(user1);
         pool.unstake();
         uint balanceAfter = crossToken.balanceOf(user1);
@@ -167,19 +167,19 @@ contract CrossStakingPoolStakingTest is CrossStakingPoolBase {
         vm.startPrank(user1);
         crossToken.approve(address(pool), 100 ether);
 
-        // 첫 번째 사이클
+        // First cycle
         pool.stake(10 ether);
         _warpSeconds(50);
         pool.unstake();
 
-        // 두 번째 사이클
+        // Second cycle
         pool.stake(20 ether);
         vm.stopPrank();
 
         assertEq(pool.balances(user1), 20 ether, "New stake amount should be recorded");
     }
 
-    // ==================== 에러 케이스 ====================
+    // ==================== Error scenarios ====================
 
     function testCannotUnstakeWithoutStake() public {
         vm.prank(user1);
@@ -193,7 +193,7 @@ contract CrossStakingPoolStakingTest is CrossStakingPoolBase {
         pool.claimRewards();
     }
 
-    // ==================== 상태 추적 테스트 ====================
+    // ==================== State tracking tests ====================
 
     function testUserBalanceTracking() public {
         _userStake(user1, 10 ether);
@@ -223,13 +223,13 @@ contract CrossStakingPoolStakingTest is CrossStakingPoolBase {
         pool.stake(1000 ether);
         vm.stopPrank();
 
-        // 매우 긴 시간 (10년)
+        // Advance a long period (~10 years)
         vm.warp(block.timestamp + 3650 days);
 
         assertEq(pool.balances(user1), 1000 ether, "Balance should not overflow or change");
     }
 
-    // ==================== 기본 조회 함수 테스트 ====================
+    // ==================== Basic view function tests ====================
 
     function testStakingTokenAddress() public view {
         assertEq(address(pool.stakingToken()), address(crossToken), "Staking token should be CROSS");

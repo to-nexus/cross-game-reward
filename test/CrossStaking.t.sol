@@ -4,6 +4,8 @@ pragma solidity 0.8.28;
 import "../src/CrossStaking.sol";
 import "../src/CrossStakingPool.sol";
 import "../src/WCROSS.sol";
+import "../src/interfaces/ICrossStakingPool.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "./mocks/MockERC20.sol";
 import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import "forge-std/Test.sol";
@@ -11,7 +13,7 @@ import "forge-std/Test.sol";
 contract CrossStakingTest is Test {
     CrossStaking public crossStaking;
     CrossStakingPool public poolImplementation;
-    WCROSS public wcross;
+    IWCROSS public wcross;
 
     MockERC20 public token1;
     MockERC20 public token2;
@@ -33,23 +35,24 @@ contract CrossStakingTest is Test {
 
         // Deploy CrossStaking as UUPS proxy
         CrossStaking implementation = new CrossStaking();
-        bytes memory initData = abi.encodeCall(CrossStaking.initialize, (address(poolImplementation), owner, 2 days));
+        bytes memory initData =
+            abi.encodeCall(CrossStaking.initialize, (ICrossStakingPool(address(poolImplementation)), owner, 2 days));
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
         crossStaking = CrossStaking(address(proxy));
 
-        // WCROSS는 CrossStaking이 생성함
-        wcross = WCROSS(payable(crossStaking.wcross()));
+        // CrossStaking creates the WCROSS instance internally
+        wcross = crossStaking.wcross();
 
         // Deploy test tokens
         token1 = new MockERC20("Token1", "TK1");
         token2 = new MockERC20("Token2", "TK2");
     }
 
-    // ==================== 초기화 ====================
+    // ==================== Initialization ====================
 
     function testInitialization() public view {
         assertTrue(address(crossStaking.wcross()) != address(0), "WCROSS created");
-        assertEq(crossStaking.poolImplementation(), address(poolImplementation), "Implementation set");
+        assertEq(address(crossStaking.poolImplementation()), address(poolImplementation), "Implementation set");
         assertEq(crossStaking.nextPoolId(), 1, "Next pool ID is 1");
 
         // Check roles
@@ -57,29 +60,28 @@ contract CrossStakingTest is Test {
         assertTrue(crossStaking.hasRole(crossStaking.MANAGER_ROLE(), owner), "Owner has pool manager role");
     }
 
-    // ==================== 풀 생성 ====================
+    // ==================== Pool creation ====================
 
     function testCreatePool() public {
-        (uint poolId, address poolAddress) = crossStaking.createPool(address(wcross), 1 ether);
+        (uint poolId, ICrossStakingPool pool) = crossStaking.createPool(IERC20(address(wcross)), 1 ether);
 
         assertEq(poolId, 1, "First pool ID should be 1");
-        assertTrue(poolAddress != address(0), "Pool address should be set");
+        assertTrue(address(pool) != address(0), "Pool address should be set");
 
-        CrossStakingPool pool = CrossStakingPool(poolAddress);
         assertEq(address(pool.stakingToken()), address(wcross), "Staking token");
 
         // Verify pool info
         CrossStaking.PoolInfo memory info = crossStaking.getPoolInfo(poolId);
         assertEq(info.poolId, poolId, "Pool ID");
-        assertEq(info.poolAddress, poolAddress, "Pool address");
-        assertEq(info.stakingToken, address(wcross), "Staking token");
+        assertEq(address(info.pool), address(pool), "Pool address");
+        assertEq(address(info.stakingToken), address(wcross), "Staking token");
         assertTrue(info.active, "Active by default");
     }
 
     function testCreateMultiplePools() public {
-        (uint poolId1, address pool1) = crossStaking.createPool(address(wcross), 1 ether);
-        (uint poolId2, address pool2) = crossStaking.createPool(address(token1), 1 ether);
-        (uint poolId3, address pool3) = crossStaking.createPool(address(token2), 1 ether);
+        (uint poolId1, ICrossStakingPool pool1) = crossStaking.createPool(IERC20(address(wcross)), 1 ether);
+        (uint poolId2, ICrossStakingPool pool2) = crossStaking.createPool(IERC20(address(token1)), 1 ether);
+        (uint poolId3, ICrossStakingPool pool3) = crossStaking.createPool(IERC20(address(token2)), 1 ether);
 
         assertEq(poolId1, 1, "Pool 1 ID");
         assertEq(poolId2, 2, "Pool 2 ID");
@@ -92,62 +94,64 @@ contract CrossStakingTest is Test {
     function testOnlyPoolManagerCanCreatePool() public {
         vm.prank(user1);
         vm.expectRevert();
-        crossStaking.createPool(address(wcross), 1 ether);
+        crossStaking.createPool(IERC20(address(wcross)), 1 ether);
     }
 
     function testCannotCreatePoolWithZeroAddress() public {
         vm.expectRevert(CrossStaking.CSCanNotZeroAddress.selector);
-        crossStaking.createPool(address(0), 1 ether);
+        crossStaking.createPool(IERC20(address(0)), 1 ether);
     }
 
     function testMultiplePoolsWithSameStakingToken() public {
-        // 같은 스테이킹 토큰으로 여러 풀 생성 가능
-        (uint poolId1,) = crossStaking.createPool(address(wcross), 1 ether);
-        (uint poolId2,) = crossStaking.createPool(address(wcross), 1 ether);
+        // Multiple pools can use the same staking token
+        (uint poolId1,) = crossStaking.createPool(IERC20(address(wcross)), 1 ether);
+        (uint poolId2,) = crossStaking.createPool(IERC20(address(wcross)), 1 ether);
 
         assertEq(poolId1, 1, "Pool 1");
         assertEq(poolId2, 2, "Pool 2");
 
-        // 같은 토큰의 풀 개수 확인
-        assertEq(crossStaking.getPoolCountByStakingToken(address(wcross)), 2, "2 pools for WCROSS");
+        // Confirm pool count for the same staking token
+        assertEq(
+            crossStaking.getPoolCountByStakingToken(IERC20(address(wcross))), 2, "2 pools for WCROSS"
+        );
     }
 
-    // ==================== 보상 토큰 관리 ====================
+    // ==================== Reward token management ====================
 
     function testAddRewardToken() public {
-        (uint poolId, address poolAddress) = crossStaking.createPool(address(wcross), 1 ether);
+        (uint poolId, ICrossStakingPool poolInterface) = crossStaking.createPool(IERC20(address(wcross)), 1 ether);
 
         MockERC20 rewardToken = new MockERC20("Reward", "RWD");
-        crossStaking.addRewardToken(poolId, address(rewardToken));
+        crossStaking.addRewardToken(poolId, IERC20(address(rewardToken)));
 
         // Verify
-        CrossStakingPool pool = CrossStakingPool(poolAddress);
-        assertTrue(pool.isRewardToken(address(rewardToken)), "Reward token added");
+        CrossStakingPool pool = CrossStakingPool(address(poolInterface));
+        assertTrue(pool.isRewardToken(IERC20(address(rewardToken))), "Reward token added");
         assertEq(pool.rewardTokenCount(), 1, "1 reward token");
     }
 
     function testOnlyPoolManagerCanAddRewardToken() public {
-        (uint poolId,) = crossStaking.createPool(address(wcross), 1 ether);
+        (uint poolId,) = crossStaking.createPool(IERC20(address(wcross)), 1 ether);
         MockERC20 rewardToken = new MockERC20("Reward", "RWD");
 
         vm.prank(user1);
         vm.expectRevert();
-        crossStaking.addRewardToken(poolId, address(rewardToken));
+        crossStaking.addRewardToken(poolId, IERC20(address(rewardToken)));
     }
 
     function testCannotAddRewardTokenToNonExistentPool() public {
         MockERC20 rewardToken = new MockERC20("Reward", "RWD");
 
         vm.expectRevert(CrossStaking.CSPoolNotFound.selector);
-        crossStaking.addRewardToken(999, address(rewardToken));
+        crossStaking.addRewardToken(999, IERC20(address(rewardToken)));
     }
 
-    // ==================== 풀 활성화/비활성화 ====================
+    // ==================== Pool activation/deactivation ====================
 
     function testSetPoolActive() public {
-        (uint poolId, address poolAddress) = crossStaking.createPool(address(wcross), 1 ether);
+        (uint poolId, ICrossStakingPool poolInterface) = crossStaking.createPool(IERC20(address(wcross)), 1 ether);
 
-        CrossStakingPool pool = CrossStakingPool(poolAddress);
+        CrossStakingPool pool = CrossStakingPool(address(poolInterface));
         assertFalse(pool.paused(), "Initially not paused");
 
         // Deactivate
@@ -166,7 +170,7 @@ contract CrossStakingTest is Test {
     }
 
     function testOnlyPoolManagerCanSetPoolActive() public {
-        (uint poolId,) = crossStaking.createPool(address(wcross), 1 ether);
+        (uint poolId,) = crossStaking.createPool(IERC20(address(wcross)), 1 ether);
 
         vm.prank(user1);
         vm.expectRevert();
@@ -178,23 +182,23 @@ contract CrossStakingTest is Test {
         crossStaking.setPoolActive(999, false);
     }
 
-    // ==================== 풀 조회 ====================
+    // ==================== Pool queries ====================
 
     function testGetPoolInfo() public {
-        (uint poolId, address poolAddress) = crossStaking.createPool(address(wcross), 1 ether);
+        (uint poolId, ICrossStakingPool pool) = crossStaking.createPool(IERC20(address(wcross)), 1 ether);
 
         CrossStaking.PoolInfo memory info = crossStaking.getPoolInfo(poolId);
 
         assertEq(info.poolId, poolId, "Pool ID");
-        assertEq(info.poolAddress, poolAddress, "Pool address");
-        assertEq(info.stakingToken, address(wcross), "Staking token");
+        assertEq(address(info.pool), address(pool), "Pool address");
+        assertEq(address(info.stakingToken), address(wcross), "Staking token");
         assertTrue(info.active, "Active");
     }
 
     function testPoolAt() public {
-        crossStaking.createPool(address(wcross), 1 ether);
-        crossStaking.createPool(address(token1), 1 ether);
-        crossStaking.createPool(address(token2), 1 ether);
+        crossStaking.createPool(IERC20(address(wcross)), 1 ether);
+        crossStaking.createPool(IERC20(address(token1)), 1 ether);
+        crossStaking.createPool(IERC20(address(token2)), 1 ether);
 
         assertEq(crossStaking.poolAt(0), 1, "Pool at index 0");
         assertEq(crossStaking.poolAt(1), 2, "Pool at index 1");
@@ -202,13 +206,13 @@ contract CrossStakingTest is Test {
     }
 
     function testGetPoolAddress() public {
-        (uint poolId, address poolAddress) = crossStaking.createPool(address(wcross), 1 ether);
+        (uint poolId, ICrossStakingPool poolAddress) = crossStaking.createPool(IERC20(address(wcross)), 1 ether);
 
-        assertEq(crossStaking.getPoolAddress(poolId), poolAddress, "Pool address lookup");
+        assertEq(address(crossStaking.getPoolAddress(poolId)), address(poolAddress), "Pool address lookup");
     }
 
     function testGetPoolId() public {
-        (uint poolId, address poolAddress) = crossStaking.createPool(address(wcross), 1 ether);
+        (uint poolId, ICrossStakingPool poolAddress) = crossStaking.createPool(IERC20(address(wcross)), 1 ether);
 
         assertEq(crossStaking.getPoolId(poolAddress), poolId, "Pool ID lookup");
     }
@@ -224,17 +228,17 @@ contract CrossStakingTest is Test {
     function testGetTotalPoolCount() public {
         assertEq(crossStaking.getTotalPoolCount(), 0, "Initially 0");
 
-        crossStaking.createPool(address(wcross), 1 ether);
+        crossStaking.createPool(IERC20(address(wcross)), 1 ether);
         assertEq(crossStaking.getTotalPoolCount(), 1, "After 1 pool");
 
-        crossStaking.createPool(address(token1), 1 ether);
+        crossStaking.createPool(IERC20(address(token1)), 1 ether);
         assertEq(crossStaking.getTotalPoolCount(), 2, "After 2 pools");
     }
 
     function testGetAllPoolIds() public {
-        crossStaking.createPool(address(wcross), 1 ether);
-        crossStaking.createPool(address(token1), 1 ether);
-        crossStaking.createPool(address(token2), 1 ether);
+        crossStaking.createPool(IERC20(address(wcross)), 1 ether);
+        crossStaking.createPool(IERC20(address(token1)), 1 ether);
+        crossStaking.createPool(IERC20(address(token2)), 1 ether);
 
         uint[] memory allIds = crossStaking.getAllPoolIds();
         assertEq(allIds.length, 3, "3 pools");
@@ -244,32 +248,36 @@ contract CrossStakingTest is Test {
     }
 
     function testGetPoolIdsByStakingToken() public {
-        crossStaking.createPool(address(wcross), 1 ether);
-        crossStaking.createPool(address(token1), 1 ether);
-        crossStaking.createPool(address(wcross), 1 ether);
+        crossStaking.createPool(IERC20(address(wcross)), 1 ether);
+        crossStaking.createPool(IERC20(address(token1)), 1 ether);
+        crossStaking.createPool(IERC20(address(wcross)), 1 ether);
 
-        uint[] memory wcrossIds = crossStaking.getPoolIdsByStakingToken(address(wcross));
+        uint[] memory wcrossIds = crossStaking.getPoolIdsByStakingToken(IERC20(address(wcross)));
         assertEq(wcrossIds.length, 2, "2 WCROSS pools");
         assertEq(wcrossIds[0], 1, "Pool 1");
         assertEq(wcrossIds[1], 3, "Pool 3");
 
-        uint[] memory token1Ids = crossStaking.getPoolIdsByStakingToken(address(token1));
+        uint[] memory token1Ids = crossStaking.getPoolIdsByStakingToken(IERC20(address(token1)));
         assertEq(token1Ids.length, 1, "1 Token1 pool");
         assertEq(token1Ids[0], 2, "Pool 2");
     }
 
     function testPoolByStakingTokenAt() public {
-        crossStaking.createPool(address(wcross), 1 ether);
-        crossStaking.createPool(address(wcross), 1 ether);
+        crossStaking.createPool(IERC20(address(wcross)), 1 ether);
+        crossStaking.createPool(IERC20(address(wcross)), 1 ether);
 
-        assertEq(crossStaking.poolByStakingTokenAt(address(wcross), 0), 1, "First WCROSS pool");
-        assertEq(crossStaking.poolByStakingTokenAt(address(wcross), 1), 2, "Second WCROSS pool");
+        assertEq(
+            crossStaking.poolByStakingTokenAt(IERC20(address(wcross)), 0), 1, "First WCROSS pool"
+        );
+        assertEq(
+            crossStaking.poolByStakingTokenAt(IERC20(address(wcross)), 1), 2, "Second WCROSS pool"
+        );
     }
 
     function testGetActivePoolIds() public {
-        (uint pool1,) = crossStaking.createPool(address(wcross), 1 ether);
-        (uint pool2,) = crossStaking.createPool(address(token1), 1 ether);
-        (uint pool3,) = crossStaking.createPool(address(token2), 1 ether);
+        (uint pool1,) = crossStaking.createPool(IERC20(address(wcross)), 1 ether);
+        (uint pool2,) = crossStaking.createPool(IERC20(address(token1)), 1 ether);
+        (uint pool3,) = crossStaking.createPool(IERC20(address(token2)), 1 ether);
 
         // All active initially
         uint[] memory activeIds = crossStaking.getActivePoolIds();
@@ -284,7 +292,7 @@ contract CrossStakingTest is Test {
         assertEq(activeIds[1], pool3, "Pool 3 still active");
     }
 
-    // ==================== Router 관리 ====================
+    // ==================== Router management ====================
 
     function testSetRouter() public {
         address newRouter = makeAddr("newRouter");
@@ -306,24 +314,24 @@ contract CrossStakingTest is Test {
         crossStaking.setRouter(address(0));
     }
 
-    // ==================== 관리자 함수 ====================
+    // ==================== Admin functions ====================
 
     function testSetPoolImplementation() public {
-        address newImpl = address(new CrossStakingPool());
+        CrossStakingPool newImpl = new CrossStakingPool();
 
-        crossStaking.setPoolImplementation(newImpl);
-        assertEq(crossStaking.poolImplementation(), newImpl, "Implementation updated");
+        crossStaking.setPoolImplementation(ICrossStakingPool(address(newImpl)));
+        assertEq(address(crossStaking.poolImplementation()), address(newImpl), "Implementation updated");
     }
 
     function testOnlyAdminCanSetPoolImplementation() public {
-        address newImpl = address(new CrossStakingPool());
+        CrossStakingPool newImpl = new CrossStakingPool();
 
         vm.prank(user1);
         vm.expectRevert();
-        crossStaking.setPoolImplementation(newImpl);
+        crossStaking.setPoolImplementation(ICrossStakingPool(address(newImpl)));
     }
 
-    // ==================== 역할 관리 ====================
+    // ==================== Role management ====================
 
     function testGrantPoolManagerRole() public {
         assertFalse(crossStaking.hasRole(crossStaking.MANAGER_ROLE(), user1), "User1 not pool manager");
@@ -334,8 +342,8 @@ contract CrossStakingTest is Test {
 
         // User1 can create pool
         vm.prank(user1);
-        (, address poolAddress) = crossStaking.createPool(address(token1), 1 ether);
-        assertTrue(poolAddress != address(0), "Pool created by user1");
+        (, ICrossStakingPool poolAddress) = crossStaking.createPool(IERC20(address(token1)), 1 ether);
+        assertTrue(address(poolAddress) != address(0), "Pool created by user1");
     }
 
     function testRevokePoolManagerRole() public {
@@ -347,18 +355,18 @@ contract CrossStakingTest is Test {
 
         vm.prank(user1);
         vm.expectRevert();
-        crossStaking.createPool(address(token1), 1 ether);
+        crossStaking.createPool(IERC20(address(token1)), 1 ether);
     }
 
     // ==================== Integration ====================
 
     function testPoolsAreIndependent() public {
         // Create 2 pools
-        (, address pool1Addr) = crossStaking.createPool(address(wcross), 1 ether);
-        (, address pool2Addr) = crossStaking.createPool(address(token1), 1 ether);
+        (, ICrossStakingPool pool1Addr) = crossStaking.createPool(IERC20(address(wcross)), 1 ether);
+        (, ICrossStakingPool pool2Addr) = crossStaking.createPool(IERC20(address(token1)), 1 ether);
 
-        CrossStakingPool pool1 = CrossStakingPool(pool1Addr);
-        CrossStakingPool pool2 = CrossStakingPool(pool2Addr);
+        CrossStakingPool pool1 = CrossStakingPool(address(pool1Addr));
+        CrossStakingPool pool2 = CrossStakingPool(address(pool2Addr));
 
         // Different staking tokens
         assertEq(address(pool1.stakingToken()), address(wcross), "Pool1 staking token");
@@ -367,7 +375,7 @@ contract CrossStakingTest is Test {
         // Different total staked
         token1.mint(user1, 100 ether);
         vm.startPrank(user1);
-        token1.approve(pool2Addr, 50 ether);
+        token1.approve(address(pool2Addr), 50 ether);
         pool2.stake(50 ether);
         vm.stopPrank();
 
@@ -376,8 +384,8 @@ contract CrossStakingTest is Test {
     }
 
     function testPoolActiveStatusAffectsPause() public {
-        (uint poolId, address poolAddress) = crossStaking.createPool(address(wcross), 1 ether);
-        CrossStakingPool pool = CrossStakingPool(poolAddress);
+        (uint poolId, ICrossStakingPool poolAddress) = crossStaking.createPool(IERC20(address(wcross)), 1 ether);
+        CrossStakingPool pool = CrossStakingPool(address(poolAddress));
 
         // Deactivate pool
         crossStaking.setPoolActive(poolId, false);
@@ -388,7 +396,7 @@ contract CrossStakingTest is Test {
         assertFalse(pool.paused(), "Pool should be unpaused");
     }
 
-    // ==================== UUPS 업그레이드 ====================
+    // ==================== UUPS upgrades ====================
 
     function testUpgrade() public {
         // Deploy new implementation

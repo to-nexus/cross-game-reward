@@ -1,15 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import {CrossStaking} from "./CrossStaking.sol";
-import {CrossStakingPool} from "./CrossStakingPool.sol";
-import {IWCROSS} from "./interfaces/IWCROSS.sol";
-
-import {ICrossStakingRouter} from "./interfaces/ICrossStakingRouter.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-
 import {IERC20Permit} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
-import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {IERC20, SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+
+import {CrossStakingPool, ICrossStaking, ICrossStakingPool} from "./CrossStakingPool.sol";
+import {ICrossStakingRouter} from "./interfaces/ICrossStakingRouter.sol";
+import {IWCROSS} from "./interfaces/IWCROSS.sol";
 
 /**
  * @title CrossStakingRouter
@@ -72,7 +69,7 @@ contract CrossStakingRouter is ICrossStakingRouter {
     // ==================== State Variables ====================
 
     /// @notice CrossStaking contract reference
-    CrossStaking public immutable crossStaking;
+    ICrossStaking public immutable crossStaking;
 
     /// @notice WCROSS token reference
     IWCROSS public immutable wcross;
@@ -86,7 +83,7 @@ contract CrossStakingRouter is ICrossStakingRouter {
     constructor(address _crossStaking) {
         require(_crossStaking != address(0), CSRCanNotZeroAddress());
 
-        crossStaking = CrossStaking(_crossStaking);
+        crossStaking = ICrossStaking(_crossStaking);
         wcross = IWCROSS(crossStaking.wcross());
     }
 
@@ -100,7 +97,7 @@ contract CrossStakingRouter is ICrossStakingRouter {
     function stakeNative(uint poolId) external payable {
         require(msg.value > 0, CSRInvalidAmount());
 
-        CrossStakingPool pool = _getPoolAndValidateWCROSS(poolId);
+        ICrossStakingPool pool = _getPoolAndValidateWCROSS(poolId);
 
         // Router wraps native CROSS to WCROSS
         wcross.deposit{value: msg.value}();
@@ -118,7 +115,7 @@ contract CrossStakingRouter is ICrossStakingRouter {
      * @param poolId ID of the pool to unstake from
      */
     function unstakeNative(uint poolId) external {
-        CrossStakingPool pool = _getPoolAndValidateWCROSS(poolId);
+        ICrossStakingPool pool = _getPoolAndValidateWCROSS(poolId);
 
         uint stakedAmount = pool.balances(msg.sender);
         require(stakedAmount > 0, CSRNoStakeFound());
@@ -143,7 +140,7 @@ contract CrossStakingRouter is ICrossStakingRouter {
     function stakeERC20(uint poolId, uint amount) external {
         require(amount > 0, CSRInvalidAmount());
 
-        CrossStakingPool pool = _getPool(poolId);
+        ICrossStakingPool pool = _getPool(poolId);
         IERC20 stakingToken = pool.stakingToken();
 
         _stakeERC20(poolId, pool, stakingToken, amount);
@@ -162,7 +159,7 @@ contract CrossStakingRouter is ICrossStakingRouter {
     function stakeERC20WithPermit(uint poolId, uint amount, uint deadline, uint8 v, bytes32 r, bytes32 s) external {
         require(amount > 0, CSRInvalidAmount());
 
-        CrossStakingPool pool = _getPool(poolId);
+        ICrossStakingPool pool = _getPool(poolId);
         IERC20 stakingToken = pool.stakingToken();
 
         // Approve Router via EIP-2612 permit
@@ -177,7 +174,7 @@ contract CrossStakingRouter is ICrossStakingRouter {
      * @param poolId ID of the pool to unstake from
      */
     function unstakeERC20(uint poolId) external {
-        CrossStakingPool pool = _getPool(poolId);
+        ICrossStakingPool pool = _getPool(poolId);
         IERC20 stakingToken = pool.stakingToken();
 
         uint stakedAmount = pool.balances(msg.sender);
@@ -206,7 +203,7 @@ contract CrossStakingRouter is ICrossStakingRouter {
         view
         returns (uint stakedAmount, uint[] memory pendingRewards)
     {
-        CrossStakingPool pool = _getPool(poolId);
+        ICrossStakingPool pool = _getPool(poolId);
         stakedAmount = pool.balances(user);
         pendingRewards = pool.pendingRewards(user);
     }
@@ -217,7 +214,7 @@ contract CrossStakingRouter is ICrossStakingRouter {
      * @return True if the pool uses WCROSS as staking token
      */
     function isNativePool(uint poolId) external view returns (bool) {
-        CrossStakingPool pool = _getPool(poolId);
+        ICrossStakingPool pool = _getPool(poolId);
         return address(pool.stakingToken()) == address(wcross);
     }
 
@@ -228,8 +225,8 @@ contract CrossStakingRouter is ICrossStakingRouter {
      * @param poolId ID of the pool
      * @return Pool contract instance
      */
-    function _getPool(uint poolId) internal view returns (CrossStakingPool) {
-        return CrossStakingPool(crossStaking.getPoolAddress(poolId));
+    function _getPool(uint poolId) internal view returns (ICrossStakingPool) {
+        return crossStaking.getPoolAddress(poolId);
     }
 
     /**
@@ -237,7 +234,7 @@ contract CrossStakingRouter is ICrossStakingRouter {
      * @param poolId ID of the pool
      * @return pool Pool contract instance
      */
-    function _getPoolAndValidateWCROSS(uint poolId) internal view returns (CrossStakingPool pool) {
+    function _getPoolAndValidateWCROSS(uint poolId) internal view returns (ICrossStakingPool pool) {
         pool = _getPool(poolId);
         require(address(pool.stakingToken()) == address(wcross), CSRNotWCROSSPool());
     }
@@ -249,7 +246,7 @@ contract CrossStakingRouter is ICrossStakingRouter {
      * @param token ERC20 token contract instance
      * @param amount Amount of tokens to stake
      */
-    function _stakeERC20(uint poolId, CrossStakingPool pool, IERC20 token, uint amount) internal {
+    function _stakeERC20(uint poolId, ICrossStakingPool pool, IERC20 token, uint amount) internal {
         // Transfer tokens from user and stake to pool
         token.safeTransferFrom(msg.sender, address(this), amount);
         token.forceApprove(address(pool), amount);

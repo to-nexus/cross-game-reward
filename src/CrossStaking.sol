@@ -1,25 +1,23 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import {CrossStakingPool} from "./CrossStakingPool.sol";
-import {WCROSS} from "./WCROSS.sol";
-
-import {ICrossStaking} from "./interfaces/ICrossStaking.sol";
-import {AccessControlDefaultAdminRulesUpgradeable} from
+import {AccessControlDefaultAdminRulesUpgradeable as AccessControl} from
     "@openzeppelin/contracts-upgradeable/access/extensions/AccessControlDefaultAdminRulesUpgradeable.sol";
-import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {Initializable, UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
+import {CrossStakingPool, ICrossStaking, ICrossStakingPool} from "./CrossStakingPool.sol";
+import {IWCROSS, WCROSS} from "./WCROSS.sol";
 /**
  * @title CrossStaking
  * @notice Factory contract for managing multiple staking pools
  * @dev UUPS upgradeable pattern with pool creation and management capabilities
  *      Serves as the central hub for all CrossStaking pools and WCROSS token
  */
-contract CrossStaking is Initializable, AccessControlDefaultAdminRulesUpgradeable, UUPSUpgradeable, ICrossStaking {
+
+contract CrossStaking is Initializable, AccessControl, UUPSUpgradeable, ICrossStaking {
     using EnumerableSet for EnumerableSet.AddressSet;
     using EnumerableSet for EnumerableSet.UintSet;
 
@@ -49,7 +47,7 @@ contract CrossStaking is Initializable, AccessControlDefaultAdminRulesUpgradeabl
 
     /// @notice Emitted when the pool implementation is updated
     /// @param implementation The new implementation address
-    event PoolImplementationSet(address indexed implementation);
+    event PoolImplementationSet(ICrossStakingPool indexed implementation);
 
     /// @notice Emitted when a pool's active status changes
     /// @param poolId The ID of the pool
@@ -63,13 +61,13 @@ contract CrossStaking is Initializable, AccessControlDefaultAdminRulesUpgradeabl
     // ==================== State Variables ====================
 
     /// @notice Address of the WCROSS token contract
-    address public wcross;
+    IWCROSS public wcross;
 
     /// @notice Address of the router contract for staking operations
     address public router;
 
     /// @notice Implementation address for CrossStakingPool (UUPS proxy pattern)
-    address public poolImplementation;
+    ICrossStakingPool public poolImplementation;
 
     /// @notice Next pool ID to be assigned
     uint public nextPoolId;
@@ -78,10 +76,10 @@ contract CrossStaking is Initializable, AccessControlDefaultAdminRulesUpgradeabl
     mapping(uint => PoolInfo) public pools;
 
     /// @notice Mapping from pool address to pool ID
-    mapping(address => uint) public poolIds;
+    mapping(ICrossStakingPool => uint) public poolIds;
 
     /// @notice Mapping from staking token to set of pool IDs
-    mapping(address => EnumerableSet.UintSet) private _poolsByStakingToken;
+    mapping(IERC20 => EnumerableSet.UintSet) private _poolsByStakingToken;
 
     /// @notice Set of all pool IDs
     EnumerableSet.UintSet private _allPoolIds;
@@ -100,15 +98,18 @@ contract CrossStaking is Initializable, AccessControlDefaultAdminRulesUpgradeabl
      * @param _admin Address of the initial admin
      * @param _initialDelay Delay in seconds for admin role transfers
      */
-    function initialize(address _poolImplementation, address _admin, uint48 _initialDelay) external initializer {
-        require(_poolImplementation != address(0), CSCanNotZeroAddress());
+    function initialize(ICrossStakingPool _poolImplementation, address _admin, uint48 _initialDelay)
+        external
+        initializer
+    {
+        require(address(_poolImplementation) != address(0), CSCanNotZeroAddress());
         require(_admin != address(0), CSCanNotZeroAddress());
 
         __AccessControlDefaultAdminRules_init(_initialDelay, _admin);
         __UUPSUpgradeable_init();
 
         poolImplementation = _poolImplementation;
-        wcross = address(new WCROSS());
+        wcross = IWCROSS(address(new WCROSS()));
         nextPoolId = 1;
 
         // Grant default roles
@@ -125,65 +126,58 @@ contract CrossStaking is Initializable, AccessControlDefaultAdminRulesUpgradeabl
      * @param stakingToken Address of the token to be staked in the pool
      * @param minStakeAmount Minimum amount required for staking (in wei)
      * @return poolId ID of the newly created pool
-     * @return poolAddress Address of the newly created pool
+     * @return pool Address of the newly created pool
      */
-    function createPool(address stakingToken, uint minStakeAmount)
+    function createPool(IERC20 stakingToken, uint minStakeAmount)
         external
         onlyRole(MANAGER_ROLE)
-        returns (uint poolId, address poolAddress)
+        returns (uint poolId, ICrossStakingPool pool)
     {
-        require(stakingToken != address(0), CSCanNotZeroAddress());
+        require(address(stakingToken) != address(0), CSCanNotZeroAddress());
         require(minStakeAmount > 0, CSCanNotZeroValue());
 
         poolId = nextPoolId++;
 
         // Deploy pool as UUPS proxy
         // Pool will set CrossStaking as msg.sender and get owner from defaultAdmin()
-        bytes memory initData = abi.encodeCall(CrossStakingPool.initialize, (IERC20(stakingToken), minStakeAmount));
+        bytes memory initData = abi.encodeCall(CrossStakingPool.initialize, (stakingToken, minStakeAmount));
 
-        ERC1967Proxy proxy = new ERC1967Proxy(poolImplementation, initData);
-        poolAddress = address(proxy);
+        ERC1967Proxy proxy = new ERC1967Proxy(address(poolImplementation), initData);
+        pool = ICrossStakingPool(address(proxy));
 
         // Store pool information
-        pools[poolId] = PoolInfo({
-            poolId: poolId,
-            poolAddress: poolAddress,
-            stakingToken: stakingToken,
-            createdAt: block.timestamp,
-            active: true
-        });
+        pools[poolId] =
+            PoolInfo({poolId: poolId, pool: pool, stakingToken: stakingToken, createdAt: block.timestamp, active: true});
 
-        poolIds[poolAddress] = poolId;
+        poolIds[pool] = poolId;
         _allPoolIds.add(poolId);
         _poolsByStakingToken[stakingToken].add(poolId);
 
-        emit PoolCreated(poolId, poolAddress, stakingToken);
+        emit PoolCreated(poolId, address(pool), address(stakingToken));
     }
 
     /**
      * @notice Adds a reward token to a pool
      * @dev Can be called directly since CrossStaking has STAKING_ROOT_ROLE
      * @param poolId ID of the pool
-     * @param rewardToken Address of the reward token to add
+     * @param token Address of the reward token to add
      */
-    function addRewardToken(uint poolId, address rewardToken) external onlyRole(MANAGER_ROLE) {
-        require(pools[poolId].poolAddress != address(0), CSPoolNotFound());
+    function addRewardToken(uint poolId, IERC20 token) external onlyRole(MANAGER_ROLE) {
+        require(address(pools[poolId].pool) != address(0), CSPoolNotFound());
 
-        CrossStakingPool pool = CrossStakingPool(pools[poolId].poolAddress);
-        pool.addRewardToken(rewardToken);
+        pools[poolId].pool.addRewardToken(token);
     }
 
     /**
      * @notice Removes a reward token from a pool
      * @dev Can be called directly since CrossStaking has STAKING_ROOT_ROLE
      * @param poolId ID of the pool
-     * @param rewardToken Address of the reward token to remove
+     * @param token Address of the reward token to remove
      */
-    function removeRewardToken(uint poolId, address rewardToken) external onlyRole(MANAGER_ROLE) {
-        require(pools[poolId].poolAddress != address(0), CSPoolNotFound());
+    function removeRewardToken(uint poolId, IERC20 token) external onlyRole(MANAGER_ROLE) {
+        require(address(pools[poolId].pool) != address(0), CSPoolNotFound());
 
-        CrossStakingPool pool = CrossStakingPool(pools[poolId].poolAddress);
-        pool.removeRewardToken(rewardToken);
+        pools[poolId].pool.removeRewardToken(token);
     }
 
     /**
@@ -193,14 +187,13 @@ contract CrossStaking is Initializable, AccessControlDefaultAdminRulesUpgradeabl
      * @param active New active status
      */
     function setPoolActive(uint poolId, bool active) external onlyRole(MANAGER_ROLE) {
-        require(pools[poolId].poolAddress != address(0), CSPoolNotFound());
+        require(address(pools[poolId].pool) != address(0), CSPoolNotFound());
 
         pools[poolId].active = active;
 
         // Pause/unpause the actual pool contract
-        CrossStakingPool pool = CrossStakingPool(pools[poolId].poolAddress);
-        if (active) pool.unpause();
-        else pool.pause();
+        if (active) pools[poolId].pool.unpause();
+        else pools[poolId].pool.pause();
 
         emit PoolStatusChanged(poolId, active);
     }
@@ -210,8 +203,8 @@ contract CrossStaking is Initializable, AccessControlDefaultAdminRulesUpgradeabl
      * @dev Only affects newly created pools, existing pools remain unchanged
      * @param newImplementation Address of the new implementation contract
      */
-    function setPoolImplementation(address newImplementation) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(newImplementation != address(0), CSCanNotZeroAddress());
+    function setPoolImplementation(ICrossStakingPool newImplementation) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(address(newImplementation) != address(0), CSCanNotZeroAddress());
         poolImplementation = newImplementation;
         emit PoolImplementationSet(newImplementation);
     }
@@ -234,7 +227,7 @@ contract CrossStaking is Initializable, AccessControlDefaultAdminRulesUpgradeabl
      * @return Pool information struct
      */
     function getPoolInfo(uint poolId) external view returns (PoolInfo memory) {
-        require(pools[poolId].poolAddress != address(0), CSPoolNotFound());
+        require(address(pools[poolId].pool) != address(0), CSPoolNotFound());
         return pools[poolId];
     }
 
@@ -252,7 +245,7 @@ contract CrossStaking is Initializable, AccessControlDefaultAdminRulesUpgradeabl
      * @param stakingToken Address of the staking token
      * @return Number of pools using this staking token
      */
-    function getPoolCountByStakingToken(address stakingToken) external view returns (uint) {
+    function getPoolCountByStakingToken(IERC20 stakingToken) external view returns (uint) {
         return _poolsByStakingToken[stakingToken].length();
     }
 
@@ -261,7 +254,7 @@ contract CrossStaking is Initializable, AccessControlDefaultAdminRulesUpgradeabl
      * @param stakingToken Address of the staking token
      * @return Array of pool IDs
      */
-    function getPoolIdsByStakingToken(address stakingToken) external view returns (uint[] memory) {
+    function getPoolIdsByStakingToken(IERC20 stakingToken) external view returns (uint[] memory) {
         return _poolsByStakingToken[stakingToken].values();
     }
 
@@ -271,7 +264,7 @@ contract CrossStaking is Initializable, AccessControlDefaultAdminRulesUpgradeabl
      * @param index Index in the staking token's pool list
      * @return poolId Pool ID at the specified index
      */
-    function poolByStakingTokenAt(address stakingToken, uint index) external view returns (uint) {
+    function poolByStakingTokenAt(IERC20 stakingToken, uint index) external view returns (uint) {
         return _poolsByStakingToken[stakingToken].at(index);
     }
 
@@ -296,18 +289,18 @@ contract CrossStaking is Initializable, AccessControlDefaultAdminRulesUpgradeabl
      * @param poolId ID of the pool
      * @return Address of the pool contract
      */
-    function getPoolAddress(uint poolId) external view returns (address) {
-        require(pools[poolId].poolAddress != address(0), CSPoolNotFound());
-        return pools[poolId].poolAddress;
+    function getPoolAddress(uint poolId) external view returns (ICrossStakingPool) {
+        require(address(pools[poolId].pool) != address(0), CSPoolNotFound());
+        return pools[poolId].pool;
     }
 
     /**
      * @notice Retrieves pool ID by pool address
-     * @param poolAddress Address of the pool contract
+     * @param pool Address of the pool contract
      * @return Pool ID
      */
-    function getPoolId(address poolAddress) external view returns (uint) {
-        uint poolId = poolIds[poolAddress];
+    function getPoolId(ICrossStakingPool pool) external view returns (uint) {
+        uint poolId = poolIds[pool];
         require(poolId != 0, CSPoolNotFound());
         return poolId;
     }

@@ -5,13 +5,13 @@ import "./base/CrossStakingPoolBase.t.sol";
 
 /**
  * @title CrossStakingPoolIntegrationTest
- * @notice 복잡한 시나리오 및 통합 테스트
+ * @notice Complex scenario and integration tests
  */
 contract CrossStakingPoolIntegrationTest is CrossStakingPoolBase {
-    // ==================== 실전 시나리오 테스트 ====================
+    // ==================== Realistic scenario tests ====================
 
     function testCompleteUserJourney() public {
-        // 초기 CROSS 잔액 기록
+        // Record initial CROSS balances
         uint user1InitialCross = crossToken.balanceOf(user1);
         uint user2InitialCross = crossToken.balanceOf(user2);
         uint user3InitialCross = crossToken.balanceOf(user3);
@@ -37,7 +37,7 @@ contract CrossStakingPoolIntegrationTest is CrossStakingPoolBase {
         _warpDays(1);
         _depositReward(address(rewardToken1), 150 ether);
 
-        // Day 4: User1 claims (CROSS는 변하지 않음)
+        // Day 4: User1 claims (CROSS balance unchanged)
         _warpDays(1);
         uint user1CrossBeforeClaim = crossToken.balanceOf(user1);
         vm.prank(user1);
@@ -94,12 +94,12 @@ contract CrossStakingPoolIntegrationTest is CrossStakingPoolBase {
         assertEq(pool.balances(user3), 0, "User3 balance cleared");
         uint user3Total = rewardToken1.balanceOf(user3);
 
-        // 총 입금: 100 + 150 + 300 = 550 ether
+        // Total rewards deposited: 100 + 150 + 300 = 550 ether
         uint totalRewards = user1Total + user2Total + user3Total;
 
         assertApproxEqAbs(totalRewards, 550 ether, 100, "Total rewards match deposits");
 
-        // 모든 CROSS 반환 확인
+        // Ensure all CROSS has been returned
         assertEq(pool.totalStaked(), 0, "All CROSS unstaked from pool");
         assertEq(crossToken.balanceOf(address(pool)), 0, "Pool has no CROSS");
     }
@@ -217,11 +217,11 @@ contract CrossStakingPoolIntegrationTest is CrossStakingPoolBase {
         assertApproxEqAbs(rewardToken1.balanceOf(user1), 5200 ether, 0.01 ether, "Should get all rewards");
     }
 
-    // ==================== 스트레스 테스트 ====================
+    // ==================== Stress tests ====================
 
     function testManyUsersStaking() public {
-        // 100명의 사용자가 동일 금액 스테이킹
-        address[] memory users = new address[](10); // 간소화: 10명
+        // 100 users staking the same amount (simplified to 10)
+        address[] memory users = new address[](10); // simplified to 10 users
         for (uint i = 0; i < 10; i++) {
             users[i] = address(uint160(i + 100));
             crossToken.transfer(users[i], 100 ether);
@@ -231,7 +231,7 @@ contract CrossStakingPoolIntegrationTest is CrossStakingPoolBase {
         _warpDays(1);
         _depositReward(address(rewardToken1), 1000 ether);
 
-        // 각 사용자는 100 ether씩 받아야 함
+        // Each user should receive 100 ether in rewards
         for (uint i = 0; i < 10; i++) {
             uint[] memory rewards = pool.pendingRewards(users[i]);
             assertApproxEqAbs(rewards[0], 100 ether, 100, "Equal distribution");
@@ -241,7 +241,7 @@ contract CrossStakingPoolIntegrationTest is CrossStakingPoolBase {
     function testHighFrequencyRewards() public {
         _userStake(user1, 100 ether);
 
-        // 매일 보상 100번
+        // Deposit rewards 100 times (simulating daily drops)
         for (uint i = 0; i < 100; i++) {
             _depositReward(address(rewardToken1), 10 ether);
         }
@@ -250,7 +250,7 @@ contract CrossStakingPoolIntegrationTest is CrossStakingPoolBase {
         assertApproxEqAbs(rewards[0], 1000 ether, 0.001 ether, "Accumulated many small rewards");
     }
 
-    // ==================== 엣지 케이스 통합 ====================
+    // ==================== Edge-case integration ====================
 
     function testZeroBalanceAfterMultipleOperations() public {
         _userStake(user1, 100 ether);
@@ -268,19 +268,19 @@ contract CrossStakingPoolIntegrationTest is CrossStakingPoolBase {
     }
 
     function testRewardAccuracyWithPrecision() public {
-        // 매우 작은 스테이킹과 큰 보상
+        // Very small stake with large reward
         _userStake(user1, 1 ether);
-        _depositReward(address(rewardToken1), 10000 ether); // 더 작은 금액으로 조정
+        _depositReward(address(rewardToken1), 10000 ether); // adjusted to a smaller scale
 
         uint[] memory rewards = pool.pendingRewards(user1);
         assertApproxEqAbs(rewards[0], 10000 ether, 100, "Should handle large rewards");
 
-        // 매우 큰 스테이킹과 작은 보상
+        // Very large stake with small reward
         _userStake(user2, 1000 ether);
         _depositReward(address(rewardToken1), 1 ether);
 
         uint[] memory rewards2 = pool.pendingRewards(user2);
-        // user2는 1000/1001 비율
+        // user2's share should be 1000/1001 of the reward
         assertApproxEqAbs(rewards2[0], 0.999 ether, 0.01 ether, "Should handle small rewards");
     }
 
@@ -294,12 +294,12 @@ contract CrossStakingPoolIntegrationTest is CrossStakingPoolBase {
             pool.claimRewards();
         }
 
-        // User1이 총 1000 ether를 받았어야 함
+        // User1 should have received 1000 ether in total
         uint totalClaimed = rewardToken1.balanceOf(user1);
         assertApproxEqAbs(totalClaimed, 1000 ether, 0.001 ether, "Sequential claims should be accurate");
     }
 
-    // ==================== 실제 사용 패턴 시뮬레이션 ====================
+    // ==================== Typical usage simulation ====================
 
     function testTypicalDeFiUsage() public {
         // Week 1: Initial liquidity providers

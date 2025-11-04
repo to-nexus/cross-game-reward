@@ -5,13 +5,15 @@ import "../src/CrossStaking.sol";
 import "../src/CrossStakingPool.sol";
 import "../src/CrossStakingRouter.sol";
 import "../src/WCROSS.sol";
+import "../src/interfaces/ICrossStakingPool.sol";
 import "./mocks/MockERC20.sol";
 import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "forge-std/Test.sol";
 
 /**
  * @title FullIntegration
- * @notice 전체 시스템 통합 테스트
+ * @notice End-to-end system integration tests
  */
 contract FullIntegrationTest is Test {
     CrossStaking public crossStaking;
@@ -29,7 +31,7 @@ contract FullIntegrationTest is Test {
     address public carol;
 
     uint public nativePoolId;
-    address public nativePoolAddress;
+    ICrossStakingPool public nativePool;
 
     function setUp() public {
         admin = address(this);
@@ -45,14 +47,15 @@ contract FullIntegrationTest is Test {
         // Deploy system
         poolImplementation = new CrossStakingPool();
 
-        // Deploy CrossStaking as UUPS proxy (WCROSS를 생성함)
+        // Deploy CrossStaking as a UUPS proxy (instantiates WCROSS internally)
         CrossStaking implementation = new CrossStaking();
-        bytes memory initData = abi.encodeCall(CrossStaking.initialize, (address(poolImplementation), admin, 2 days));
+        bytes memory initData =
+            abi.encodeCall(CrossStaking.initialize, (ICrossStakingPool(address(poolImplementation)), admin, 2 days));
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
         crossStaking = CrossStaking(address(proxy));
 
         router = new CrossStakingRouter(address(crossStaking));
-        wcross = WCROSS(payable(crossStaking.wcross()));
+        wcross = WCROSS(payable(address(crossStaking.wcross())));
 
         // Setup router
         crossStaking.setRouter(address(router));
@@ -63,12 +66,12 @@ contract FullIntegrationTest is Test {
         dai = new MockERC20("Dai Stablecoin", "DAI");
 
         // Create native pool
-        (nativePoolId, nativePoolAddress) = crossStaking.createPool(address(wcross), 1 ether);
+        (nativePoolId, nativePool) = crossStaking.createPool(IERC20(address(wcross)), 1 ether);
 
         // Add reward tokens
-        crossStaking.addRewardToken(nativePoolId, address(usdt));
-        crossStaking.addRewardToken(nativePoolId, address(usdc));
-        crossStaking.addRewardToken(nativePoolId, address(dai));
+        crossStaking.addRewardToken(nativePoolId, IERC20(address(usdt)));
+        crossStaking.addRewardToken(nativePoolId, IERC20(address(usdc)));
+        crossStaking.addRewardToken(nativePoolId, IERC20(address(dai)));
 
         // Mint rewards for admin
         usdt.mint(admin, 10000 ether);
@@ -76,10 +79,10 @@ contract FullIntegrationTest is Test {
         dai.mint(admin, 10000 ether);
     }
 
-    // ==================== 전체 사용자 여정 ====================
+    // ==================== Full user journey ====================
 
     function testCompleteUserJourney() public {
-        CrossStakingPool pool = CrossStakingPool(nativePoolAddress);
+        CrossStakingPool pool = CrossStakingPool(address(nativePool));
 
         // Day 0: Alice stakes 100 CROSS
         vm.startPrank(alice);
@@ -89,8 +92,8 @@ contract FullIntegrationTest is Test {
 
         assertEq(pool.balances(alice), 100 ether, "Alice staked");
 
-        // Day 1: Reward 입금 (USDT 1000)
-        usdt.transfer(nativePoolAddress, 1000 ether);
+        // Day 1: Deposit reward (USDT 1000)
+        usdt.transfer(address(nativePool), 1000 ether);
 
         // Day 2: Bob stakes 200 CROSS
         vm.startPrank(bob);
@@ -100,8 +103,8 @@ contract FullIntegrationTest is Test {
 
         assertEq(pool.totalStaked(), 300 ether, "Total staked");
 
-        // Day 3: Reward 입금 (USDC 600)
-        usdc.transfer(nativePoolAddress, 600 ether);
+        // Day 3: Deposit reward (USDC 600)
+        usdc.transfer(address(nativePool), 600 ether);
 
         // Day 4: Carol stakes 100 CROSS
         vm.startPrank(carol);
@@ -109,8 +112,8 @@ contract FullIntegrationTest is Test {
         router.stakeNative{value: 100 ether}(nativePoolId);
         vm.stopPrank();
 
-        // Day 5: Reward 입금 (DAI 800)
-        dai.transfer(nativePoolAddress, 800 ether);
+        // Day 5: Deposit reward (DAI 800)
+        dai.transfer(address(nativePool), 800 ether);
 
         // Verify Alice's rewards
         (uint aliceStaked, uint[] memory aliceRewards) = router.getUserStakingInfo(nativePoolId, alice);
@@ -145,14 +148,15 @@ contract FullIntegrationTest is Test {
         assertApproxEqAbs(dai.balanceOf(alice), 200 ether, 100, "Alice got DAI");
     }
 
-    // ==================== 다중 풀 시나리오 ====================
+    // ==================== Multiple pool scenario ====================
 
     function testMultiplePoolsSimultaneously() public {
         // Create another pool for ERC20
         MockERC20 stakingToken = new MockERC20("Staking", "STK");
-        (uint erc20PoolId, address erc20PoolAddress) = crossStaking.createPool(address(stakingToken), 1 ether);
+        (uint erc20PoolId, ICrossStakingPool erc20PoolAddress) =
+            crossStaking.createPool(IERC20(address(stakingToken)), 1 ether);
 
-        crossStaking.addRewardToken(erc20PoolId, address(usdt));
+        crossStaking.addRewardToken(erc20PoolId, IERC20(address(usdt)));
 
         // Mint tokens
         stakingToken.mint(alice, 1000 ether);
@@ -171,8 +175,8 @@ contract FullIntegrationTest is Test {
         vm.stopPrank();
 
         // Add rewards to both pools
-        usdt.transfer(nativePoolAddress, 100 ether);
-        usdt.transfer(erc20PoolAddress, 200 ether);
+        usdt.transfer(address(nativePool), 100 ether);
+        usdt.transfer(address(erc20PoolAddress), 200 ether);
 
         // Check rewards
         (, uint[] memory aliceRewards) = router.getUserStakingInfo(nativePoolId, alice);
@@ -182,10 +186,10 @@ contract FullIntegrationTest is Test {
         assertApproxEqAbs(bobRewards[0], 200 ether, 100, "Bob ERC20 pool rewards");
     }
 
-    // ==================== 실전 시나리오 ====================
+    // ==================== Realistic scenario ====================
 
     function testRealWorldScenario() public {
-        CrossStakingPool pool = CrossStakingPool(nativePoolAddress);
+        CrossStakingPool pool = CrossStakingPool(address(nativePool));
 
         // Week 1: Initial stakers
         vm.startPrank(alice);
@@ -199,7 +203,7 @@ contract FullIntegrationTest is Test {
         vm.stopPrank();
 
         // Week 1: First rewards
-        usdt.transfer(nativePoolAddress, 300 ether);
+        usdt.transfer(address(nativePool), 300 ether);
 
         vm.warp(block.timestamp + 7 days);
 
@@ -210,12 +214,12 @@ contract FullIntegrationTest is Test {
         vm.stopPrank();
 
         // Week 2: More rewards
-        usdc.transfer(nativePoolAddress, 600 ether);
+        usdc.transfer(address(nativePool), 600 ether);
 
         vm.warp(block.timestamp + 7 days);
 
         // Week 3: Rewards
-        dai.transfer(nativePoolAddress, 900 ether);
+        dai.transfer(address(nativePool), 900 ether);
 
         // Verify final balances
         assertEq(pool.balances(alice), 100 ether, "Alice still staked");
@@ -255,10 +259,10 @@ contract FullIntegrationTest is Test {
         assertEq(pool.totalStaked(), 0, "Pool empty");
     }
 
-    // ==================== 보상 정확성 검증 ====================
+    // ==================== Reward accuracy ====================
 
     function testRewardDistributionAccuracy() public {
-        CrossStakingPool pool = CrossStakingPool(nativePoolAddress);
+        CrossStakingPool pool = CrossStakingPool(address(nativePool));
 
         // Setup: 3 users with different stakes
         vm.startPrank(alice);
@@ -280,7 +284,7 @@ contract FullIntegrationTest is Test {
         assertEq(pool.totalStaked(), 600 ether, "Total staked");
 
         // Deposit 600 USDT
-        usdt.transfer(nativePoolAddress, 600 ether);
+        usdt.transfer(address(nativePool), 600 ether);
 
         // Expected distribution: 100 (alice), 200 (bob), 300 (carol)
         (, uint[] memory aliceRewards) = router.getUserStakingInfo(nativePoolId, alice);
@@ -296,7 +300,7 @@ contract FullIntegrationTest is Test {
         assertApproxEqAbs(totalRewards, 600 ether, 100, "Total rewards match");
     }
 
-    // ==================== 에지 케이스 ====================
+    // ==================== Additional edge cases ====================
 
     function testStakeUnstakeStake() public {
         // Alice stakes
@@ -306,7 +310,7 @@ contract FullIntegrationTest is Test {
         vm.stopPrank();
 
         // Reward 1
-        usdt.transfer(nativePoolAddress, 100 ether);
+        usdt.transfer(address(nativePool), 100 ether);
 
         // Alice unstakes
         vm.prank(alice);
@@ -314,8 +318,8 @@ contract FullIntegrationTest is Test {
 
         assertApproxEqAbs(usdt.balanceOf(alice), 100 ether, 100, "Alice got first rewards");
 
-        // Reward 2 (Alice가 없는 동안 입금 - Alice가 받음!)
-        usdt.transfer(nativePoolAddress, 100 ether);
+        // Reward 2 was deposited while nobody staked, so Alice receives it
+        usdt.transfer(address(nativePool), 100 ether);
 
         // Alice stakes again
         vm.startPrank(alice);
@@ -323,14 +327,14 @@ contract FullIntegrationTest is Test {
         vm.stopPrank();
 
         // Reward 3
-        usdt.transfer(nativePoolAddress, 100 ether);
+        usdt.transfer(address(nativePool), 100 ether);
 
         // Alice unstakes again
         uint usdtBefore = usdt.balanceOf(alice);
         vm.prank(alice);
         router.unstakeNative(nativePoolId);
 
-        // Alice should get Reward 2 + Reward 3 (스테이커 없을 때 입금된 보상 포함)
+        // Alice should receive Reward 2 plus Reward 3, including the zero-staker deposit
         assertApproxEqAbs(
             usdt.balanceOf(alice) - usdtBefore, 200 ether, 1 ether, "Alice got rewards including zero-staker period"
         );
@@ -345,9 +349,9 @@ contract FullIntegrationTest is Test {
 
         // 10 rounds of rewards
         for (uint i = 0; i < 10; i++) {
-            usdt.transfer(nativePoolAddress, 10 ether);
-            usdc.transfer(nativePoolAddress, 20 ether);
-            dai.transfer(nativePoolAddress, 30 ether);
+            usdt.transfer(address(nativePool), 10 ether);
+            usdc.transfer(address(nativePool), 20 ether);
+            dai.transfer(address(nativePool), 30 ether);
         }
 
         // Alice should have 100 USDT, 200 USDC, 300 DAI
@@ -357,7 +361,7 @@ contract FullIntegrationTest is Test {
         assertApproxEqAbs(rewards[2], 300 ether, 100, "Alice DAI");
     }
 
-    // ==================== 보안 검증 ====================
+    // ==================== Security checks ====================
 
     function testCannotUnstakeOthersStake() public {
         // Alice stakes
@@ -373,18 +377,18 @@ contract FullIntegrationTest is Test {
     }
 
     function testReentrancyProtection() public {
-        // Router는 CrossStakingPool의 nonReentrant로 보호됨
-        // 이중 호출 시도
+        // Router interactions are guarded by the pool's nonReentrant modifier
+        // Attempt to call twice
         vm.startPrank(alice);
         wcross.approve(address(router), type(uint).max);
         router.stakeNative{value: 10 ether}(nativePoolId);
 
-        // 정상적으로 완료되어야 함
-        assertEq(CrossStakingPool(nativePoolAddress).balances(alice), 10 ether, "Stake succeeded");
+        // Should execute successfully
+        assertEq(CrossStakingPool(address(nativePool)).balances(alice), 10 ether, "Stake succeeded");
         vm.stopPrank();
     }
 
-    // ==================== View 함수 ====================
+    // ==================== View function checks ====================
 
     function testViewFunctionsConsistency() public {
         // Stake
@@ -394,13 +398,13 @@ contract FullIntegrationTest is Test {
         vm.stopPrank();
 
         // Add rewards
-        usdt.transfer(nativePoolAddress, 50 ether);
+        usdt.transfer(address(nativePool), 50 ether);
 
         // Get info via router
         (uint stakedViaRouter, uint[] memory rewardsViaRouter) = router.getUserStakingInfo(nativePoolId, alice);
 
         // Get info directly from pool
-        CrossStakingPool pool = CrossStakingPool(nativePoolAddress);
+        CrossStakingPool pool = CrossStakingPool(address(nativePool));
         uint stakedDirect = pool.balances(alice);
         uint[] memory rewardsDirect = pool.pendingRewards(alice);
 

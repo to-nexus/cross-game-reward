@@ -190,10 +190,10 @@ Layer 7: Router Check (권한 검증)
 
 ## 📖 문서
 
-- [개요](overview/00_overview.md) - 빠른 시작
-- [Architecture](overview/01_architecture.md) - 시스템 아키텍처
-- [Reward Mechanism](overview/02_reward_mechanism.md) - 보상 메커니즘
-- [Security & Testing](overview/03_security_and_testing.md) - 보안 및 테스트
+- [개요 (ko)](overview/ko/00_overview.md) · [Overview (en)](overview/en/00_overview.md)
+- [Architecture (ko)](overview/ko/01_architecture.md) · [Architecture (en)](overview/en/01_architecture.md)
+- [Reward Mechanism (ko)](overview/ko/02_reward_mechanism.md) · [Reward Mechanics (en)](overview/en/02_reward_mechanism.md)
+- [Security & Testing (ko)](overview/ko/03_security_and_testing.md) · [Security & Testing (en)](overview/en/03_security_and_testing.md)
 - [Test Guide](test/README.md) - 테스트 가이드
 
 ---
