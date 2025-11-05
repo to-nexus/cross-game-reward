@@ -85,7 +85,7 @@ contract CrossStakingRouter is ICrossStakingRouter {
         require(_crossStaking != address(0), CSRCanNotZeroAddress());
 
         crossStaking = ICrossStaking(_crossStaking);
-        wcross = IWCROSS(crossStaking.wcross());
+        wcross = crossStaking.wcross();
     }
 
     // ==================== Native CROSS Staking ====================
@@ -104,7 +104,7 @@ contract CrossStakingRouter is ICrossStakingRouter {
         wcross.deposit{value: msg.value}();
 
         // Router stakes to pool on behalf of msg.sender
-        IERC20(address(wcross)).forceApprove(address(pool), msg.value);
+        IERC20(wcross).forceApprove(address(pool), msg.value);
         pool.stakeFor(msg.sender, msg.value);
 
         emit StakedNative(msg.sender, poolId, msg.value);

@@ -122,7 +122,7 @@ contract CrossStaking is Initializable, AccessControl, UUPSUpgradeable, ICrossSt
         __UUPSUpgradeable_init();
 
         poolImplementation = _poolImplementation;
-        wcross = IWCROSS(address(new WCROSS()));
+        wcross = new WCROSS();
         nextPoolId = 1;
 
         // Grant default roles
