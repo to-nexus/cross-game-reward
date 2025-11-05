@@ -48,6 +48,9 @@ Cross Staking Protocol is a **multi-pool staking system** designed for native CR
 3. **Multi-reward** – each pool can emit several ERC-20 reward tokens.
 4. **Upgradeable** – CrossStaking & CrossStakingPool follow UUPS; router is redeployable.
 5. **O(1) reward accounting** – `rewardPerToken` accumulator keeps gas flat per deposit.
+6. **Simplified access control** – Owner and StakingRoot based permissions.
+7. **3-state pool management** – Active/Inactive/Paused for granular control.
+8. **Fair reward distribution** – Zero-stake deposits automatically marked as withdrawable.
 
 ---
 
@@ -70,10 +73,7 @@ Cross Staking Protocol is a **multi-pool staking system** designed for native CR
 
 ### User: Stake native CROSS
 ```solidity
-// One-time approval
-wcross.approve(address(router), type(uint256).max);
-
-// Stake native CROSS
+// Stake native CROSS (no approval needed - Router auto-wraps)
 router.stakeNative{value: 100 ether}(poolId);
 
 // Unstake + claim all rewards
@@ -93,9 +93,10 @@ crossStaking.addRewardToken(poolId, address(usdt));
 ---
 
 ## 📈 Current Metrics
-- Tests: **159 / 159 passing** (`forge test`, 2025-11-03)
+- Tests: **212 / 212 passing** (includes comprehensive edge case coverage)
 - Gas footprint: all contracts < 24 KB, stake/unstake ~140–280k gas
 - Reward distribution: O(1) per deposit, proportional to stake share
+- Security: Multi-layered defense (reentrancy, access control, zero-stake protection)
 
 ---
 

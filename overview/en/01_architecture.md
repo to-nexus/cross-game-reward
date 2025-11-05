@@ -83,7 +83,7 @@ The protocol exposes a modular multi-pool staking topology built around a `rewar
 - Key functions:
   - `stake` / `stakeFor` (router enforced via `_checkDelegate`).
   - `unstake` / `unstakeFor` – full withdrawal plus reward claim.
-  - `addRewardToken`, `removeRewardToken` (auto-claims removed tokens on unstake), `emergencyWithdraw`.
+  - `addRewardToken`, `removeRewardToken` (auto-claims removed tokens on unstake), `withdraw`.
 
 ### 4. CrossStakingRouter
 - Immutable references:

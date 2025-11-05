@@ -18,4 +18,3 @@ contract MockERC20Permit is ERC20Permit {
         _burn(from, amount);
     }
 }
-

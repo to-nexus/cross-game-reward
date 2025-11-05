@@ -72,7 +72,7 @@ contract CrossStakingPoolAdminTest is CrossStakingPoolBase {
         vm.stopPrank();
 
         // Verify rewards are credited
-        uint[] memory rewards = pool.pendingRewards(user2);
+        (, uint[] memory rewards) = pool.pendingRewards(user2);
         assertApproxEqAbs(rewards[0], 100 ether, 100, "Anyone can transfer rewards");
     }
 
@@ -129,9 +129,9 @@ contract CrossStakingPoolAdminTest is CrossStakingPoolBase {
         assertApproxEqAbs(rewardToken1.balanceOf(user1), 100 ether, 100, "No new rewards after removal");
     }
 
-    // ==================== Emergency Withdraw ====================
+    // ==================== Withdraw ====================
 
-    function testEmergencyWithdraw() public {
+    function testWithdraw() public {
         _userStake(user1, 10 ether);
         _depositReward(address(rewardToken1), 100 ether);
 
@@ -143,17 +143,16 @@ contract CrossStakingPoolAdminTest is CrossStakingPoolBase {
         rewardToken1.transfer(address(pool), 50 ether);
 
         // Check withdrawable amount
-        uint withdrawable = pool.getEmergencyWithdrawableAmount(rewardToken1);
+        uint withdrawable = pool.getWithdrawableAmount(rewardToken1);
         assertEq(withdrawable, 50 ether, "Should be able to withdraw extra deposit");
 
-        // Perform emergency withdrawal
+        // Perform withdrawal via CrossStaking
         uint ownerBalanceBefore = rewardToken1.balanceOf(owner);
-        vm.prank(owner);
-        pool.emergencyWithdraw(rewardToken1, owner);
+        crossStaking.withdrawFromPool(1, rewardToken1, owner);
 
         // Confirm withdrawal result
-        assertEq(rewardToken1.balanceOf(owner) - ownerBalanceBefore, 50 ether, "Emergency withdraw succeeded");
-        assertEq(pool.getEmergencyWithdrawableAmount(rewardToken1), 0, "No more withdrawable");
+        assertEq(rewardToken1.balanceOf(owner) - ownerBalanceBefore, 50 ether, "Withdraw succeeded");
+        assertEq(pool.getWithdrawableAmount(rewardToken1), 0, "No more withdrawable");
 
         // User can still claim rewards
         vm.prank(user1);
@@ -161,7 +160,7 @@ contract CrossStakingPoolAdminTest is CrossStakingPoolBase {
         assertApproxEqAbs(rewardToken1.balanceOf(user1), 100 ether, 100, "User can still claim");
     }
 
-    function testEmergencyWithdrawAfterUserClaim() public {
+    function testWithdrawAfterUserClaim() public {
         _userStake(user1, 10 ether);
         _depositReward(address(rewardToken1), 100 ether);
 
@@ -177,31 +176,31 @@ contract CrossStakingPoolAdminTest is CrossStakingPoolBase {
         pool.claimReward(rewardToken1);
 
         // Withdrawable = current balance - (balance at removal - claimed amount)
-        uint withdrawable = pool.getEmergencyWithdrawableAmount(rewardToken1);
+        uint withdrawable = pool.getWithdrawableAmount(rewardToken1);
         assertEq(withdrawable, 50 ether, "Still 50 withdrawable after user claim");
 
-        // Owner with DEFAULT_ADMIN_ROLE can perform the withdrawal directly
+        // Owner can perform the withdrawal via CrossStaking
         uint ownerBalanceBefore = rewardToken1.balanceOf(owner);
-        pool.emergencyWithdraw(rewardToken1, owner);
+        crossStaking.withdrawFromPool(1, rewardToken1, owner);
         assertEq(rewardToken1.balanceOf(owner) - ownerBalanceBefore, 50 ether, "Withdraw only extra deposits");
     }
 
-    function testCannotEmergencyWithdrawNonRemovedToken() public view {
+    function testCannotWithdrawNonRemovedToken() public view {
         // Cannot withdraw rewards for a token that is still registered
-        uint withdrawable = pool.getEmergencyWithdrawableAmount(rewardToken1);
+        uint withdrawable = pool.getWithdrawableAmount(rewardToken1);
         assertEq(withdrawable, 0, "Non-removed token has 0 withdrawable");
     }
 
-    function testCannotEmergencyWithdrawZero() public {
+    function testCannotWithdrawZero() public {
         // Remove but no extra deposits via CrossStaking
         crossStaking.removeRewardToken(1, rewardToken1);
 
-        // No extra deposits - owner can call emergencyWithdraw directly
+        // No extra deposits - cannot withdraw
         vm.expectRevert(CrossStakingPool.CSPNoWithdrawableAmount.selector);
-        pool.emergencyWithdraw(rewardToken1, owner);
+        crossStaking.withdrawFromPool(1, rewardToken1, owner);
     }
 
-    function testOnlyAdminCanEmergencyWithdraw() public {
+    function testOnlyManagerCanWithdraw() public {
         _userStake(user1, 10 ether);
         _depositReward(address(rewardToken1), 100 ether);
 
@@ -210,150 +209,162 @@ contract CrossStakingPoolAdminTest is CrossStakingPoolBase {
         rewardToken1.mint(owner, 50 ether);
         rewardToken1.transfer(address(pool), 50 ether);
 
-        // Non-admin cannot withdraw
+        // Non-manager cannot withdraw
         vm.prank(user1);
         vm.expectRevert();
-        pool.emergencyWithdraw(rewardToken1, user1);
+        crossStaking.withdrawFromPool(1, rewardToken1, user1);
     }
 
-    // ==================== Pause feature tests ====================
+    // ==================== Pool Status Tests ====================
 
-    function testPause() public {
-        crossStaking.setPoolActive(1, false);
+    function testSetPoolStatusPaused() public {
+        crossStaking.setPoolStatus(1, ICrossStakingPool.PoolStatus.Paused); // Paused = 2
 
+        assertEq(uint(pool.poolStatus()), 2, "Pool should be paused");
         assertTrue(pool.paused(), "Pool should be paused");
     }
 
-    function testUnpause() public {
-        crossStaking.setPoolActive(1, false);
-        crossStaking.setPoolActive(1, true);
+    function testSetPoolStatusInactive() public {
+        crossStaking.setPoolStatus(1, ICrossStakingPool.PoolStatus.Inactive); // Inactive = 1
 
-        assertFalse(pool.paused(), "Pool should be unpaused");
+        assertEq(uint(pool.poolStatus()), 1, "Pool should be inactive");
+        assertFalse(pool.paused(), "Pool should not be paused");
     }
 
-    function testPauseOnlyByPauserRole() public {
-        vm.prank(user1);
-        vm.expectRevert();
-        pool.pause();
+    function testSetPoolStatusActive() public {
+        crossStaking.setPoolStatus(1, ICrossStakingPool.PoolStatus.Inactive); // Inactive
+        crossStaking.setPoolStatus(1, ICrossStakingPool.PoolStatus.Active); // Active = 0
+
+        assertEq(uint(pool.poolStatus()), 0, "Pool should be active");
+        assertFalse(pool.paused(), "Pool should not be paused");
     }
 
-    function testUnpauseOnlyByPauserRole() public {
-        crossStaking.setPoolActive(1, false);
-
+    function testOnlyStakingRootCanSetStatus() public {
         vm.prank(user1);
         vm.expectRevert();
-        pool.unpause();
+        pool.setPoolStatus(ICrossStakingPool.PoolStatus.Paused); // Paused
     }
 
     function testCannotStakeWhenPaused() public {
-        crossStaking.setPoolActive(1, false);
+        crossStaking.setPoolStatus(1, ICrossStakingPool.PoolStatus.Paused); // Paused
 
         vm.startPrank(user1);
         crossToken.approve(address(pool), 10 ether);
+        // When paused, PausableUpgradeable.EnforcedPause is thrown first (from whenNotPaused modifier)
         vm.expectRevert();
         pool.stake(10 ether);
         vm.stopPrank();
     }
 
+    function testCannotStakeWhenInactive() public {
+        crossStaking.setPoolStatus(1, ICrossStakingPool.PoolStatus.Inactive); // Inactive
+
+        vm.startPrank(user1);
+        crossToken.approve(address(pool), 10 ether);
+        vm.expectRevert(CrossStakingPool.CSPCannotStakeInCurrentState.selector);
+        pool.stake(10 ether);
+        vm.stopPrank();
+    }
+
+    function testCanUnstakeWhenInactive() public {
+        _userStake(user1, 10 ether);
+
+        crossStaking.setPoolStatus(1, ICrossStakingPool.PoolStatus.Inactive); // Inactive
+
+        vm.prank(user1);
+        pool.unstake();
+        assertEq(pool.balances(user1), 0, "Should be able to unstake when inactive");
+    }
+
     function testCannotUnstakeWhenPaused() public {
         _userStake(user1, 10 ether);
 
-        crossStaking.setPoolActive(1, false);
+        crossStaking.setPoolStatus(1, ICrossStakingPool.PoolStatus.Paused); // Paused
 
         vm.prank(user1);
+        // When paused, PausableUpgradeable.EnforcedPause is thrown first (from whenNotPaused modifier)
         vm.expectRevert();
         pool.unstake();
+    }
+
+    function testCanClaimWhenInactive() public {
+        _userStake(user1, 10 ether);
+        _depositReward(address(rewardToken1), 100 ether);
+
+        crossStaking.setPoolStatus(1, ICrossStakingPool.PoolStatus.Inactive); // Inactive
+
+        vm.prank(user1);
+        pool.claimRewards();
+        assertGt(rewardToken1.balanceOf(user1), 0, "Should be able to claim when inactive");
     }
 
     function testCannotClaimWhenPaused() public {
         _userStake(user1, 10 ether);
         _depositReward(address(rewardToken1), 100 ether);
 
-        crossStaking.setPoolActive(1, false);
+        crossStaking.setPoolStatus(1, ICrossStakingPool.PoolStatus.Paused); // Paused
 
         vm.prank(user1);
+        // When paused, PausableUpgradeable.EnforcedPause is thrown first (from whenNotPaused modifier)
         vm.expectRevert();
         pool.claimRewards();
     }
 
-    function testStakeAfterUnpause() public {
-        crossStaking.setPoolActive(1, false);
-        crossStaking.setPoolActive(1, true);
+    function testStakeAfterReactivation() public {
+        crossStaking.setPoolStatus(1, ICrossStakingPool.PoolStatus.Inactive); // Inactive
+        crossStaking.setPoolStatus(1, ICrossStakingPool.PoolStatus.Active); // Active
 
         _userStake(user1, 10 ether);
-        assertEq(pool.balances(user1), 10 ether, "Should be able to stake after unpause");
+        assertEq(pool.balances(user1), 10 ether, "Should be able to stake after reactivation");
     }
 
-    // ==================== Role-based access control tests ====================
+    // ==================== Access control tests ====================
 
-    function testOwnerHasDefaultAdminRole() public view {
-        // Owner is the CrossStaking contract
-        assertTrue(pool.hasRole(pool.DEFAULT_ADMIN_ROLE(), owner), "CrossStaking should have DEFAULT_ADMIN_ROLE");
+    function testOwner() public view {
+        // Pool owner is CrossStaking contract's owner (default admin)
+        assertTrue(pool.owner() == owner, "Pool owner should be CrossStaking's owner");
     }
 
-    function testCrossStakingHasStakingRootRole() public view {
-        // CrossStaking contract holds STAKING_ROOT_ROLE
+    function testCrossStakingReference() public view {
+        // CrossStaking contract reference
         assertTrue(
-            pool.hasRole(pool.STAKING_ROOT_ROLE(), address(crossStaking)), "CrossStaking should have STAKING_ROOT_ROLE"
+            address(pool.crossStaking()) == address(crossStaking),
+            "Pool crossStaking should be the CrossStaking contract"
         );
     }
 
-    function testOnlyStakingRootCanPause() public {
-        // User1 lacks STAKING_ROOT_ROLE so cannot pause
+    function testOnlyStakingRootCanChangeStatus() public {
+        // User1 cannot set status
         vm.prank(user1);
         vm.expectRevert();
-        pool.pause();
+        pool.setPoolStatus(ICrossStakingPool.PoolStatus.Paused); // Paused
 
-        // Only CrossStaking can pause via setPoolActive
-        crossStaking.setPoolActive(1, false);
-        assertTrue(pool.paused(), "CrossStaking with STAKING_ROOT_ROLE can pause");
+        // CrossStaking can set status
+        crossStaking.setPoolStatus(1, ICrossStakingPool.PoolStatus.Paused); // Pool 1, Paused status
+        assertTrue(pool.paused(), "CrossStaking (STAKING_ROOT) can set status");
     }
 
     function testOnlyStakingRootCanAddRewardToken() public {
-        // User1 without STAKING_ROOT_ROLE cannot add a reward token
+        // User1 cannot add a reward token
         vm.prank(user1);
         vm.expectRevert();
         pool.addRewardToken(rewardToken3);
 
-        // CrossStaking can add the token via the factory
+        // CrossStaking can add the token
         crossStaking.addRewardToken(1, rewardToken3);
-        assertEq(pool.rewardTokenCount(), 3, "CrossStaking with STAKING_ROOT_ROLE can add reward token");
-    }
-
-    function testGrantStakingRootRole() public {
-        // Owner (DEFAULT_ADMIN) can grant STAKING_ROOT_ROLE to another address
-        bytes32 role = pool.STAKING_ROOT_ROLE();
-        pool.grantRole(role, user1);
-
-        assertTrue(pool.hasRole(role, user1), "User1 should have STAKING_ROOT_ROLE");
-
-        // User1 can now pause
-        vm.prank(user1);
-        pool.pause();
-        assertTrue(pool.paused(), "User1 with STAKING_ROOT_ROLE can pause");
-    }
-
-    function testRevokeStakingRootRole() public {
-        pool.grantRole(pool.STAKING_ROOT_ROLE(), user1);
-        pool.revokeRole(pool.STAKING_ROOT_ROLE(), user1);
-
-        assertFalse(pool.hasRole(pool.STAKING_ROOT_ROLE(), user1), "User1 should not have STAKING_ROOT_ROLE");
-
-        vm.prank(user1);
-        vm.expectRevert();
-        pool.pause();
+        assertEq(pool.rewardTokenCount(), 3, "CrossStaking can add reward token");
     }
 
     // ==================== UUPS upgrade authorization tests ====================
 
     function testUpgradeAuthorization() public view {
-        // Owner has DEFAULT_ADMIN_ROLE, so upgrades are permitted
-        assertTrue(pool.hasRole(pool.DEFAULT_ADMIN_ROLE(), owner), "Owner should be able to upgrade");
+        // Owner should be able to upgrade
+        assertTrue(pool.owner() == owner, "Owner should be able to upgrade");
     }
 
-    function testNonAdminCannotUpgrade() public view {
-        // User1 lacks DEFAULT_ADMIN_ROLE, so upgrades are not allowed
-        assertFalse(pool.hasRole(pool.DEFAULT_ADMIN_ROLE(), user1), "User1 should not be able to upgrade");
+    function testNonOwnerCannotUpgrade() public view {
+        // User1 is not the owner
+        assertFalse(pool.owner() == user1, "User1 should not be able to upgrade");
     }
 
     // ==================== Initialization tests ====================
@@ -362,5 +373,6 @@ contract CrossStakingPoolAdminTest is CrossStakingPoolBase {
         assertEq(address(pool.stakingToken()), address(crossToken), "Staking token should be set");
         assertEq(pool.rewardTokenCount(), 2, "Should have 2 reward tokens from setup");
         assertFalse(pool.paused(), "Should not be paused initially");
+        assertEq(uint(pool.poolStatus()), 0, "Should be active initially");
     }
 }

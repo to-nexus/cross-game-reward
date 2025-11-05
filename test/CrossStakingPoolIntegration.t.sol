@@ -122,9 +122,9 @@ contract CrossStakingPoolIntegrationTest is CrossStakingPoolBase {
         _depositReward(address(rewardToken2), 600 ether);
 
         // Check rewards
-        uint[] memory rewards1 = pool.pendingRewards(user1);
-        uint[] memory rewards2 = pool.pendingRewards(user2);
-        uint[] memory rewards3 = pool.pendingRewards(user3);
+        (, uint[] memory rewards1) = pool.pendingRewards(user1);
+        (, uint[] memory rewards2) = pool.pendingRewards(user2);
+        (, uint[] memory rewards3) = pool.pendingRewards(user3);
 
         // Total staked: 600
         // User1: 100/600 = 16.67%
@@ -162,8 +162,8 @@ contract CrossStakingPoolIntegrationTest is CrossStakingPoolBase {
         _depositReward(address(rewardToken1), 500 ether);
 
         // Now only user2 and user3 share the second reward
-        uint[] memory rewards2 = pool.pendingRewards(user2);
-        uint[] memory rewards3 = pool.pendingRewards(user3);
+        (, uint[] memory rewards2) = pool.pendingRewards(user2);
+        (, uint[] memory rewards3) = pool.pendingRewards(user3);
 
         // First reward: user1 got 100/300, user2 got 200/300
         assertApproxEqAbs(user1Rewards, 100 ether, 100, "User1 first reward");
@@ -206,7 +206,7 @@ contract CrossStakingPoolIntegrationTest is CrossStakingPoolBase {
             _depositReward(address(rewardToken1), 100 ether);
         }
 
-        uint[] memory rewards = pool.pendingRewards(user1);
+        (, uint[] memory rewards) = pool.pendingRewards(user1);
         assertApproxEqAbs(rewards[0], 5200 ether, 0.01 ether, "1 year of rewards");
 
         // Unstake after 1 year
@@ -233,7 +233,7 @@ contract CrossStakingPoolIntegrationTest is CrossStakingPoolBase {
 
         // Each user should receive 100 ether in rewards
         for (uint i = 0; i < 10; i++) {
-            uint[] memory rewards = pool.pendingRewards(users[i]);
+            (, uint[] memory rewards) = pool.pendingRewards(users[i]);
             assertApproxEqAbs(rewards[0], 100 ether, 100, "Equal distribution");
         }
     }
@@ -246,7 +246,7 @@ contract CrossStakingPoolIntegrationTest is CrossStakingPoolBase {
             _depositReward(address(rewardToken1), 10 ether);
         }
 
-        uint[] memory rewards = pool.pendingRewards(user1);
+        (, uint[] memory rewards) = pool.pendingRewards(user1);
         assertApproxEqAbs(rewards[0], 1000 ether, 0.001 ether, "Accumulated many small rewards");
     }
 
@@ -263,7 +263,7 @@ contract CrossStakingPoolIntegrationTest is CrossStakingPoolBase {
 
         assertEq(pool.balances(user1), 0, "Balance should be zero");
 
-        uint[] memory rewards = pool.pendingRewards(user1);
+        (, uint[] memory rewards) = pool.pendingRewards(user1);
         assertEq(rewards[0], 0, "Pending rewards should be zero");
     }
 
@@ -272,14 +272,14 @@ contract CrossStakingPoolIntegrationTest is CrossStakingPoolBase {
         _userStake(user1, 1 ether);
         _depositReward(address(rewardToken1), 10000 ether); // adjusted to a smaller scale
 
-        uint[] memory rewards = pool.pendingRewards(user1);
+        (, uint[] memory rewards) = pool.pendingRewards(user1);
         assertApproxEqAbs(rewards[0], 10000 ether, 100, "Should handle large rewards");
 
         // Very large stake with small reward
         _userStake(user2, 1000 ether);
         _depositReward(address(rewardToken1), 1 ether);
 
-        uint[] memory rewards2 = pool.pendingRewards(user2);
+        (, uint[] memory rewards2) = pool.pendingRewards(user2);
         // user2's share should be 1000/1001 of the reward
         assertApproxEqAbs(rewards2[0], 0.999 ether, 0.01 ether, "Should handle small rewards");
     }

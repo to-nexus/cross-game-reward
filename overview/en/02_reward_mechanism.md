@@ -9,9 +9,24 @@ The protocol distributes rewards with a global accumulator that tracks “reward
 
 ### 1. On reward deposit
 ```
-rewardPerTokenStored += (newReward × PRECISION) / totalStaked
+if (totalStaked == 0) {
+    withdrawableAmount += newReward  // Not distributed
+} else {
+    rewardPerTokenStored += (newReward × PRECISION) / totalStaked
+}
 PRECISION = 1e18
 ```
+
+**Zero-Stake Protection:**
+- Rewards deposited when `totalStaked=0` are classified as `withdrawableAmount`
+- Owner can recover via `CrossStaking.withdrawFromPool()`
+- Protects first staker from receiving unallocated pre-staking rewards
+
+**After Token Removal:**
+- Distributable balance at removal is frozen as `distributedAmount` (user-claimable)
+- `withdrawableAmount` remains intact (owner-recoverable)
+- New deposits after removal are also owner-recoverable
+
 Interpretation: how much reward (scaled by `PRECISION`) each unit of staking tokens has earned.
 
 ### 2. On user accrual
@@ -49,16 +64,41 @@ Example:
 
 ## 💡 Special Cases
 
-### No stakers present
+### No stakers present (Zero-Stake Protection)
 ```solidity
-if (totalStaked == 0) return; // _syncReward
+function _syncReward(IERC20 token) internal {
+    if (totalStaked == 0) {
+        rt.withdrawableAmount += newReward;  // Mark as owner-recoverable
+        rt.lastBalance = currentBalance;
+        return;
+    }
+    // ...
+}
 ```
-- Rewards transferred while no one is staked are not synced.
-- The first staker after such a deposit will claim the entire amount (documented behavior).
+
+**Behavior (current version):**
+1. Rewards deposited when `totalStaked=0` are classified as `withdrawableAmount`
+2. First staker does **not** receive these rewards
+3. Owner can recover via `CrossStaking.withdrawFromPool()`
+
+**Example:**
+```
+1. Pool is empty
+2. 1000 reward deposited → withdrawableAmount = 1000
+3. Alice stakes
+4. Alice does NOT get the 1000 (fair distribution)
+5. Later 100 reward deposited → Alice gets 100
+6. Owner can recover withdrawableAmount of 1000
+```
+
+**Reward Queries:**
+- `pendingRewards(user)`: Returns all active reward tokens and amounts `(address[] tokens, uint[] rewards)`
+- `pendingReward(user, token)`: Query specific token reward `uint amount`
 
 ### Multiple reward tokens
 - Pools maintain an `EnumerableSet` of active reward tokens.
 - Each token has its own accumulator (`RewardToken.rewardPerTokenStored`).
+- Removed tokens can still be claimed via `claimReward(removedToken)`.
 
 ---
 
@@ -76,8 +116,10 @@ if (totalStaked == 0) return; // _syncReward
 
 ---
 
-## ⚠️ Operational Reminder
-While reward tokens can be removed, the current implementation requires users to claim them **before** unstaking (see `03_security_and_testing.md` for the H-01 issue). Until patched, communicate this requirement in your UI or operational runbook.
+## ⚠️ Operational Notes
+- Removed reward tokens remain claimable via `claimReward(removedToken)`
+- Zero-stake deposits are owner-recoverable via `withdrawFromPool`
+- Reward queries support both bulk (`pendingRewards`) and single-token (`pendingReward`) lookups
 
 ---
 

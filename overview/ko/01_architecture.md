@@ -91,17 +91,19 @@ mapping(uint => PoolInfo) public pools;   // 풀 정보
 
 **주요 함수:**
 ```solidity
-createPool(address stakingToken, uint48 delay)
+createPool(address stakingToken, uint minStakeAmount)
   returns (uint poolId, address poolAddress)
 
 addRewardToken(uint poolId, address rewardToken)
-setPoolActive(uint poolId, bool active)
+removeRewardToken(uint poolId, address rewardToken)
+setPoolStatus(uint poolId, uint8 status)  // 0=Active, 1=Inactive, 2=Paused
+withdrawFromPool(uint poolId, address token, address to)
 setRouter(address _router)
 ```
 
 **Roles:**
-- DEFAULT_ADMIN_ROLE
-- POOL_MANAGER_ROLE
+- DEFAULT_ADMIN_ROLE (owner)
+- MANAGER_ROLE (풀 및 보상 관리)
 
 ---
 
@@ -112,10 +114,11 @@ setRouter(address _router)
 **상태 변수:**
 ```solidity
 IERC20 public stakingToken;                        // 스테이킹 토큰
-address public crossStaking;                       // CrossStaking 참조
+ICrossStaking public crossStaking;                 // CrossStaking 참조
 uint public minStakeAmount;                        // 최소 스테이킹 수량
-mapping(address => uint) public balances;          // 사용자 예치량
 uint public totalStaked;                           // 전체 예치량
+PoolStatus public poolStatus;                      // Active/Inactive/Paused
+mapping(address => uint) public balances;          // 사용자 예치량
 
 EnumerableSet.AddressSet private _rewardTokenAddresses;         // 활성 보상 토큰 목록
 EnumerableSet.AddressSet private _removedRewardTokenAddresses;  // 제거된 보상 토큰 목록
@@ -125,23 +128,29 @@ mapping(address => mapping(IERC20 => UserReward)) public userRewards; // 사용�
 
 **주요 함수:**
 ```solidity
-stake(uint amount)
-stakeFor(address account, uint amount)    // Router 전용
-unstake()
+stake(uint amount)                        // Active 상태에서만 가능
+stakeFor(address account, uint amount)    // Router 전용, Active 상태만
+unstake()                                 // Active/Inactive 상태 가능
 unstakeFor(address account)               // Router 전용
-claimRewards()
+claimRewards()                            // Active/Inactive 상태 가능
 claimReward(IERC20 token)
-addRewardToken(IERC20 token)
-removeRewardToken(IERC20 token)
-emergencyWithdraw(IERC20 token, address to)
+addRewardToken(IERC20 token)              // CrossStaking만 호출 가능
+removeRewardToken(IERC20 token)           // CrossStaking만 호출 가능
+withdraw(IERC20 token, address to)        // CrossStaking만 호출 가능
+setPoolStatus(uint8 status)               // CrossStaking만 호출 가능
 ```
 
-> 제거된 보상 토큰은 `_removedRewardTokenAddresses`로 이동하며, `_unstake` 과정에서 자동 정산·지급됩니다.
+**Pool Status:**
+- **Active**: 모든 작업 가능 (stake, unstake, claim)
+- **Inactive**: stake 불가, unstake/claim만 가능
+- **Paused**: 모든 작업 불가
 
-**Roles:**
-- DEFAULT_ADMIN_ROLE (CrossStaking)
-- REWARD_MANAGER_ROLE
-- PAUSER_ROLE
+> 제거된 보상 토큰은 `_removedRewardTokenAddresses`로 이동하며, `_unstake` 과정에서 자동 정산·지급됩니다.
+> totalStaked=0 일 때 예치된 보상은 `withdrawableAmount`로 분류되어 owner가 회수할 수 있습니다.
+
+**Access Control:**
+- `onlyOwner()`: CrossStaking의 owner만 가능 (upgrade 등)
+- `onlyStakingRoot()`: CrossStaking 컨트랙트만 가능 (관리 함수들)
 
 ---
 

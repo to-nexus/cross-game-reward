@@ -21,32 +21,22 @@ test/
 
 ---
 
-## 🧪 테스트 스위트 (총 152개)
+## 🧪 테스트 스위트 (총 212개)
 
-### 1. WCROSS Test (21개)
+### 1. WCROSS Test (10개)
 
 **테스트 대상:** Wrapped CROSS 토큰
 
 #### 기본 기능
-- `testDeposit` - Native CROSS 래핑
-- `testWithdraw` - WCROSS 언래핑
+- `testDeposit` - Native CROSS 래핑 (Router만 가능)
+- `testWithdraw` - WCROSS 언래핑 (Router만 가능)
 - `testReceiveFunction` - receive() 자동 래핑
-- `testMultipleDeposits` - 다중 예치
-- `testPartialWithdraw` - 부분 인출
-- `testTransferBetweenUsers` - 사용자 간 전송
+- `testWithdrawTo` - 지정된 주소로 언래핑
+- `testTransferBetweenUsers` - 사용자 간 WCROSS 전송
 
-#### 화이트리스트 기능
-- `testDepositForWithWhitelist` - Router용 래핑
-- `testWithdrawForWithWhitelist` - Router용 언래핑
-- `testCannotDepositForWithoutWhitelist` - 권한 체크
-- `testCannotWithdrawForWithoutWhitelist` - 권한 체크
-
-#### 화이트리스트 관리
-- `testUpdateWhitelist` - 화이트리스트 추가/제거
-- `testUpdateWhitelistBatch` - 일괄 업데이트
-- `testSetWhitelistManager` - 관리자 변경
-- `testOnlyManagerCanUpdateWhitelist` - 권한 검증
-- `testOnlyManagerCanSetNewManager` - 권한 검증
+#### 권한 검증
+- `testCannotDepositWithoutRouter` - Router 외 예치 방지
+- `testCannotWithdrawWithoutRouter` - Router 외 인출 방지
 
 #### 에러 케이스
 - `testCannotDepositZero` - 0 입금 방지
@@ -54,11 +44,12 @@ test/
 
 #### 이벤트
 - `testDepositEvent`, `testWithdrawalEvent`
-- `testDepositForEvent`, `testWithdrawalForEvent`
+
+**참고**: WCROSS는 Router 전용 설계로, CrossStaking.router()로 등록된 주소만 deposit/withdraw 가능합니다.
 
 ---
 
-### 2. CrossStaking Test (15개)
+### 2. CrossStaking Test (33개)
 
 **테스트 대상:** 풀 팩토리 및 관리
 
@@ -77,17 +68,16 @@ test/
 - `testGetPoolIdsByStakingToken` - 토큰별 풀 조회
 - `testCannotGetNonExistentPool` - 존재하지 않는 풀
 
-#### WCROSS 관리
-- `testUpdateWCROSSWhitelist` - 화이트리스트 업데이트
-- `testUpdateWCROSSWhitelistBatch` - 일괄 업데이트
-- `testOnlyOwnerCanUpdateWCROSSWhitelist` - 권한 검증
+#### Router 관리
+- `testSetRouter` - Router 주소 설정
+- `testOnlyOwnerCanSetRouter` - 권한 검증
 
 #### 통합
 - `testPoolsAreIndependent` - 풀 독립성 검증
 
 ---
 
-### 3. CrossStakingRouter Test (15개)
+### 3. CrossStakingRouter Test (28개)
 
 **테스트 대상:** 사용자 인터페이스 라우터
 
@@ -172,17 +162,19 @@ forge test
 ```
 Test Suite                      | Passed | Failed
 ================================+========+========
-WCROSS                         |   21   |   0
-CrossStaking                   |   15   |   0
-CrossStakingRouter             |   15   |   0
+WCROSS                         |   10   |   0
+CrossStaking                   |   33   |   0
+CrossStakingRouter             |   28   |   0
 FullIntegration                |    9   |   0
-CrossStakingPoolStaking        |   18   |   0
-CrossStakingPoolRewards        |   18   |   0
-CrossStakingPoolAdmin          |   24   |   0
+CrossStakingPoolStaking        |   21   |   0
+CrossStakingPoolRewards        |   27   |   0
+CrossStakingPoolAdmin          |   34   |   0
 CrossStakingPoolIntegration    |   11   |   0
+CrossStakingPoolPendingRewards |    9   |   0
 CrossStakingPoolSecurity       |   21   |   0
+CrossStakingPoolEdgeCases      |   12   |   0
 -----------------------------------+--------+--------
-Total                          |  152   |   0
+Total                          |  212   |   0
 ```
 
 ### 특정 스위트 실행
@@ -321,10 +313,11 @@ assertEq(userNativeBalance, expectedNativeBalance);
 
 배포 전 확인:
 
-- [x] 152/152 테스트 통과
+- [x] 212/212 테스트 통과
 - [x] Gas 최적화 확인
 - [x] 커버리지 ~100%
 - [x] 보안 검증 완료
+- [x] M-01 문제 수정 완료
 - [ ] 외부 감사 (권장)
 
 ---
@@ -357,12 +350,12 @@ assertEq(userNativeBalance, expectedNativeBalance);
 
 ## 🔬 테스트 통계
 
-- **총 테스트:** 152개
+- **총 테스트:** 212개
 - **성공률:** 100%
 - **커버리지:** ~100%
-- **실행 시간:** ~1.5초
+- **실행 시간:** ~2초
 - **평균 Gas:** 최적화됨
 
 ---
 
-**최종 업데이트:** 2025-10-30
+**최종 업데이트:** 2025-11-05

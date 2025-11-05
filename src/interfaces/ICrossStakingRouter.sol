@@ -23,7 +23,7 @@ interface ICrossStakingRouter {
     function getUserStakingInfo(uint poolId, address user)
         external
         view
-        returns (uint stakedAmount, uint[] memory pendingRewards);
+        returns (uint stakedAmount, address[] memory rewardTokens, uint[] memory pendingRewards);
 
     /// @notice Checks if a pool is a native CROSS pool
     function isNativePool(uint poolId) external view returns (bool);

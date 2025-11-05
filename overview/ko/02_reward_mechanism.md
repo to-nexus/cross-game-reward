@@ -24,10 +24,25 @@
 #### 1. 보상 입금 시
 
 ```
-rewardPerTokenStored += (newReward × PRECISION) / totalStaked
+if (totalStaked == 0) {
+    withdrawableAmount += newReward  // 분배하지 않음
+} else {
+    // withdrawableAmount가 이미 있어도, 그건 lastBalance에 포함됨
+    rewardPerTokenStored += (newReward × PRECISION) / totalStaked
+}
 
 PRECISION = 1e18
 ```
+
+**Zero-Stake 보호:**
+- totalStaked=0 일 때 예치된 보상은 분배하지 않고 `withdrawableAmount`로 분류
+- owner가 `withdrawFromPool`을 통해 회수 가능
+- 첫 번째 staker가 과거 보상을 독점하지 못하도록 방지
+
+**보상 토큰 제거 후:**
+- 제거 시점의 분배 가능한 보상은 `distributedAmount`에 저장 (사용자 claim 가능)
+- `withdrawableAmount`는 그대로 유지 (owner 회수 가능)
+- 제거 후 추가 예치된 토큰도 owner가 회수 가능
 
 **의미:**
 - "1개의 스테이킹 토큰이 받을 수 있는 누적 보상량"
@@ -117,28 +132,38 @@ Bob: 100/200 = 50%
 
 ## 💡 특수 케이스
 
-### 스테이커 없을 때 보상
+### 스테이커 없을 때 보상 (Zero-Stake 보호)
 
 ```solidity
-function _syncReward(address tokenAddress) internal {
-    if (totalStaked == 0) return;  // lastBalance 업데이트 안함
+function _syncReward(IERC20 token) internal {
+    if (totalStaked == 0) {
+        rt.withdrawableAmount += newReward;  // 분배하지 않고 회수 가능하게 표시
+        rt.lastBalance = currentBalance;
+        return;
+    }
     // ...
 }
 ```
 
-**동작:**
+**동작 (현재 버전):**
 1. totalStaked = 0일 때 보상 입금
-2. lastBalance가 업데이트되지 않음
-3. 첫 스테이커가 들어오면
-4. 전체 보상을 첫 스테이커가 받음
+2. 보상이 `withdrawableAmount`로 분류됨
+3. 첫 스테이커는 이 보상을 받지 **못함**
+4. Owner가 `CrossStaking.withdrawFromPool()`로 회수 가능
 
 **예시:**
 ```
 1. 풀 비어있음
-2. 보상 1000 입금
+2. 보상 1000 입금 → withdrawableAmount = 1000
 3. Alice 스테이킹
-4. Alice가 1000 전부 받음
+4. Alice는 1000을 받지 못함 (공정한 분배)
+5. 이후 100 보상 입금 → Alice만 100을 받음
+6. Owner가 withdrawableAmount 1000을 회수 가능
 ```
+
+**보상 조회:**
+- `pendingRewards(user)`: 모든 활성 보상 토큰과 보상 조회 `(address[] tokens, uint[] rewards)`
+- `pendingReward(user, token)`: 특정 토큰의 보상 조회 `uint amount`
 
 ---
 

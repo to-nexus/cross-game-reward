@@ -4,12 +4,18 @@ pragma solidity 0.8.28;
 import {AccessControlDefaultAdminRulesUpgradeable as AccessControl} from
     "@openzeppelin/contracts-upgradeable/access/extensions/AccessControlDefaultAdminRulesUpgradeable.sol";
 import {Initializable, UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+
+import {IERC5313} from "@openzeppelin/contracts/interfaces/IERC5313.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
-import {CrossStakingPool, ICrossStaking, ICrossStakingPool} from "./CrossStakingPool.sol";
-import {IWCROSS, WCROSS} from "./WCROSS.sol";
+import {CrossStakingPool} from "./CrossStakingPool.sol";
+
+import {WCROSS} from "./WCROSS.sol";
+import {ICrossStaking} from "./interfaces/ICrossStaking.sol";
+import {ICrossStakingPool} from "./interfaces/ICrossStakingPool.sol";
+import {IWCROSS} from "./interfaces/IWCROSS.sol";
 /**
  * @title CrossStaking
  * @notice Factory contract for managing multiple staking pools
@@ -57,6 +63,13 @@ contract CrossStaking is Initializable, AccessControl, UUPSUpgradeable, ICrossSt
     /// @notice Emitted when the router address is set
     /// @param router The new router address
     event RouterSet(address indexed router);
+
+    /// @notice Emitted when owner withdraws from a pool
+    /// @param poolId The ID of the pool
+    /// @param token The address of the token withdrawn
+    /// @param to The address receiving the withdrawn tokens
+    /// @param amount The amount withdrawn
+    event WithdrawnFromPool(uint indexed poolId, IERC20 indexed token, address indexed to, uint amount);
 
     // ==================== State Variables ====================
 
@@ -166,6 +179,7 @@ contract CrossStaking is Initializable, AccessControl, UUPSUpgradeable, ICrossSt
         require(address(pools[poolId].pool) != address(0), CSPoolNotFound());
 
         pools[poolId].pool.addRewardToken(token);
+        // Event emitted by CrossStakingPool
     }
 
     /**
@@ -178,24 +192,56 @@ contract CrossStaking is Initializable, AccessControl, UUPSUpgradeable, ICrossSt
         require(address(pools[poolId].pool) != address(0), CSPoolNotFound());
 
         pools[poolId].pool.removeRewardToken(token);
+        // Event emitted by CrossStakingPool
     }
 
     /**
-     * @notice Activates or deactivates a pool
-     * @dev Pauses/unpauses the actual pool contract
+     * @notice Updates the minimum stake amount for a pool
+     * @dev Only callable by MANAGER_ROLE
      * @param poolId ID of the pool
-     * @param active New active status
+     * @param amount Minimum stake amount
      */
-    function setPoolActive(uint poolId, bool active) external onlyRole(MANAGER_ROLE) {
+    function updateMinStakeAmount(uint poolId, uint amount) external onlyRole(MANAGER_ROLE) {
+        require(address(pools[poolId].pool) != address(0), CSPoolNotFound());
+        pools[poolId].pool.updateMinStakeAmount(amount);
+        // Event emitted by CrossStakingPool
+    }
+
+    /**
+     * @notice Withdraws unallocated rewards from a pool
+     * @dev Only callable by MANAGER_ROLE
+     *      Can withdraw rewards deposited when totalStaked was 0 or after token removal
+     * @param poolId ID of the pool
+     * @param token Address of the reward token
+     * @param to Address to receive the withdrawn tokens
+     */
+    function withdrawFromPool(uint poolId, IERC20 token, address to) external onlyRole(MANAGER_ROLE) {
         require(address(pools[poolId].pool) != address(0), CSPoolNotFound());
 
-        pools[poolId].active = active;
+        uint amount = pools[poolId].pool.getWithdrawableAmount(token);
+        pools[poolId].pool.withdraw(token, to);
+        emit WithdrawnFromPool(poolId, token, to, amount);
+    }
 
-        // Pause/unpause the actual pool contract
-        if (active) pools[poolId].pool.unpause();
-        else pools[poolId].pool.pause();
+    /**
+     * @notice Sets the pool status
+     * @dev Controls pool operations based on status:
+     *      Active: all operations allowed
+     *      Inactive: only claim and unstake allowed
+     *      Paused: no operations allowed
+     * @param poolId ID of the pool
+     * @param status New pool status
+     */
+    function setPoolStatus(uint poolId, ICrossStakingPool.PoolStatus status) external onlyRole(MANAGER_ROLE) {
+        require(address(pools[poolId].pool) != address(0), CSPoolNotFound());
 
-        emit PoolStatusChanged(poolId, active);
+        // Update active flag based on status
+        pools[poolId].active = (status == ICrossStakingPool.PoolStatus.Active);
+
+        // Set pool status in the pool contract
+        pools[poolId].pool.setPoolStatus(status);
+
+        emit PoolStatusChanged(poolId, pools[poolId].active);
     }
 
     /**
@@ -343,8 +389,6 @@ contract CrossStaking is Initializable, AccessControl, UUPSUpgradeable, ICrossSt
 
     /**
      * @dev Storage gap for future upgrades
-     *      Currently used: 8 slots
-     *      Gap: 50 - 8 = 42 slots
      */
-    uint[42] private __gap;
+    uint[41] private __gap;
 }

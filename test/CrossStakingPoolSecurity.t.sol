@@ -34,8 +34,8 @@ contract CrossStakingPoolSecurityTest is CrossStakingPoolBase {
 
         _depositReward(address(rewardToken1), 1000 ether);
 
-        uint[] memory rewards1 = pool.pendingRewards(user1);
-        uint[] memory rewards2 = pool.pendingRewards(user2);
+        (, uint[] memory rewards1) = pool.pendingRewards(user1);
+        (, uint[] memory rewards2) = pool.pendingRewards(user2);
 
         // Sum of rewards should equal the deposited amount
         assertApproxEqAbs(rewards1[0] + rewards2[0], 1000 ether, 100, "Total rewards should equal deposited");
@@ -100,7 +100,7 @@ contract CrossStakingPoolSecurityTest is CrossStakingPoolBase {
         rewardToken1.transfer(address(pool), 1);
         vm.stopPrank();
 
-        uint[] memory rewards = pool.pendingRewards(user1);
+        (, uint[] memory rewards) = pool.pendingRewards(user1);
         // 1 wei may be rounded because of PRECISION
         assertTrue(rewards[0] <= 1, "Should handle precision correctly");
     }
@@ -135,7 +135,7 @@ contract CrossStakingPoolSecurityTest is CrossStakingPoolBase {
         }
 
         // Pending query should match actual claim
-        uint[] memory pendingBefore = pool.pendingRewards(user1);
+        (, uint[] memory pendingBefore) = pool.pendingRewards(user1);
 
         vm.prank(user1);
         pool.claimRewards();
@@ -178,14 +178,14 @@ contract CrossStakingPoolSecurityTest is CrossStakingPoolBase {
         _userStake(user2, 100 ether);
 
         // User2 should not receive earlier rewards
-        uint[] memory rewards2 = pool.pendingRewards(user2);
+        (, uint[] memory rewards2) = pool.pendingRewards(user2);
         assertEq(rewards2[0], 0, "User2 should not get previous rewards");
 
         // Add new rewards
         _depositReward(address(rewardToken1), 200 ether);
 
-        uint[] memory rewards1 = pool.pendingRewards(user1);
-        rewards2 = pool.pendingRewards(user2);
+        (, uint[] memory rewards1) = pool.pendingRewards(user1);
+        (, rewards2) = pool.pendingRewards(user2);
 
         // User1: 100 (previous) + 100 (50% of new rewards) = 200
         // User2: 0 (previous) + 100 (50% of new rewards) = 100
@@ -197,16 +197,20 @@ contract CrossStakingPoolSecurityTest is CrossStakingPoolBase {
         // Deposit rewards while totalStaked is zero
         _depositReward(address(rewardToken1), 1000 ether);
 
-        // First staker should receive all previously deposited rewards
+        // First staker should NOT receive previously deposited rewards
+        // Those become withdrawable instead
         _userStake(user1, 100 ether);
 
-        uint[] memory rewards = pool.pendingRewards(user1);
-        assertApproxEqAbs(rewards[0], 1000 ether, 100, "First staker gets rewards deposited when pool was empty");
+        (, uint[] memory rewards) = pool.pendingRewards(user1);
+        assertEq(rewards[0], 0, "First staker does NOT get rewards deposited when pool was empty");
+
+        // The 1000 ether should be withdrawable by owner
+        assertEq(pool.getWithdrawableAmount(rewardToken1), 1000 ether, "Rewards are withdrawable");
 
         // Subsequent rewards distribute normally
         _depositReward(address(rewardToken1), 100 ether);
-        rewards = pool.pendingRewards(user1);
-        assertApproxEqAbs(rewards[0], 1100 ether, 100, "New rewards added to existing");
+        (, rewards) = pool.pendingRewards(user1);
+        assertApproxEqAbs(rewards[0], 100 ether, 100, "New rewards distributed to staker");
     }
 
     // ==================== Edge-case validation ====================
@@ -254,8 +258,8 @@ contract CrossStakingPoolSecurityTest is CrossStakingPoolBase {
         // User2 should not receive previous rewards
         _userStake(user2, 100 ether);
 
-        uint[] memory rewards1 = pool.pendingRewards(user1);
-        uint[] memory rewards2 = pool.pendingRewards(user2);
+        (, uint[] memory rewards1) = pool.pendingRewards(user1);
+        (, uint[] memory rewards2) = pool.pendingRewards(user2);
 
         assertApproxEqAbs(rewards1[0], 100 ether, 100, "User1 gets all");
         assertEq(rewards2[0], 0, "User2 gets nothing from previous");
@@ -270,7 +274,7 @@ contract CrossStakingPoolSecurityTest is CrossStakingPoolBase {
         // rewardPerToken = (100 * 1e18) / 100 = 1e18
         _depositReward(address(rewardToken1), 100 ether);
 
-        uint[] memory rewards = pool.pendingRewards(user1);
+        (, uint[] memory rewards) = pool.pendingRewards(user1);
 
         // earned = 100 * 1e18 / 1e18 = 100
         assertApproxEqAbs(rewards[0], 100 ether, 0.001 ether, "Math should be precise");
@@ -285,9 +289,9 @@ contract CrossStakingPoolSecurityTest is CrossStakingPoolBase {
         // Deposit 600 tokens in rewards
         _depositReward(address(rewardToken1), 600 ether);
 
-        uint[] memory rewards1 = pool.pendingRewards(user1);
-        uint[] memory rewards2 = pool.pendingRewards(user2);
-        uint[] memory rewards3 = pool.pendingRewards(user3);
+        (, uint[] memory rewards1) = pool.pendingRewards(user1);
+        (, uint[] memory rewards2) = pool.pendingRewards(user2);
+        (, uint[] memory rewards3) = pool.pendingRewards(user3);
 
         // Validate the 1:2:3 distribution
         assertApproxEqAbs(rewards1[0], 100 ether, 100, "1/6 of rewards");
@@ -378,7 +382,7 @@ contract CrossStakingPoolSecurityTest is CrossStakingPoolBase {
         vm.stopPrank();
 
         // Confirm that no reward has been added
-        uint[] memory rewards = pool.pendingRewards(user1);
+        (, uint[] memory rewards) = pool.pendingRewards(user1);
         assertEq(rewards[0], 0, "No reward should be added for 0 amount");
     }
 

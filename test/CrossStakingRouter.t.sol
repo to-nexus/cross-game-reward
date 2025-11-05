@@ -9,8 +9,9 @@ import "../src/interfaces/ICrossStakingPool.sol";
 import "./mocks/MockERC20.sol";
 import "./mocks/MockERC20Permit.sol";
 import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import "forge-std/Test.sol";
+
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "forge-std/Test.sol";
 
 contract CrossStakingRouterTest is Test {
     CrossStaking public crossStaking;
@@ -94,9 +95,6 @@ contract CrossStakingRouterTest is Test {
 
         vm.startPrank(user1);
 
-        // User needs to approve router for WCROSS
-        wcross.approve(address(router), type(uint).max);
-
         router.stakeNative{value: amount}(nativePoolId);
         vm.stopPrank();
 
@@ -108,7 +106,6 @@ contract CrossStakingRouterTest is Test {
 
     function testStakeNativeMultipleTimes() public {
         vm.startPrank(user1);
-        wcross.approve(address(router), type(uint).max);
 
         router.stakeNative{value: 5 ether}(nativePoolId);
         router.stakeNative{value: 3 ether}(nativePoolId);
@@ -134,7 +131,6 @@ contract CrossStakingRouterTest is Test {
     function testUnstakeNative() public {
         // Stake first
         vm.startPrank(user1);
-        wcross.approve(address(router), type(uint).max);
         router.stakeNative{value: 10 ether}(nativePoolId);
         vm.stopPrank();
 
@@ -227,7 +223,6 @@ contract CrossStakingRouterTest is Test {
     function testGetUserStakingInfo() public {
         // Stake
         vm.startPrank(user1);
-        wcross.approve(address(router), type(uint).max);
         router.stakeNative{value: 10 ether}(nativePoolId);
         vm.stopPrank();
 
@@ -235,7 +230,7 @@ contract CrossStakingRouterTest is Test {
         rewardToken.mint(owner, 50 ether);
         rewardToken.transfer(address(nativePool), 50 ether);
 
-        (uint stakedAmount, uint[] memory pendingRewards) = router.getUserStakingInfo(nativePoolId, user1);
+        (uint stakedAmount,, uint[] memory pendingRewards) = router.getUserStakingInfo(nativePoolId, user1);
 
         assertEq(stakedAmount, 10 ether, "Staked amount");
         assertEq(pendingRewards.length, 1, "1 reward token");
@@ -252,13 +247,11 @@ contract CrossStakingRouterTest is Test {
     function testMultiUserNativeStaking() public {
         // User1 stakes
         vm.startPrank(user1);
-        wcross.approve(address(router), type(uint).max);
         router.stakeNative{value: 10 ether}(nativePoolId);
         vm.stopPrank();
 
         // User2 stakes
         vm.startPrank(user2);
-        wcross.approve(address(router), type(uint).max);
         router.stakeNative{value: 20 ether}(nativePoolId);
         vm.stopPrank();
 
@@ -286,7 +279,6 @@ contract CrossStakingRouterTest is Test {
     function testMixedPoolUsage() public {
         // Native pool staking
         vm.startPrank(user1);
-        wcross.approve(address(router), type(uint).max);
         router.stakeNative{value: 5 ether}(nativePoolId);
         vm.stopPrank();
 

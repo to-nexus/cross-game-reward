@@ -5,9 +5,10 @@ import "../src/CrossStaking.sol";
 import "../src/CrossStakingPool.sol";
 import "../src/WCROSS.sol";
 import "../src/interfaces/ICrossStakingPool.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
 import "./mocks/MockERC20.sol";
 import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "forge-std/Test.sol";
 
 contract CrossStakingTest is Test {
@@ -111,9 +112,7 @@ contract CrossStakingTest is Test {
         assertEq(poolId2, 2, "Pool 2");
 
         // Confirm pool count for the same staking token
-        assertEq(
-            crossStaking.getPoolCountByStakingToken(IERC20(address(wcross))), 2, "2 pools for WCROSS"
-        );
+        assertEq(crossStaking.getPoolCountByStakingToken(IERC20(address(wcross))), 2, "2 pools for WCROSS");
     }
 
     // ==================== Reward token management ====================
@@ -146,40 +145,51 @@ contract CrossStakingTest is Test {
         crossStaking.addRewardToken(999, IERC20(address(rewardToken)));
     }
 
-    // ==================== Pool activation/deactivation ====================
+    // ==================== Pool status management ====================
 
-    function testSetPoolActive() public {
+    function testSetPoolStatus() public {
         (uint poolId, ICrossStakingPool poolInterface) = crossStaking.createPool(IERC20(address(wcross)), 1 ether);
 
         CrossStakingPool pool = CrossStakingPool(address(poolInterface));
         assertFalse(pool.paused(), "Initially not paused");
+        assertEq(uint(pool.poolStatus()), 0, "Initially active");
 
-        // Deactivate
-        crossStaking.setPoolActive(poolId, false);
+        // Set to inactive (1)
+        crossStaking.setPoolStatus(poolId, ICrossStakingPool.PoolStatus.Inactive);
 
         CrossStaking.PoolInfo memory info = crossStaking.getPoolInfo(poolId);
-        assertFalse(info.active, "Pool deactivated");
-        assertTrue(pool.paused(), "Pool paused");
+        assertFalse(info.active, "Pool inactive");
+        assertEq(uint(pool.poolStatus()), 1, "Status inactive");
+        assertFalse(pool.paused(), "Not paused");
 
-        // Reactivate
-        crossStaking.setPoolActive(poolId, true);
+        // Set to paused (2)
+        crossStaking.setPoolStatus(poolId, ICrossStakingPool.PoolStatus.Paused);
 
         info = crossStaking.getPoolInfo(poolId);
-        assertTrue(info.active, "Pool reactivated");
-        assertFalse(pool.paused(), "Pool unpaused");
+        assertFalse(info.active, "Pool paused (not active)");
+        assertEq(uint(pool.poolStatus()), 2, "Status paused");
+        assertTrue(pool.paused(), "Paused");
+
+        // Set to active (0)
+        crossStaking.setPoolStatus(poolId, ICrossStakingPool.PoolStatus.Active);
+
+        info = crossStaking.getPoolInfo(poolId);
+        assertTrue(info.active, "Pool active");
+        assertEq(uint(pool.poolStatus()), 0, "Status active");
+        assertFalse(pool.paused(), "Not paused");
     }
 
-    function testOnlyPoolManagerCanSetPoolActive() public {
+    function testOnlyPoolManagerCanSetPoolStatus() public {
         (uint poolId,) = crossStaking.createPool(IERC20(address(wcross)), 1 ether);
 
         vm.prank(user1);
         vm.expectRevert();
-        crossStaking.setPoolActive(poolId, false);
+        crossStaking.setPoolStatus(poolId, ICrossStakingPool.PoolStatus.Inactive);
     }
 
-    function testCannotSetActiveOnNonExistentPool() public {
+    function testCannotSetStatusOnNonExistentPool() public {
         vm.expectRevert(CrossStaking.CSPoolNotFound.selector);
-        crossStaking.setPoolActive(999, false);
+        crossStaking.setPoolStatus(999, ICrossStakingPool.PoolStatus.Inactive);
     }
 
     // ==================== Pool queries ====================
@@ -266,12 +276,8 @@ contract CrossStakingTest is Test {
         crossStaking.createPool(IERC20(address(wcross)), 1 ether);
         crossStaking.createPool(IERC20(address(wcross)), 1 ether);
 
-        assertEq(
-            crossStaking.poolByStakingTokenAt(IERC20(address(wcross)), 0), 1, "First WCROSS pool"
-        );
-        assertEq(
-            crossStaking.poolByStakingTokenAt(IERC20(address(wcross)), 1), 2, "Second WCROSS pool"
-        );
+        assertEq(crossStaking.poolByStakingTokenAt(IERC20(address(wcross)), 0), 1, "First WCROSS pool");
+        assertEq(crossStaking.poolByStakingTokenAt(IERC20(address(wcross)), 1), 2, "Second WCROSS pool");
     }
 
     function testGetActivePoolIds() public {
@@ -284,7 +290,7 @@ contract CrossStakingTest is Test {
         assertEq(activeIds.length, 3, "3 active pools");
 
         // Deactivate pool2
-        crossStaking.setPoolActive(pool2, false);
+        crossStaking.setPoolStatus(pool2, ICrossStakingPool.PoolStatus.Inactive); // Inactive
 
         activeIds = crossStaking.getActivePoolIds();
         assertEq(activeIds.length, 2, "2 active pools");
@@ -383,17 +389,21 @@ contract CrossStakingTest is Test {
         assertEq(pool2.totalStaked(), 50 ether, "Pool2 has stake");
     }
 
-    function testPoolActiveStatusAffectsPause() public {
+    function testPoolStatusAffectsPause() public {
         (uint poolId, ICrossStakingPool poolAddress) = crossStaking.createPool(IERC20(address(wcross)), 1 ether);
         CrossStakingPool pool = CrossStakingPool(address(poolAddress));
 
-        // Deactivate pool
-        crossStaking.setPoolActive(poolId, false);
+        // Set to paused (2)
+        crossStaking.setPoolStatus(poolId, ICrossStakingPool.PoolStatus.Paused);
         assertTrue(pool.paused(), "Pool should be paused");
 
-        // Reactivate pool
-        crossStaking.setPoolActive(poolId, true);
-        assertFalse(pool.paused(), "Pool should be unpaused");
+        // Set to inactive (1)
+        crossStaking.setPoolStatus(poolId, ICrossStakingPool.PoolStatus.Inactive);
+        assertFalse(pool.paused(), "Pool should not be paused when inactive");
+
+        // Set to active (0)
+        crossStaking.setPoolStatus(poolId, ICrossStakingPool.PoolStatus.Active);
+        assertFalse(pool.paused(), "Pool should not be paused when active");
     }
 
     // ==================== UUPS upgrades ====================

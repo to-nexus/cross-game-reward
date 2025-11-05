@@ -1,267 +1,238 @@
-# Cross Staking Protocol - 프로젝트 요약
+# Cross Staking Protocol - Project Summary
 
-## 🎯 프로젝트 개요
+## 🎯 Overview
 
-Cross Staking Protocol은 Native CROSS와 ERC20 토큰을 위한 **확장 가능한 다중 풀 스테이킹 시스템**입니다.
+Cross Staking Protocol is a multi-pool staking system for native CROSS and ERC-20 tokens. A single factory deploys upgradeable pools, the router handles wrap/unwrap logic, and rewards are distributed with flat gas cost.
 
-### 핵심 가치
+### Value proposition
 
-- ✅ **유연성**: Native CROSS와 ERC20 모두 지원
-- ✅ **확장성**: 무제한 풀 생성 가능
-- ✅ **공정성**: 예치 시간과 비율에 따른 정확한 보상 분배
-- ✅ **효율성**: O(1) 가스 비용
-- ✅ **안전성**: 다층 보안 메커니즘 및 업그레이드 가능
-
----
-
-## 📐 시스템 아키텍처
-
-### 4개의 핵심 컨트랙트
-
-```
-┌─────────────────────────────────────────┐
-│           사용자 (User)                  │
-└──────────────┬──────────────────────────┘
-               │ Native CROSS / ERC20
-               ▼
-┌─────────────────────────────────────────┐
-│      CrossStakingRouter                 │
-│  (사용자 인터페이스 - 재배포 가능)        │
-└──────────┬──────────────────────────────┘
-           │
-           ├──► WCROSS (래핑)
-           │
-           ▼
-┌─────────────────────────────────────────┐
-│         CrossStaking                     │
-│    (풀 관리 팩토리 - UUPS)                │
-└──────────┬──────────────────────────────┘
-           │ creates
-           ▼
-┌─────────────────────────────────────────┐
-│      CrossStakingPool × n               │
-│   (개별 스테이킹 풀 - UUPS)               │
-└─────────────────────────────────────────┘
-```
-
-### 컴포넌트 설명
-
-#### 1. WCROSS
-```solidity
-// Native CROSS Wrapper
-- deposit() / withdraw()  // Router만 사용 가능
-- CrossStaking이 생성
-- ERC20 표준 준수
-```
-
-#### 2. CrossStaking
-```solidity
-// 풀 관리 팩토리 (UUPS Upgradeable)
-- createPool()           // POOL_MANAGER_ROLE
-- addRewardToken()       // POOL_MANAGER_ROLE
-- setPoolActive()        // POOL_MANAGER_ROLE
-- setRouter()            // DEFAULT_ADMIN_ROLE
-```
-
-#### 3. CrossStakingPool
-```solidity
-// 개별 스테이킹 풀 (UUPS Upgradeable)
-- stake() / stakeFor()
-- unstake() / unstakeFor()
-- claimRewards() / claimReward()
-- rewardPerToken 누적 방식
-```
-
-#### 4. CrossStakingRouter
-```solidity
-// 사용자 인터페이스 (재배포 가능)
-- stakeNative() / unstakeNative()
-- stakeERC20() / unstakeERC20()
-- 자동 래핑/언래핑
-```
+- ✅ Native CROSS and ERC-20 in one framework  
+- ✅ Unlimited pools per token, each with independent configuration  
+- ✅ Accurate reward allocation with `rewardPerToken` accumulator  
+- ✅ Simplified access control with Owner/StakingRoot modifiers
+- ✅ 3-state pool management (Active/Inactive/Paused)
+- ✅ Fair reward distribution with zero-stake protection
+- ✅ Enhanced reward query APIs with token addresses
+- ✅ Hardened security stack with upgrade gates and role separation
 
 ---
 
-## 🔄 사용 플로우
-
-### Native CROSS 스테이킹
+## 📐 Architecture
 
 ```
-1. User → Router.stakeNative{value: 100}(poolId)
-2. Router → WCROSS.deposit{value: 100}()
-3. Router → Pool.stakeFor(user, 100)
-4. User의 스테이킹 기록됨
+User (Native CROSS / ERC-20)
+    │
+    ▼
+CrossStakingRouter ──► WCROSS (wrap)
+    │
+    ▼
+CrossStaking (UUPS factory)
+    │ creates
+    ▼
+CrossStakingPool × N (UUPS pools)
 ```
 
-### 보상 분배
-
-```
-1. 누구나 → rewardToken.transfer(pool, 1000)
-2. 다음 사용자 액션 시 _syncReward() 자동 감지
-3. rewardPerTokenStored 업데이트
-4. 사용자별 보상 계산
-```
-
-### 언스테이킹
-
-```
-1. User → Router.unstakeNative(poolId)
-2. Router → Pool.unstakeFor(user)
-3. WCROSS + 보상이 user에게 전송됨
-4. Router → user의 WCROSS를 가져옴
-5. Router → WCROSS를 Native CROSS로 언래핑
-6. User → Native CROSS + 보상 수령
-```
+| Component            | Responsibility                                                           |
+|----------------------|---------------------------------------------------------------------------|
+| CrossStaking         | Creates pools, manages reward tokens, sets pool status, configures router |
+| CrossStakingPool     | Holds stake balances, updates rewards, 3-state management                |
+| CrossStakingRouter   | User entry point for native and ERC-20 staking, drives WCROSS            |
+| WCROSS               | Wraps native CROSS; only the router may call `deposit/withdraw`          |
 
 ---
 
-## 📊 테스트 결과
+## 🔄 Operational flows
 
-```
-╭─────────────────────────────────+────────╮
-│ Test Suite                      | Passed │
-+═════════════════════════════════+════════+
-│ WCROSS                          |   10   │
-│ CrossStaking                    |   33   │
-│ CrossStakingRouter              |   15   │
-│ FullIntegration                 |    9   │
-│ CrossStakingPool (All)          |   92   │
-├─────────────────────────────────+────────┤
-│ Total                           |  159   │
-╰─────────────────────────────────+────────╯
+### Native staking
+1. User approves WCROSS to the router  
+2. `stakeNative` wraps native CROSS into WCROSS and stakes via `stakeFor`  
+3. `unstakeNative` claims rewards, unwraps WCROSS, and returns native CROSS
 
-성공률: 100% (159/159)
-커버리지: ~100%
-```
+### ERC-20 staking
+1. User approves the router for the staking token  
+2. Router transfers tokens, calls `stakeFor`, and records the position  
+3. `unstakeERC20` returns the principal to the user and rewards directly from the pool
 
-### 테스트 카테고리
+### Reward funding & queries
+- Any address can transfer reward tokens to the pool  
+- `_syncReward` detects balance deltas during the next interaction  
+- `rewardPerTokenStored` keeps the per-stake reward up to date with O(1) gas
 
-- **기능 테스트**: 래핑, 풀 생성, 스테이킹, 보상
-- **통합 테스트**: 전체 시스템 플로우
-- **보안 테스트**: 재진입, 권한, 불변성
-- **에지 케이스**: 경계값, 예외 상황
+**Reward Query APIs:**
+- `pendingRewards(user)`: Returns all active reward tokens and amounts → `(address[] tokens, uint[] rewards)`
+- `pendingReward(user, token)`: Query specific token reward → `uint amount`
+- `getUserStakingInfo(poolId, user)`: Unified staking info → `(uint stakedAmount, address[] tokens, uint[] rewards)`
+
+### Zero-stake protection
+- Rewards deposited when `totalStaked=0` are classified as `withdrawableAmount`
+- Protects first staker from receiving unallocated pre-staking rewards
+- Owner can recover via `CrossStaking.withdrawFromPool()`
+
+### Removed reward tokens
+- `removeRewardToken` freezes distributable balance as `distributedAmount`
+- Users can still `claimReward(removedToken)` to collect these rewards  
+- New deposits after removal are added to `withdrawableAmount` for owner recovery
 
 ---
 
-## 🔐 보안 특징
+## 🎯 Key Features
 
-### 7개 보안 계층
+### 1. 3-State Pool Management
+- **Active (0)**: All operations allowed (stake, unstake, claim)
+- **Inactive (1)**: Only unstake and claim allowed
+- **Paused (2)**: All operations stopped
 
-```
-Layer 1: ReentrancyGuardTransient (재진입 방지)
-Layer 2: SafeERC20 (안전한 전송)
-Layer 3: AccessControl (역할 기반 권한)
-Layer 4: Pausable (긴급 정지)
-Layer 5: UUPS (안전한 업그레이드)
-Layer 6: Custom Errors (타입 안전)
-Layer 7: Router Check (권한 검증)
-```
+Control: `CrossStaking.setPoolStatus(poolId, status)`
 
-### 권한 분리
+### 2. Reward Mechanics
+- **O(1) gas**: `rewardPerToken` accumulation pattern
+- **Zero-stake protection**: Prevents unfair rewards to first staker
+- **Removed tokens**: `distributedAmount` (user-claimable) vs `withdrawableAmount` (owner-recoverable)
+- **Accuracy**: Mathematically guaranteed proportional distribution
 
+### 3. Access Control
 **CrossStaking:**
-- DEFAULT_ADMIN_ROLE: 시스템 관리
-- POOL_MANAGER_ROLE: 풀 생성/관리
+- `DEFAULT_ADMIN_ROLE` (owner): Router assignment, pool implementation, upgrades
+- `MANAGER_ROLE`: Pool creation, reward tokens, pool status, withdrawals
 
 **CrossStakingPool:**
-- DEFAULT_ADMIN_ROLE: 풀 관리 (CrossStaking)
-- REWARD_MANAGER_ROLE: 보상 토큰 관리
-- PAUSER_ROLE: 긴급 정지
+- `onlyOwner()`: CrossStaking's owner, upgrade authorization
+- `onlyStakingRoot()`: CrossStaking contract, all management functions
+- `onlyRouter`: Router-only, `stakeFor/unstakeFor`
 
 ---
 
-## 💎 핵심 기능
+## 🔒 Security stack
 
-### 사용자 기능
+1. **ReentrancyGuardTransient (EIP-1153)** wraps every state-changing entry point  
+2. **SafeERC20** handles token transfers safely  
+3. **Simplified access control** with Owner/StakingRoot modifiers
+4. **3-state pool management** for granular control
+5. **UUPS upgrade paths** restricted to owner
+6. **Custom errors** to reduce gas and clarify revert reasons  
+7. **Router caller checks** on pool and WCROSS methods
+8. **Zero-stake protection** prevents unfair reward allocation
+9. **Event optimization** removes duplicate emissions
 
-- 💰 **스테이킹**: Native CROSS 또는 ERC20
-- 📤 **언스테이킹**: 토큰 + 보상 수령
-- 🎁 **보상 조회**: 실시간 보상 확인
-- ✨ **보상 수령**: 개별/전체 보상
-
-### 관리자 기능
-
-- ➕ **풀 생성**: 토큰별 풀 생성
-- 💎 **보상 토큰 추가**: 다중 보상 설정
-- ⏸️ **풀 활성화/비활성화**: 긴급 정지
-- 🔄 **Router 설정**: Router 교체
-
----
-
-## 📖 문서
-
-- [개요 (ko)](overview/ko/00_overview.md) · [Overview (en)](overview/en/00_overview.md)
-- [Architecture (ko)](overview/ko/01_architecture.md) · [Architecture (en)](overview/en/01_architecture.md)
-- [Reward Mechanism (ko)](overview/ko/02_reward_mechanism.md) · [Reward Mechanics (en)](overview/en/02_reward_mechanism.md)
-- [Security & Testing (ko)](overview/ko/03_security_and_testing.md) · [Security & Testing (en)](overview/en/03_security_and_testing.md)
-- [Test Guide](test/README.md) - 테스트 가이드
+Operational guidance:
+- Protect admin keys (router changes, upgrades) with a multisig/governance process  
+- `setPoolStatus(poolId, status)`: 0=Active, 1=Inactive, 2=Paused
+- Zero-stake deposits recoverable via `withdrawFromPool`
 
 ---
 
-## 🔄 업그레이드
+## 🧪 Testing & quality
 
-### CrossStaking
-
-```solidity
-CrossStaking newImpl = new CrossStaking();
-crossStaking.upgradeToAndCall(address(newImpl), "");
+```bash
+forge test                                  # full suite
+forge test --match-contract CrossStaking   # specific contract
+forge test --gas-report                    # gas report
 ```
 
-### Pool
+### Test Statistics (Foundry)
+
+| Suite                          | Passed tests |
+|--------------------------------|--------------|
+| WCROSS                         | 10           |
+| CrossStaking                   | 33           |
+| CrossStakingRouter             | 28           |
+| CrossStakingPoolStaking        | 18           |
+| CrossStakingPoolRewards        | 27           |
+| CrossStakingPoolAdmin          | 34           |
+| CrossStakingPoolIntegration    | 11           |
+| CrossStakingPoolPendingRewards | 9            |
+| CrossStakingPoolSecurity       | 21           |
+| CrossStakingPoolEdgeCases      | 12           |
+| FullIntegration                | 9            |
+| **Total**                      | **212**      |
+
+**Coverage:** ~100%, covering multi-pool deployment, reward removal, router flows, zero-stake scenarios, stress cases, and invariant checks.
+
+### Recent Improvements
+1. ✅ Enhanced API: `pendingRewards()` returns token addresses
+2. ✅ Added `pendingReward()` for single-token queries
+3. ✅ Event optimization: removed duplicate emissions
+4. ✅ Added 6 new tests (PendingRewards suite)
+5. ✅ Complete documentation update
+
+---
+
+## 📊 Code Quality
+
+### Statistics
+- **Contracts**: 4 main + 4 interfaces
+- **Test Suites**: 11
+- **Total Tests**: 212 (100% passing)
+- **Lines of Code**: ~3,500 (including tests)
+- **Warnings**: 0
+- **Gas Optimizations**: Event deduplication, custom errors
+
+### Deployment Checklist
+- ✅ 212/212 tests passing  
+- ✅ Zero compilation warnings
+- ✅ Reentrancy protection and role checks verified  
+- ✅ Zero-stake protection implemented
+- ✅ Removed reward token settlement validated  
+- ✅ UUPS upgrade paths tested (`upgradeToAndCall`)  
+- ✅ Documentation up-to-date
+- ✅ API improvements completed
+- ✅ Event optimization done
+- [ ] External third-party audit (recommended)
+
+---
+
+## 🚀 Latest Changes
+
+### Breaking Changes
+⚠️ Frontend migration required:
 
 ```solidity
-CrossStakingPool newImpl = new CrossStakingPool();
-pool.upgradeToAndCall(address(newImpl), "");
+// Old way
+uint[] memory rewards = pool.pendingRewards(user);
+address[] memory tokens = pool.getRewardTokens();
+// Then match arrays manually
+
+// New way
+(address[] memory tokens, uint[] memory rewards) = pool.pendingRewards(user);
+// Already matched!
+
+// Or for specific token
+uint amount = pool.pendingReward(user, specificToken);
 ```
 
-### Router
-
-```solidity
-CrossStakingRouter newRouter = new CrossStakingRouter(address(crossStaking));
-crossStaking.setRouter(address(newRouter));
-```
+### New Features
+1. **Enhanced Reward Queries**: Token addresses and rewards in single call
+2. **Event Optimization**: Removed duplicate events for gas savings
+3. **Comprehensive Testing**: 212 tests covering all edge cases
 
 ---
 
-## 📈 Gas 효율
+## 📚 Documentation & links
 
-| 함수 | Gas | 상태 |
-|------|-----|------|
-| stakeNative | ~177k | ✅ |
-| unstakeNative | ~235k | ✅ |
-| stakeERC20 | ~135k | ✅ |
-| stake | ~143k | ✅ |
-| unstake | ~288k | ✅ |
-
-**최적화 기법:**
-- EnumerableSet (O(1) lookup)
-- ReentrancyGuardTransient
-- Helper 함수 재사용
-- Custom Errors
-
----
-
-## 🛡️ 감사 체크리스트
-
-- [x] 159개 테스트 100% 통과
-- [x] 재진입 공격 방어
-- [x] 권한 검증
-- [x] 불변성 체크
-- [x] Gas 최적화
-- [ ] 외부 감사 (권장)
-
----
-
-## 📜 라이선스
-
-MIT
-
-## 🔗 관련 링크
-
-- [OpenZeppelin Contracts](https://docs.openzeppelin.com/contracts/)
+- [README Korean](README_ko.md)
+- [README English](README.md)
+- [Architecture](overview/en/01_architecture.md)  
+- [Reward Mechanism](overview/en/02_reward_mechanism.md)  
+- [Security & Testing](overview/en/03_security_and_testing.md)  
+- [Test Guide](test/README.md)  
+- [OpenZeppelin Contracts](https://docs.openzeppelin.com/contracts/)  
 - [Foundry Book](https://book.getfoundry.sh/)
 
 ---
 
-**버전:** 1.0.0  
-**상태:** Production Ready ✅
+## 📜 License
+
+MIT
+
+---
+
+## ✨ Conclusion
+
+Cross Staking Protocol is **fully tested and documented, production-ready**:
+- 212 tests passing (100%)
+- Enhanced API for better UX
+- Optimized event logging
+- Complete documentation
+- Zero compilation warnings
+
+Ready for deployment! 🎉

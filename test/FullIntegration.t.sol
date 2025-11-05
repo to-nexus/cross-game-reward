@@ -86,7 +86,6 @@ contract FullIntegrationTest is Test {
 
         // Day 0: Alice stakes 100 CROSS
         vm.startPrank(alice);
-        wcross.approve(address(router), type(uint).max);
         router.stakeNative{value: 100 ether}(nativePoolId);
         vm.stopPrank();
 
@@ -97,7 +96,6 @@ contract FullIntegrationTest is Test {
 
         // Day 2: Bob stakes 200 CROSS
         vm.startPrank(bob);
-        wcross.approve(address(router), type(uint).max);
         router.stakeNative{value: 200 ether}(nativePoolId);
         vm.stopPrank();
 
@@ -108,7 +106,6 @@ contract FullIntegrationTest is Test {
 
         // Day 4: Carol stakes 100 CROSS
         vm.startPrank(carol);
-        wcross.approve(address(router), type(uint).max);
         router.stakeNative{value: 100 ether}(nativePoolId);
         vm.stopPrank();
 
@@ -116,7 +113,7 @@ contract FullIntegrationTest is Test {
         dai.transfer(address(nativePool), 800 ether);
 
         // Verify Alice's rewards
-        (uint aliceStaked, uint[] memory aliceRewards) = router.getUserStakingInfo(nativePoolId, alice);
+        (uint aliceStaked,, uint[] memory aliceRewards) = router.getUserStakingInfo(nativePoolId, alice);
 
         assertEq(aliceStaked, 100 ether, "Alice staked");
 
@@ -126,13 +123,13 @@ contract FullIntegrationTest is Test {
         assertApproxEqAbs(aliceRewards[2], 200 ether, 100, "Alice DAI");
 
         // Bob: 0 USDT + 400 USDC (2/3) + 400 DAI (2/4) = 800
-        (, uint[] memory bobRewards) = router.getUserStakingInfo(nativePoolId, bob);
+        (,, uint[] memory bobRewards) = router.getUserStakingInfo(nativePoolId, bob);
         assertEq(bobRewards[0], 0, "Bob no USDT");
         assertApproxEqAbs(bobRewards[1], 400 ether, 100, "Bob USDC");
         assertApproxEqAbs(bobRewards[2], 400 ether, 100, "Bob DAI");
 
         // Carol: 0 USDT + 0 USDC + 200 DAI (1/4) = 200
-        (, uint[] memory carolRewards) = router.getUserStakingInfo(nativePoolId, carol);
+        (,, uint[] memory carolRewards) = router.getUserStakingInfo(nativePoolId, carol);
         assertEq(carolRewards[0], 0, "Carol no USDT");
         assertEq(carolRewards[1], 0, "Carol no USDC");
         assertApproxEqAbs(carolRewards[2], 200 ether, 100, "Carol DAI");
@@ -164,7 +161,6 @@ contract FullIntegrationTest is Test {
 
         // Alice stakes in native pool
         vm.startPrank(alice);
-        wcross.approve(address(router), type(uint).max);
         router.stakeNative{value: 50 ether}(nativePoolId);
         vm.stopPrank();
 
@@ -179,8 +175,8 @@ contract FullIntegrationTest is Test {
         usdt.transfer(address(erc20PoolAddress), 200 ether);
 
         // Check rewards
-        (, uint[] memory aliceRewards) = router.getUserStakingInfo(nativePoolId, alice);
-        (, uint[] memory bobRewards) = router.getUserStakingInfo(erc20PoolId, bob);
+        (,, uint[] memory aliceRewards) = router.getUserStakingInfo(nativePoolId, alice);
+        (,, uint[] memory bobRewards) = router.getUserStakingInfo(erc20PoolId, bob);
 
         assertApproxEqAbs(aliceRewards[0], 100 ether, 100, "Alice native pool rewards");
         assertApproxEqAbs(bobRewards[0], 200 ether, 100, "Bob ERC20 pool rewards");
@@ -193,12 +189,10 @@ contract FullIntegrationTest is Test {
 
         // Week 1: Initial stakers
         vm.startPrank(alice);
-        wcross.approve(address(router), type(uint).max);
         router.stakeNative{value: 100 ether}(nativePoolId);
         vm.stopPrank();
 
         vm.startPrank(bob);
-        wcross.approve(address(router), type(uint).max);
         router.stakeNative{value: 50 ether}(nativePoolId);
         vm.stopPrank();
 
@@ -209,7 +203,6 @@ contract FullIntegrationTest is Test {
 
         // Week 2: Carol joins
         vm.startPrank(carol);
-        wcross.approve(address(router), type(uint).max);
         router.stakeNative{value: 150 ether}(nativePoolId);
         vm.stopPrank();
 
@@ -228,19 +221,19 @@ contract FullIntegrationTest is Test {
         assertEq(pool.totalStaked(), 300 ether, "Total staked");
 
         // Alice: 200 USDT (2/3) + 200 USDC (1/3) + 300 DAI (1/3) = 700
-        (, uint[] memory aliceRewards) = router.getUserStakingInfo(nativePoolId, alice);
+        (,, uint[] memory aliceRewards) = router.getUserStakingInfo(nativePoolId, alice);
         assertApproxEqAbs(aliceRewards[0], 200 ether, 100, "Alice USDT");
         assertApproxEqAbs(aliceRewards[1], 200 ether, 100, "Alice USDC");
         assertApproxEqAbs(aliceRewards[2], 300 ether, 100, "Alice DAI");
 
         // Bob: 100 USDT (1/3) + 100 USDC (1/6) + 150 DAI (1/6) = 350
-        (, uint[] memory bobRewards) = router.getUserStakingInfo(nativePoolId, bob);
+        (,, uint[] memory bobRewards) = router.getUserStakingInfo(nativePoolId, bob);
         assertApproxEqAbs(bobRewards[0], 100 ether, 100, "Bob USDT");
         assertApproxEqAbs(bobRewards[1], 100 ether, 100, "Bob USDC");
         assertApproxEqAbs(bobRewards[2], 150 ether, 100, "Bob DAI");
 
         // Carol: 0 USDT + 300 USDC (1/2) + 450 DAI (1/2) = 750
-        (, uint[] memory carolRewards) = router.getUserStakingInfo(nativePoolId, carol);
+        (,, uint[] memory carolRewards) = router.getUserStakingInfo(nativePoolId, carol);
         assertEq(carolRewards[0], 0, "Carol no USDT");
         assertApproxEqAbs(carolRewards[1], 300 ether, 100, "Carol USDC");
         assertApproxEqAbs(carolRewards[2], 450 ether, 100, "Carol DAI");
@@ -266,17 +259,14 @@ contract FullIntegrationTest is Test {
 
         // Setup: 3 users with different stakes
         vm.startPrank(alice);
-        wcross.approve(address(router), type(uint).max);
         router.stakeNative{value: 100 ether}(nativePoolId);
         vm.stopPrank();
 
         vm.startPrank(bob);
-        wcross.approve(address(router), type(uint).max);
         router.stakeNative{value: 200 ether}(nativePoolId);
         vm.stopPrank();
 
         vm.startPrank(carol);
-        wcross.approve(address(router), type(uint).max);
         router.stakeNative{value: 300 ether}(nativePoolId);
         vm.stopPrank();
 
@@ -287,9 +277,9 @@ contract FullIntegrationTest is Test {
         usdt.transfer(address(nativePool), 600 ether);
 
         // Expected distribution: 100 (alice), 200 (bob), 300 (carol)
-        (, uint[] memory aliceRewards) = router.getUserStakingInfo(nativePoolId, alice);
-        (, uint[] memory bobRewards) = router.getUserStakingInfo(nativePoolId, bob);
-        (, uint[] memory carolRewards) = router.getUserStakingInfo(nativePoolId, carol);
+        (,, uint[] memory aliceRewards) = router.getUserStakingInfo(nativePoolId, alice);
+        (,, uint[] memory bobRewards) = router.getUserStakingInfo(nativePoolId, bob);
+        (,, uint[] memory carolRewards) = router.getUserStakingInfo(nativePoolId, carol);
 
         assertApproxEqAbs(aliceRewards[0], 100 ether, 100, "Alice gets 100");
         assertApproxEqAbs(bobRewards[0], 200 ether, 100, "Bob gets 200");
@@ -305,7 +295,6 @@ contract FullIntegrationTest is Test {
     function testStakeUnstakeStake() public {
         // Alice stakes
         vm.startPrank(alice);
-        wcross.approve(address(router), type(uint).max);
         router.stakeNative{value: 50 ether}(nativePoolId);
         vm.stopPrank();
 
@@ -318,7 +307,7 @@ contract FullIntegrationTest is Test {
 
         assertApproxEqAbs(usdt.balanceOf(alice), 100 ether, 100, "Alice got first rewards");
 
-        // Reward 2 was deposited while nobody staked, so Alice receives it
+        // Reward 2 was deposited while nobody staked, so it becomes withdrawable (NOT given to Alice)
         usdt.transfer(address(nativePool), 100 ether);
 
         // Alice stakes again
@@ -334,16 +323,16 @@ contract FullIntegrationTest is Test {
         vm.prank(alice);
         router.unstakeNative(nativePoolId);
 
-        // Alice should receive Reward 2 plus Reward 3, including the zero-staker deposit
-        assertApproxEqAbs(
-            usdt.balanceOf(alice) - usdtBefore, 200 ether, 1 ether, "Alice got rewards including zero-staker period"
-        );
+        // Alice should receive only Reward 3 (Reward 2 was deposited when pool was empty)
+        assertApproxEqAbs(usdt.balanceOf(alice) - usdtBefore, 100 ether, 1 ether, "Alice got only Reward 3");
+
+        // Reward 2 should be withdrawable
+        assertEq(nativePool.getWithdrawableAmount(usdt), 100 ether, "Reward 2 is withdrawable");
     }
 
     function testMultipleRewardRounds() public {
         // Alice stakes
         vm.startPrank(alice);
-        wcross.approve(address(router), type(uint).max);
         router.stakeNative{value: 100 ether}(nativePoolId);
         vm.stopPrank();
 
@@ -355,7 +344,7 @@ contract FullIntegrationTest is Test {
         }
 
         // Alice should have 100 USDT, 200 USDC, 300 DAI
-        (, uint[] memory rewards) = router.getUserStakingInfo(nativePoolId, alice);
+        (,, uint[] memory rewards) = router.getUserStakingInfo(nativePoolId, alice);
         assertApproxEqAbs(rewards[0], 100 ether, 100, "Alice USDT");
         assertApproxEqAbs(rewards[1], 200 ether, 100, "Alice USDC");
         assertApproxEqAbs(rewards[2], 300 ether, 100, "Alice DAI");
@@ -366,7 +355,6 @@ contract FullIntegrationTest is Test {
     function testCannotUnstakeOthersStake() public {
         // Alice stakes
         vm.startPrank(alice);
-        wcross.approve(address(router), type(uint).max);
         router.stakeNative{value: 100 ether}(nativePoolId);
         vm.stopPrank();
 
@@ -380,7 +368,6 @@ contract FullIntegrationTest is Test {
         // Router interactions are guarded by the pool's nonReentrant modifier
         // Attempt to call twice
         vm.startPrank(alice);
-        wcross.approve(address(router), type(uint).max);
         router.stakeNative{value: 10 ether}(nativePoolId);
 
         // Should execute successfully
@@ -393,7 +380,6 @@ contract FullIntegrationTest is Test {
     function testViewFunctionsConsistency() public {
         // Stake
         vm.startPrank(alice);
-        wcross.approve(address(router), type(uint).max);
         router.stakeNative{value: 100 ether}(nativePoolId);
         vm.stopPrank();
 
@@ -401,12 +387,12 @@ contract FullIntegrationTest is Test {
         usdt.transfer(address(nativePool), 50 ether);
 
         // Get info via router
-        (uint stakedViaRouter, uint[] memory rewardsViaRouter) = router.getUserStakingInfo(nativePoolId, alice);
+        (uint stakedViaRouter,, uint[] memory rewardsViaRouter) = router.getUserStakingInfo(nativePoolId, alice);
 
         // Get info directly from pool
         CrossStakingPool pool = CrossStakingPool(address(nativePool));
         uint stakedDirect = pool.balances(alice);
-        uint[] memory rewardsDirect = pool.pendingRewards(alice);
+        (, uint[] memory rewardsDirect) = pool.pendingRewards(alice);
 
         // Should match
         assertEq(stakedViaRouter, stakedDirect, "Staked amount matches");

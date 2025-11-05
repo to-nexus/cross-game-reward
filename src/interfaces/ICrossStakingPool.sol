@@ -1,27 +1,43 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
+import {IERC5313} from "@openzeppelin/contracts/interfaces/IERC5313.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /**
  * @title ICrossStakingPool
  * @notice Interface for the CrossStakingPool contract
  * @dev Defines the structure and functions for staking and reward management
+ *      Implements IERC5313 for standard owner() function
  */
-interface ICrossStakingPool {
+interface ICrossStakingPool is IERC5313 {
+    /**
+     * @notice Pool status enum
+     * @param Active All operations allowed (stake, unstake, claim)
+     * @param Inactive Only unstake and claim allowed
+     * @param Paused All operations stopped
+     */
+    enum PoolStatus {
+        Active,
+        Inactive,
+        Paused
+    }
+
     /**
      * @notice Reward token information structure
      * @param token Address of the reward token
      * @param rewardPerTokenStored Accumulated reward per token staked
      * @param lastBalance Last known balance of the reward token
-     * @param removedDistributedAmount Amount allocated for distribution when token was removed
+     * @param withdrawableAmount Amount that owner can withdraw (from zero-stake deposits)
+     * @param distributedAmount Amount distributed to users (for removed tokens, tracks claimable balance)
      * @param isRemoved Whether the reward token has been removed
      */
     struct RewardToken {
         IERC20 token;
         uint rewardPerTokenStored;
         uint lastBalance;
-        uint removedDistributedAmount;
+        uint withdrawableAmount;
+        uint distributedAmount;
         bool isRemoved;
     }
 
@@ -65,8 +81,11 @@ interface ICrossStakingPool {
     /// @notice Claims pending rewards for a specific token
     function claimReward(IERC20 token) external;
 
-    /// @notice Returns pending rewards for a user
-    function pendingRewards(address account) external view returns (uint[] memory);
+    /// @notice Returns pending rewards for a user across all active reward tokens
+    function pendingRewards(address account) external view returns (address[] memory tokens, uint[] memory rewards);
+
+    /// @notice Returns pending reward for a specific token
+    function pendingReward(address account, IERC20 token) external view returns (uint amount);
 
     /// @notice Returns reward token address at a specific index
     function rewardTokenAt(uint index) external view returns (IERC20);
@@ -83,15 +102,36 @@ interface ICrossStakingPool {
     /// @notice Returns the number of reward tokens
     function rewardTokenCount() external view returns (uint);
 
+    /// @notice Returns all removed reward token addresses
+    function getRemovedRewardTokens() external view returns (address[] memory);
+
+    /// @notice Returns the number of removed reward tokens
+    function removedRewardTokenCount() external view returns (uint);
+
+    /// @notice Checks if a token is a removed reward token
+    function isRemovedRewardToken(IERC20 token) external view returns (bool);
+
+    /// @notice Returns user's claimable rewards for removed tokens
+    function getRemovedTokenRewards(address user)
+        external
+        view
+        returns (address[] memory tokens, uint[] memory rewards);
+
     /// @notice Adds a reward token to the pool
     function addRewardToken(IERC20 token) external;
 
     /// @notice Removes a reward token from the pool
     function removeRewardToken(IERC20 token) external;
 
-    /// @notice Pauses the pool
-    function pause() external;
+    /// @notice Sets the pool status
+    function setPoolStatus(PoolStatus status) external;
 
-    /// @notice Unpauses the pool
-    function unpause() external;
+    /// @notice Returns the withdrawable amount for a removed reward token
+    function getWithdrawableAmount(IERC20 token) external view returns (uint);
+
+    /// @notice Withdraws undistributed rewards that were deposited after token removal
+    function withdraw(IERC20 token, address to) external;
+
+    /// @notice Updates the minimum stake amount for the pool
+    function updateMinStakeAmount(uint amount) external;
 }

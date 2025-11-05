@@ -18,7 +18,7 @@ import "forge-std/Script.sol";
 contract DeployCrossStakingPool is Script {
     // 배포할 네트워크의 CROSS 토큰 주소를 여기에 설정
     address public constant CROSS_TOKEN = address(0); // TODO: 실제 CROSS 토큰 주소로 변경
-    uint256 public constant MIN_STAKE_AMOUNT = 1 ether;
+    uint public constant MIN_STAKE_AMOUNT = 1 ether;
 
     function run() external {
         address deployer = msg.sender;
@@ -59,7 +59,7 @@ contract DeployWithRewards is Script {
     IERC20 public crossToken;
     IERC20[] public rewardTokens;
     uint[] public initialRewardAmounts;
-    uint256 public constant MIN_STAKE_AMOUNT = 1 ether;
+    uint public constant MIN_STAKE_AMOUNT = 1 ether;
 
     function run() external {
         address deployer = msg.sender;

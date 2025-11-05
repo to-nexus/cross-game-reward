@@ -3,9 +3,10 @@ pragma solidity 0.8.28;
 
 import {CrossStaking} from "../src/CrossStaking.sol";
 import {CrossStakingPool} from "../src/CrossStakingPool.sol";
-import {ICrossStakingPool} from "../src/interfaces/ICrossStakingPool.sol";
+
 import {CrossStakingRouter} from "../src/CrossStakingRouter.sol";
 import {WCROSS} from "../src/WCROSS.sol";
+import {ICrossStakingPool} from "../src/interfaces/ICrossStakingPool.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {Test} from "forge-std/Test.sol";
 
@@ -155,7 +156,6 @@ contract WCROSSTest is Test {
 
         // User stakes via router
         vm.startPrank(user1);
-        wcross.approve(address(router), type(uint).max);
         router.stakeNative{value: 10 ether}(poolId);
         vm.stopPrank();
 
@@ -169,7 +169,6 @@ contract WCROSSTest is Test {
         (uint poolId, ICrossStakingPool poolAddress) = crossStaking.createPool(IERC20(address(wcross)), 1 ether);
 
         vm.startPrank(user1);
-        wcross.approve(address(router), type(uint).max);
         router.stakeNative{value: 10 ether}(poolId);
         vm.stopPrank();
 

@@ -18,7 +18,7 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
         _depositReward(address(rewardToken1), 100 ether);
         _depositReward(address(rewardToken2), 50 ether);
 
-        uint[] memory rewards = pool.pendingRewards(user1);
+        (, uint[] memory rewards) = pool.pendingRewards(user1);
 
         assertEq(rewards[0], 100 ether, "Reward token 1 should accumulate");
         assertEq(rewards[1], 50 ether, "Reward token 2 should accumulate");
@@ -30,7 +30,7 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
 
         _depositReward(address(rewardToken1), 1000 ether);
 
-        uint[] memory rewards = pool.pendingRewards(user1);
+        (, uint[] memory rewards) = pool.pendingRewards(user1);
         assertEq(rewards[0], 1000 ether, "Small stake should get all rewards");
     }
 
@@ -40,7 +40,7 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
 
         _depositReward(address(rewardToken1), 10000 ether);
 
-        uint[] memory rewards = pool.pendingRewards(user1);
+        (, uint[] memory rewards) = pool.pendingRewards(user1);
         assertEq(rewards[0], 10000 ether, "Large stake should get all rewards");
     }
 
@@ -123,8 +123,8 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
         // Deposit rewards (20 CROSS total staked)
         _depositReward(address(rewardToken1), 200 ether);
 
-        uint[] memory rewardsUser1 = pool.pendingRewards(user1);
-        uint[] memory rewardsUser2 = pool.pendingRewards(user2);
+        (, uint[] memory rewardsUser1) = pool.pendingRewards(user1);
+        (, uint[] memory rewardsUser2) = pool.pendingRewards(user2);
 
         // User1: (10 / 20) × 200 = 100 ether
         // User2: (10 / 20) × 200 = 100 ether
@@ -144,8 +144,8 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
         // At t=100 deposit rewards (total: 30 CROSS)
         _depositReward(address(rewardToken1), 150 ether);
 
-        uint[] memory rewards1 = pool.pendingRewards(user1);
-        uint[] memory rewards2 = pool.pendingRewards(user2);
+        (, uint[] memory rewards1) = pool.pendingRewards(user1);
+        (, uint[] memory rewards2) = pool.pendingRewards(user2);
 
         // User1: (10 / 30) × 150 = 50 ether
         // User2: (20 / 30) × 150 = 100 ether
@@ -163,8 +163,8 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
         // Deposit rewards (total stake: 100 CROSS)
         _depositReward(address(rewardToken1), 1000 ether);
 
-        uint[] memory rewards1 = pool.pendingRewards(user1);
-        uint[] memory rewards2 = pool.pendingRewards(user2);
+        (, uint[] memory rewards1) = pool.pendingRewards(user1);
+        (, uint[] memory rewards2) = pool.pendingRewards(user2);
 
         // User1: 30%
         // User2: 70%
@@ -181,7 +181,7 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
         _depositReward(address(rewardToken1), 100 ether);
         _depositReward(address(rewardToken2), 200 ether);
 
-        uint[] memory rewards = pool.pendingRewards(user1);
+        (, uint[] memory rewards) = pool.pendingRewards(user1);
         assertApproxEqAbs(rewards[0], 100 ether, 10, "Reward token 1");
         assertApproxEqAbs(rewards[1], 200 ether, 10, "Reward token 2");
     }
@@ -206,8 +206,8 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
         _warpDays(9);
 
         // Day 20: evaluate rewards
-        uint[] memory rewardsA = pool.pendingRewards(user1);
-        uint[] memory rewardsB = pool.pendingRewards(user2);
+        (, uint[] memory rewardsA) = pool.pendingRewards(user1);
+        (, uint[] memory rewardsB) = pool.pendingRewards(user2);
 
         // User A: 100 from reward1 (full share) + 100 from reward2 (50% share) = 200
         // User B: 0 from reward1 (joined later) + 100 from reward2 (50% share) = 100
@@ -224,11 +224,15 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
         // Deposit rewards with no stakers
         _depositReward(address(rewardToken1), 100 ether);
 
-        // First staker should receive rewards accumulated while pool was empty
+        // First staker should NOT receive rewards accumulated while pool was empty
+        // Those rewards are marked as withdrawable instead
         _userStake(user1, 10 ether);
 
-        uint[] memory rewards = pool.pendingRewards(user1);
-        assertEq(rewards[0], 100 ether, "First staker gets all rewards deposited when pool was empty");
+        (, uint[] memory rewards) = pool.pendingRewards(user1);
+        assertEq(rewards[0], 0, "First staker does NOT get rewards deposited when pool was empty");
+
+        // The 100 ether should be withdrawable by owner
+        assertEq(pool.getWithdrawableAmount(rewardToken1), 100 ether, "Rewards are withdrawable");
     }
 
     function testInvalidRewardTokenIndex() public {
@@ -248,7 +252,7 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
         vm.stopPrank();
 
         // Verify no rewards were created
-        uint[] memory rewards = pool.pendingRewards(user1);
+        (, uint[] memory rewards) = pool.pendingRewards(user1);
         assertEq(rewards[0], 0, "No reward for 0 transfer");
     }
 
@@ -261,12 +265,12 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
         pool.claimRewards();
 
         // Pending rewards should be zero
-        uint[] memory rewards = pool.pendingRewards(user1);
+        (, uint[] memory rewards) = pool.pendingRewards(user1);
         assertEq(rewards[0], 0, "Pending rewards should be zero after claim");
 
         // New reward
         _depositReward(address(rewardToken1), 50 ether);
-        rewards = pool.pendingRewards(user1);
+        (, rewards) = pool.pendingRewards(user1);
         assertEq(rewards[0], 50 ether, "New rewards should accumulate");
     }
 
@@ -283,7 +287,7 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
         _userStake(user2, 10 ether);
 
         // Reward should reflect the transfer
-        uint[] memory rewardsAfter = pool.pendingRewards(user1);
+        (, uint[] memory rewardsAfter) = pool.pendingRewards(user1);
         assertEq(rewardsAfter[0], 100 ether, "Direct transfer detected on next action");
     }
 
@@ -299,7 +303,7 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
         _depositReward(address(rewardToken1), 100 ether);
 
         // Verify reward equals 50 + 100 = 150
-        uint[] memory rewards = pool.pendingRewards(user1);
+        (, uint[] memory rewards) = pool.pendingRewards(user1);
         assertEq(rewards[0], 150 ether, "Total rewards should include direct transfer");
     }
 
@@ -316,7 +320,7 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
         // One additional action detects them all
         _userStake(user2, 10 ether);
 
-        uint[] memory rewards = pool.pendingRewards(user1);
+        (, uint[] memory rewards) = pool.pendingRewards(user1);
         assertEq(rewards[0], 100 ether, "All direct transfers should be detected");
     }
 
@@ -337,8 +341,8 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
         // User1 (1 ether stake): gets exactly 33.333... ether
         // User2 (2 ether stake): gets exactly 66.666... ether
 
-        uint[] memory rewards1 = pool.pendingRewards(user1);
-        uint[] memory rewards2 = pool.pendingRewards(user2);
+        (, uint[] memory rewards1) = pool.pendingRewards(user1);
+        (, uint[] memory rewards2) = pool.pendingRewards(user2);
 
         // Verify almost exact distribution (dust in wei, not ether!)
         assertApproxEqAbs(rewards1[0], 33.333333333333333333 ether, 1, "User1 gets 1/3");
@@ -510,5 +514,117 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
             user1Balance + user2Balance + poolBalance,
             "Total deposited must equal total claimed + pool balance"
         );
+    }
+
+    // ==================== Zero stake reward handling tests ====================
+
+    function testRewardDepositWhenNoStakers() public {
+        // No one has staked yet
+        assertEq(pool.totalStaked(), 0, "No stakers initially");
+
+        // Deposit rewards when totalStaked = 0 (rewardToken1 is already registered in setup)
+        _depositReward(address(rewardToken1), 100 ether);
+
+        // Trigger a stake to cause sync (this will make the contract recognize the deposit)
+        _userStake(user1, 1 ether);
+
+        // Now the rewards should be marked as withdrawable
+        uint withdrawable = pool.getWithdrawableAmount(rewardToken1);
+        assertEq(withdrawable, 100 ether, "Rewards deposited when stake=0 should be withdrawable");
+
+        // Owner can withdraw via CrossStaking
+        uint ownerBalanceBefore = rewardToken1.balanceOf(owner);
+        crossStaking.withdrawFromPool(1, rewardToken1, owner);
+        assertEq(rewardToken1.balanceOf(owner) - ownerBalanceBefore, 100 ether, "Owner withdrew unallocated rewards");
+
+        // User should not have rewards (deposited before their stake)
+        (, uint[] memory rewards) = pool.pendingRewards(user1);
+        assertEq(rewards[0], 0, "User should not have rewards from pre-stake deposit");
+    }
+
+    function testRewardDepositBeforeAndAfterStake() public {
+        // Deposit before any stake
+        _depositReward(address(rewardToken1), 50 ether);
+
+        // User stakes (this triggers sync and marks the 50 ether as withdrawable)
+        _userStake(user1, 10 ether);
+
+        // Check withdrawable amount
+        assertEq(pool.getWithdrawableAmount(rewardToken1), 50 ether, "50 ether withdrawable");
+
+        // Deposit more rewards after stake
+        _depositReward(address(rewardToken1), 100 ether);
+
+        // User should only get the 100 ether deposited after stake
+        (, uint[] memory rewards) = pool.pendingRewards(user1);
+        assertApproxEqAbs(rewards[0], 100 ether, 100, "User gets only post-stake rewards");
+
+        // Initial 50 ether should still be withdrawable
+        assertEq(pool.getWithdrawableAmount(rewardToken1), 50 ether, "Initial 50 ether still withdrawable");
+    }
+
+    function testWithdrawZeroStakeRewards() public {
+        // Deposit when no stakers
+        _depositReward(address(rewardToken1), 200 ether);
+
+        // Stake to trigger sync
+        _userStake(user1, 1 ether);
+
+        // Verify withdrawable amount
+        assertEq(pool.getWithdrawableAmount(rewardToken1), 200 ether, "200 ether withdrawable");
+
+        // Withdraw via CrossStaking
+        uint ownerBalanceBefore = rewardToken1.balanceOf(owner);
+        crossStaking.withdrawFromPool(1, rewardToken1, owner);
+        assertEq(rewardToken1.balanceOf(owner) - ownerBalanceBefore, 200 ether, "Withdrew all");
+
+        // No more withdrawable
+        assertEq(pool.getWithdrawableAmount(rewardToken1), 0, "Nothing left to withdraw");
+    }
+
+    function testCannotWithdrawAllocatedRewards() public {
+        // User stakes first
+        _userStake(user1, 10 ether);
+
+        // Deposit rewards (will be allocated to user1)
+        _depositReward(address(rewardToken1), 100 ether);
+
+        // No withdrawable amount since rewards are allocated
+        assertEq(pool.getWithdrawableAmount(rewardToken1), 0, "No withdrawable amount");
+
+        // Cannot withdraw
+        vm.expectRevert(CrossStakingPool.CSPNoWithdrawableAmount.selector);
+        crossStaking.withdrawFromPool(1, rewardToken1, owner);
+    }
+
+    function testMultipleUsersAfterZeroStakeDeposit() public {
+        // Deposit when no stakers
+        _depositReward(address(rewardToken1), 100 ether);
+
+        // User1 stakes (triggers sync, marks 100 ether as withdrawable)
+        _userStake(user1, 10 ether);
+
+        // Initial 100 ether should be withdrawable
+        assertEq(pool.getWithdrawableAmount(rewardToken1), 100 ether, "Initial deposit withdrawable");
+
+        // Deposit more rewards
+        _depositReward(address(rewardToken1), 200 ether);
+
+        // User2 stakes
+        _userStake(user2, 10 ether);
+
+        // Deposit more rewards
+        _depositReward(address(rewardToken1), 300 ether);
+
+        // User1 should get: 200 (alone) + 150 (half of 300) = 350
+        // User2 should get: 150 (half of 300)
+        (, uint[] memory rewards1) = pool.pendingRewards(user1);
+        (, uint[] memory rewards2) = pool.pendingRewards(user2);
+
+        assertApproxEqAbs(rewards1[0], 350 ether, 100, "User1 rewards");
+        assertApproxEqAbs(rewards2[0], 150 ether, 100, "User2 rewards");
+
+        // Initial 100 ether still withdrawable
+        assertEq(pool.getWithdrawableAmount(rewardToken1), 100 ether, "Initial deposit still withdrawable");
     }
 }

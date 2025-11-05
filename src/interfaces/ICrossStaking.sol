@@ -1,17 +1,19 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import {ICrossStakingPool} from "./ICrossStakingPool.sol";
-
-import {IWCROSS} from "./IWCROSS.sol";
+import {IERC5313} from "@openzeppelin/contracts/interfaces/IERC5313.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
+import {ICrossStakingPool} from "./ICrossStakingPool.sol";
+import {IWCROSS} from "./IWCROSS.sol";
 
 /**
  * @title ICrossStaking
  * @notice Interface for the CrossStaking factory contract
  * @dev Defines the structure and functions for managing multiple staking pools
+ *      Implements IERC5313 for standard owner() function
  */
-interface ICrossStaking {
+interface ICrossStaking is IERC5313 {
     /**
      * @notice Pool information structure
      * @param poolId Unique identifier for the pool
@@ -50,9 +52,6 @@ interface ICrossStaking {
 
     /// @notice Removes a reward token from a pool
     function removeRewardToken(uint poolId, IERC20 token) external;
-
-    /// @notice Sets the active status of a pool
-    function setPoolActive(uint poolId, bool active) external;
 
     /// @notice Sets the router address
     function setRouter(address _router) external;

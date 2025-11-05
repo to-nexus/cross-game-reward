@@ -4,7 +4,8 @@ pragma solidity 0.8.28;
 import {IERC20Permit} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
 import {IERC20, SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-import {CrossStakingPool, ICrossStaking, ICrossStakingPool} from "./CrossStakingPool.sol";
+import {ICrossStaking} from "./interfaces/ICrossStaking.sol";
+import {ICrossStakingPool} from "./interfaces/ICrossStakingPool.sol";
 import {ICrossStakingRouter} from "./interfaces/ICrossStakingRouter.sol";
 import {IWCROSS} from "./interfaces/IWCROSS.sol";
 
@@ -196,16 +197,17 @@ contract CrossStakingRouter is ICrossStakingRouter {
      * @param poolId ID of the pool
      * @param user Address of the user
      * @return stakedAmount Amount of tokens staked
+     * @return rewardTokens Array of reward token addresses
      * @return pendingRewards Array of pending rewards for each reward token
      */
     function getUserStakingInfo(uint poolId, address user)
         external
         view
-        returns (uint stakedAmount, uint[] memory pendingRewards)
+        returns (uint stakedAmount, address[] memory rewardTokens, uint[] memory pendingRewards)
     {
         ICrossStakingPool pool = _getPool(poolId);
         stakedAmount = pool.balances(user);
-        pendingRewards = pool.pendingRewards(user);
+        (rewardTokens, pendingRewards) = pool.pendingRewards(user);
     }
 
     /**
