@@ -72,17 +72,17 @@ contract WCROSS is ERC20, IWCROSS {
      * @param amount Amount of WCROSS to unwrap
      */
     function withdraw(uint amount) external {
-        withdrawTo(amount, msg.sender);
+        withdrawTo(msg.sender, amount);
     }
 
     /**
      * @notice Unwraps WCROSS to native CROSS and sends to specified address
      * @dev Only callable by the authorized router
      *      Burns WCROSS from msg.sender and sends native CROSS to recipient
-     * @param amount Amount of WCROSS to unwrap
      * @param to Address to receive the unwrapped native CROSS
+     * @param amount Amount of WCROSS to unwrap
      */
-    function withdrawTo(uint amount, address to) public {
+    function withdrawTo(address to, uint amount) public {
         require(msg.sender == staking.router(), WCROSSUnauthorized());
         _burn(msg.sender, amount);
 

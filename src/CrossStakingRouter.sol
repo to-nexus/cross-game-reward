@@ -125,7 +125,7 @@ contract CrossStakingRouter is ICrossStakingRouter {
         pool.unstakeFor(msg.sender);
 
         // Router unwraps and sends native CROSS directly to user
-        wcross.withdrawTo(stakedAmount, msg.sender);
+        wcross.withdrawTo(msg.sender, stakedAmount);
 
         emit UnstakedNative(msg.sender, poolId, stakedAmount);
     }

@@ -91,7 +91,7 @@ contract WCROSSTest is Test {
         // Withdraw directly to user (withdrawTo)
         uint balanceBefore = user1.balance;
         vm.prank(address(router));
-        wcross.withdrawTo(10 ether, user1);
+        wcross.withdrawTo(user1, 10 ether);
 
         assertEq(wcross.balanceOf(address(router)), 0, "WCROSS burned from router");
         assertEq(user1.balance, balanceBefore + 10 ether, "Native CROSS sent to user");

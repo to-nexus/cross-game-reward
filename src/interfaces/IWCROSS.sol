@@ -16,5 +16,5 @@ interface IWCROSS is IERC20 {
     function withdraw(uint amount) external;
 
     /// @notice Unwraps WCROSS to native CROSS and sends to specified address
-    function withdrawTo(uint amount, address to) external;
+    function withdrawTo(address to, uint amount) external;
 }
