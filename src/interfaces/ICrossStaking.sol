@@ -17,17 +17,15 @@ interface ICrossStaking is IERC5313 {
     /**
      * @notice Pool information structure
      * @param poolId Unique identifier for the pool
-     * @param poolAddress Address of the pool contract
+     * @param pool Address of the pool contract
      * @param stakingToken Address of the token that can be staked
      * @param createdAt Timestamp when the pool was created
-     * @param active Whether the pool is currently active
      */
     struct PoolInfo {
         uint poolId;
         ICrossStakingPool pool;
         IERC20 stakingToken;
         uint createdAt;
-        bool active;
     }
 
     /// @notice Returns the address of the WCROSS token

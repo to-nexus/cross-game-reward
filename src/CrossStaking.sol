@@ -55,11 +55,6 @@ contract CrossStaking is Initializable, AccessControl, UUPSUpgradeable, ICrossSt
     /// @param implementation The new implementation address
     event PoolImplementationSet(ICrossStakingPool indexed implementation);
 
-    /// @notice Emitted when a pool's active status changes
-    /// @param poolId The ID of the pool
-    /// @param active The new active status
-    event PoolStatusChanged(uint indexed poolId, bool active);
-
     /// @notice Emitted when the router address is set
     /// @param router The new router address
     event RouterSet(address indexed router);
@@ -72,6 +67,9 @@ contract CrossStaking is Initializable, AccessControl, UUPSUpgradeable, ICrossSt
     event WithdrawnFromPool(uint indexed poolId, IERC20 indexed token, address indexed to, uint amount);
 
     // ==================== State Variables ====================
+
+    /// @notice Block number when the contract was initialized
+    uint public initializedAt;
 
     /// @notice Address of the WCROSS token contract
     IWCROSS public wcross;
@@ -121,6 +119,7 @@ contract CrossStaking is Initializable, AccessControl, UUPSUpgradeable, ICrossSt
         __AccessControlDefaultAdminRules_init(_initialDelay, _admin);
         __UUPSUpgradeable_init();
 
+        initializedAt = block.number;
         poolImplementation = _poolImplementation;
         wcross = new WCROSS();
         nextPoolId = 1;
@@ -159,8 +158,7 @@ contract CrossStaking is Initializable, AccessControl, UUPSUpgradeable, ICrossSt
         pool = ICrossStakingPool(address(proxy));
 
         // Store pool information
-        pools[poolId] =
-            PoolInfo({poolId: poolId, pool: pool, stakingToken: stakingToken, createdAt: block.timestamp, active: true});
+        pools[poolId] = PoolInfo({poolId: poolId, pool: pool, stakingToken: stakingToken, createdAt: block.timestamp});
 
         poolIds[pool] = poolId;
         _allPoolIds.add(poolId);
@@ -235,13 +233,9 @@ contract CrossStaking is Initializable, AccessControl, UUPSUpgradeable, ICrossSt
     function setPoolStatus(uint poolId, ICrossStakingPool.PoolStatus status) external onlyRole(MANAGER_ROLE) {
         require(address(pools[poolId].pool) != address(0), CSPoolNotFound());
 
-        // Update active flag based on status
-        pools[poolId].active = (status == ICrossStakingPool.PoolStatus.Active);
-
         // Set pool status in the pool contract
         pools[poolId].pool.setPoolStatus(status);
-
-        emit PoolStatusChanged(poolId, pools[poolId].active);
+        // Event emitted by CrossStakingPool
     }
 
     /**
@@ -362,7 +356,7 @@ contract CrossStaking is Initializable, AccessControl, UUPSUpgradeable, ICrossSt
 
         for (uint i = 0; i < totalCount; i++) {
             uint poolId = _allPoolIds.at(i);
-            if (pools[poolId].active) {
+            if (pools[poolId].pool.poolStatus() == ICrossStakingPool.PoolStatus.Active) {
                 tempIds[activeCount] = poolId;
                 activeCount++;
             }
