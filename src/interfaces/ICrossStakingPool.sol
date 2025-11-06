@@ -51,6 +51,9 @@ interface ICrossStakingPool is IERC5313 {
         uint rewards;
     }
 
+    /// @notice Returns the pool status
+    function poolStatus() external view returns (PoolStatus);
+
     /// @notice Returns the staking token
     function stakingToken() external view returns (IERC20);
 

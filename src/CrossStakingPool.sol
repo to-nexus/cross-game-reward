@@ -94,6 +94,9 @@ contract CrossStakingPool is
 
     // ==================== Constants ====================
 
+    /// @notice Block number when the contract was initialized
+    uint public initializedAt;
+
     /// @notice Precision multiplier for reward calculations
     uint private constant PRECISION = 1e18;
 
@@ -214,6 +217,7 @@ contract CrossStakingPool is
         __ReentrancyGuardTransient_init();
         __UUPSUpgradeable_init();
 
+        initializedAt = block.number;
         stakingToken = _stakingToken;
         minStakeAmount = _minStakeAmount;
         poolStatus = ICrossStakingPool.PoolStatus.Active;

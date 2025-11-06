@@ -76,7 +76,7 @@ contract CrossStakingTest is Test {
         assertEq(info.poolId, poolId, "Pool ID");
         assertEq(address(info.pool), address(pool), "Pool address");
         assertEq(address(info.stakingToken), address(wcross), "Staking token");
-        assertTrue(info.active, "Active by default");
+        assertTrue(info.pool.poolStatus() == ICrossStakingPool.PoolStatus.Active, "Active by default");
     }
 
     function testCreateMultiplePools() public {
@@ -158,7 +158,7 @@ contract CrossStakingTest is Test {
         crossStaking.setPoolStatus(poolId, ICrossStakingPool.PoolStatus.Inactive);
 
         CrossStaking.PoolInfo memory info = crossStaking.getPoolInfo(poolId);
-        assertFalse(info.active, "Pool inactive");
+        assertFalse(info.pool.poolStatus() == ICrossStakingPool.PoolStatus.Active, "Pool inactive");
         assertEq(uint(pool.poolStatus()), 1, "Status inactive");
         assertFalse(pool.paused(), "Not paused");
 
@@ -166,7 +166,7 @@ contract CrossStakingTest is Test {
         crossStaking.setPoolStatus(poolId, ICrossStakingPool.PoolStatus.Paused);
 
         info = crossStaking.getPoolInfo(poolId);
-        assertFalse(info.active, "Pool paused (not active)");
+        assertFalse(info.pool.poolStatus() == ICrossStakingPool.PoolStatus.Active, "Pool paused (not active)");
         assertEq(uint(pool.poolStatus()), 2, "Status paused");
         assertTrue(pool.paused(), "Paused");
 
@@ -174,7 +174,7 @@ contract CrossStakingTest is Test {
         crossStaking.setPoolStatus(poolId, ICrossStakingPool.PoolStatus.Active);
 
         info = crossStaking.getPoolInfo(poolId);
-        assertTrue(info.active, "Pool active");
+        assertTrue(info.pool.poolStatus() == ICrossStakingPool.PoolStatus.Active, "Pool active");
         assertEq(uint(pool.poolStatus()), 0, "Status active");
         assertFalse(pool.paused(), "Not paused");
     }
@@ -202,7 +202,7 @@ contract CrossStakingTest is Test {
         assertEq(info.poolId, poolId, "Pool ID");
         assertEq(address(info.pool), address(pool), "Pool address");
         assertEq(address(info.stakingToken), address(wcross), "Staking token");
-        assertTrue(info.active, "Active");
+        assertTrue(info.pool.poolStatus() == ICrossStakingPool.PoolStatus.Active, "Active");
     }
 
     function testPoolAt() public {
