@@ -1,22 +1,22 @@
-# Cross Staking 테스트 가이드
+# Cross GameReward 테스트 가이드
 
 ## 📁 테스트 구조
 
 ```
 test/
 ├── base/
-│   └── CrossStakingPoolBase.t.sol          # 공통 Base 컨트랙트
+│   └── CrossGameRewardPoolBase.t.sol          # 공통 Base 컨트랙트
 ├── mocks/
 │   └── MockERC20.sol                       # 테스트용 ERC20 토큰
 ├── WCROSS.t.sol                            # WCROSS 테스트 (21개)
-├── CrossStaking.t.sol                      # CrossStaking 테스트 (15개)
-├── CrossStakingRouter.t.sol                # CrossStakingRouter 테스트 (15개)
+├── CrossGameReward.t.sol                      # CrossGameReward 테스트 (15개)
+├── CrossGameRewardRouter.t.sol                # CrossGameRewardRouter 테스트 (15개)
 ├── FullIntegration.t.sol                   # 전체 통합 테스트 (9개)
-├── CrossStakingPoolStaking.t.sol           # 스테이킹 테스트 (18개)
-├── CrossStakingPoolRewards.t.sol           # 보상 테스트 (18개)
-├── CrossStakingPoolAdmin.t.sol             # 관리자 테스트 (24개)
-├── CrossStakingPoolIntegration.t.sol       # Pool 통합 테스트 (11개)
-└── CrossStakingPoolSecurity.t.sol          # 보안 테스트 (21개)
+├── CrossGameRewardPoolDeposit.t.sol           # 디파짓 테스트 (18개)
+├── CrossGameRewardPoolRewards.t.sol           # 보상 테스트 (18개)
+├── CrossGameRewardPoolAdmin.t.sol             # 관리자 테스트 (24개)
+├── CrossGameRewardPoolIntegration.t.sol       # Pool 통합 테스트 (11개)
+└── CrossGameRewardPoolSecurity.t.sol          # 보안 테스트 (21개)
 ```
 
 ---
@@ -45,18 +45,18 @@ test/
 #### 이벤트
 - `testDepositEvent`, `testWithdrawalEvent`
 
-**참고**: WCROSS는 Router 전용 설계로, CrossStaking.router()로 등록된 주소만 deposit/withdraw 가능합니다.
+**참고**: WCROSS는 Router 전용 설계로, CrossGameReward.router()로 등록된 주소만 deposit/withdraw 가능합니다.
 
 ---
 
-### 2. CrossStaking Test (33개)
+### 2. CrossGameReward Test (33개)
 
 **테스트 대상:** 풀 팩토리 및 관리
 
 #### 풀 생성
 - `testCreatePool` - 기본 풀 생성
 - `testCreateMultiplePools` - 다중 풀 생성
-- `testMultiplePoolsWithSameStakingToken` - 같은 토큰 다중 풀
+- `testMultiplePoolsWithSameDepositToken` - 같은 토큰 다중 풀
 - `testCannotCreatePoolWithZeroAddress` - 검증
 
 #### 풀 조회
@@ -65,7 +65,7 @@ test/
 - `testGetPoolId` - ID로 조회
 - `testGetTotalPoolCount` - 전체 개수
 - `testGetAllPoolIds` - 모든 ID
-- `testGetPoolIdsByStakingToken` - 토큰별 풀 조회
+- `testGetPoolIdsByDepositToken` - 토큰별 풀 조회
 - `testCannotGetNonExistentPool` - 존재하지 않는 풀
 
 #### Router 관리
@@ -77,31 +77,31 @@ test/
 
 ---
 
-### 3. CrossStakingRouter Test (28개)
+### 3. CrossGameRewardRouter Test (28개)
 
 **테스트 대상:** 사용자 인터페이스 라우터
 
-#### Native CROSS 스테이킹
-- `testStakeNative` - Native CROSS 스테이킹
-- `testStakeNativeMultipleTimes` - 다중 스테이킹
-- `testUnstakeNative` - Native CROSS 언스테이킹
-- `testCannotStakeNativeZero` - 0 방지
-- `testCannotStakeNativeOnERC20Pool` - 풀 검증
-- `testCannotUnstakeNativeWithoutStake` - 스테이킹 없음
+#### Native CROSS 디파짓
+- `testDepositNative` - Native CROSS 디파짓
+- `testDepositNativeMultipleTimes` - 다중 디파짓
+- `testWithdrawNative` - Native CROSS 언디파짓
+- `testCannotDepositNativeZero` - 0 방지
+- `testCannotDepositNativeOnERC20Pool` - 풀 검증
+- `testCannotWithdrawNativeWithoutDeposit` - 디파짓 없음
 
-#### ERC20 스테이킹
-- `testStakeERC20` - ERC20 스테이킹
-- `testStakeERC20MultipleTimes` - 다중 스테이킹
-- `testUnstakeERC20` - ERC20 언스테이킹
-- `testCannotStakeERC20Zero` - 0 방지
-- `testCannotUnstakeERC20WithoutStake` - 스테이킹 없음
+#### ERC20 디파짓
+- `testDepositERC20` - ERC20 디파짓
+- `testDepositERC20MultipleTimes` - 다중 디파짓
+- `testWithdrawERC20` - ERC20 언디파짓
+- `testCannotDepositERC20Zero` - 0 방지
+- `testCannotWithdrawERC20WithoutDeposit` - 디파짓 없음
 
 #### View 함수
-- `testGetUserStakingInfo` - 사용자 정보 조회
+- `testGetUserDepositInfo` - 사용자 정보 조회
 - `testIsNativePool` - Native 풀 확인
 
 #### 복잡한 시나리오
-- `testMultiUserNativeStaking` - 다중 사용자
+- `testMultiUserNativeDeposit` - 다중 사용자
 - `testMixedPoolUsage` - 혼합 사용
 
 ---
@@ -116,11 +116,11 @@ test/
 - `testRealWorldScenario` - 실전 시나리오
 
 #### 에지 케이스
-- `testStakeUnstakeStake` - 재예치 시나리오
+- `testDepositWithdrawDeposit` - 재예치 시나리오
 - `testMultipleRewardRounds` - 다중 보상 라운드
 
 #### 보안 검증
-- `testCannotUnstakeOthersStake` - 타인 자금 보호
+- `testCannotWithdrawOthersDeposit` - 타인 자금 보호
 - `testReentrancyProtection` - 재진입 방지
 
 #### 일관성 검증
@@ -129,11 +129,11 @@ test/
 
 ---
 
-### 5. CrossStakingPool Test (92개)
+### 5. CrossGameRewardPool Test (92개)
 
-기존 CrossStakingPool 단위 테스트
+기존 CrossGameRewardPool 단위 테스트
 
-#### Staking (18개)
+#### Deposit (18개)
 - 기본 기능, 금액 검증, 추가 기능, 상태 추적, 에러 케이스
 
 #### Rewards (18개)
@@ -163,16 +163,16 @@ forge test
 Test Suite                      | Passed | Failed
 ================================+========+========
 WCROSS                         |   10   |   0
-CrossStaking                   |   33   |   0
-CrossStakingRouter             |   28   |   0
+CrossGameReward                   |   33   |   0
+CrossGameRewardRouter             |   28   |   0
 FullIntegration                |    9   |   0
-CrossStakingPoolStaking        |   21   |   0
-CrossStakingPoolRewards        |   27   |   0
-CrossStakingPoolAdmin          |   34   |   0
-CrossStakingPoolIntegration    |   11   |   0
-CrossStakingPoolPendingRewards |    9   |   0
-CrossStakingPoolSecurity       |   21   |   0
-CrossStakingPoolEdgeCases      |   12   |   0
+CrossGameRewardPoolDeposit        |   21   |   0
+CrossGameRewardPoolRewards        |   27   |   0
+CrossGameRewardPoolAdmin          |   34   |   0
+CrossGameRewardPoolIntegration    |   11   |   0
+CrossGameRewardPoolPendingRewards |    9   |   0
+CrossGameRewardPoolSecurity       |   21   |   0
+CrossGameRewardPoolEdgeCases      |   12   |   0
 -----------------------------------+--------+--------
 Total                          |  212   |   0
 ```
@@ -183,24 +183,24 @@ Total                          |  212   |   0
 # WCROSS 테스트만
 forge test --match-contract WCROSSTest
 
-# CrossStaking 테스트만
-forge test --match-contract CrossStakingTest
+# CrossGameReward 테스트만
+forge test --match-contract CrossGameRewardTest
 
 # Router 테스트만
-forge test --match-contract CrossStakingRouterTest
+forge test --match-contract CrossGameRewardRouterTest
 
 # 통합 테스트만
 forge test --match-contract FullIntegrationTest
 
 # Pool 테스트만
-forge test --match-contract CrossStakingPool
+forge test --match-contract CrossGameRewardPool
 ```
 
 ### 특정 테스트 실행
 
 ```bash
 # 함수명으로 검색
-forge test --match-test testStakeNative
+forge test --match-test testDepositNative
 
 # Verbose 모드
 forge test --match-test testCompleteUserJourney -vvv
@@ -219,11 +219,11 @@ forge coverage
 
 ## 📊 Helper 함수
 
-### CrossStakingPoolBase
+### CrossGameRewardPoolBase
 
 ```solidity
-// 사용자 스테이킹
-function _userStake(address user, uint amount) internal;
+// 사용자 디파짓
+function _userDeposit(address user, uint amount) internal;
 
 // 보상 입금 (직접 transfer)
 function _depositReward(address rewardToken, uint amount) internal;
@@ -239,9 +239,9 @@ function _warpSeconds(uint seconds_) internal;
 
 ### 기능 테스트 (Functional)
 - WCROSS: 래핑/언래핑
-- CrossStaking: 풀 생성/관리
-- CrossStakingRouter: 사용자 상호작용
-- CrossStakingPool: 스테이킹/보상
+- CrossGameReward: 풀 생성/관리
+- CrossGameRewardRouter: 사용자 상호작용
+- CrossGameRewardPool: 디파짓/보상
 
 ### 통합 테스트 (Integration)
 - 전체 시스템 플로우
@@ -266,8 +266,8 @@ assertApproxEqAbs(userReward, expectedReward, 1 ether);
 
 ### 2. 상태 일관성
 ```solidity
-// totalStaked == 실제 잔액
-assertEq(pool.totalStaked(), stakingToken.balanceOf(address(pool)));
+// totalDeposited == 실제 잔액
+assertEq(pool.totalDeposited(), depositToken.balanceOf(address(pool)));
 ```
 
 ### 3. rewardPerToken 누적
@@ -278,7 +278,7 @@ assertGe(newRewardPerToken, oldRewardPerToken);
 
 ### 4. Native CROSS 플로우
 ```solidity
-// Native -> WCROSS -> Stake -> Unstake -> WCROSS -> Native
+// Native -> WCROSS -> Deposit -> Withdraw -> WCROSS -> Native
 assertEq(userNativeBalance, expectedNativeBalance);
 ```
 
@@ -328,18 +328,18 @@ assertEq(userNativeBalance, expectedNativeBalance);
 
 1. **적절한 파일 선택**
    - WCROSS 관련 → `WCROSS.t.sol`
-   - 풀 관리 → `CrossStaking.t.sol`
-   - 사용자 상호작용 → `CrossStakingRouter.t.sol`
+   - 풀 관리 → `CrossGameReward.t.sol`
+   - 사용자 상호작용 → `CrossGameRewardRouter.t.sol`
    - 전체 플로우 → `FullIntegration.t.sol`
-   - Pool 기능 → `CrossStakingPool*.t.sol`
+   - Pool 기능 → `CrossGameRewardPool*.t.sol`
 
 2. **Helper 함수 활용**
-   - `CrossStakingPoolBase`의 helper 사용
+   - `CrossGameRewardPoolBase`의 helper 사용
    - 코드 중복 최소화
 
 3. **명확한 테스트명**
    - `test<Action><Condition>` 형식
-   - 예: `testStakeNativeMultipleTimes`
+   - 예: `testDepositNativeMultipleTimes`
 
 4. **충분한 검증**
    - 상태 변경 확인

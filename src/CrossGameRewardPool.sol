@@ -8,53 +8,53 @@ import {ReentrancyGuardTransientUpgradeable} from
 import {IERC20, SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
-import {ICrossStaking} from "./interfaces/ICrossStaking.sol";
-import {ICrossStakingPool} from "./interfaces/ICrossStakingPool.sol";
+import {ICrossGameReward} from "./interfaces/ICrossGameReward.sol";
+import {ICrossGameRewardPool} from "./interfaces/ICrossGameRewardPool.sol";
 
 /**
- * @title CrossStakingPool
- * @notice Staking pool with real-time reward distribution mechanism
+ * @title CrossGameRewardPool
+ * @notice Game reward pool with real-time reward distribution mechanism
  * @dev Implements rewardPerToken accumulation pattern with UUPS upgradeability
  *
  * === Core Principles ===
  *
  * Reward Distribution:
- *   - Users only receive rewards deposited after their stake
- *   - Rewards are distributed proportionally based on stake amount at deposit time
+ *   - Users only receive rewards deposited after their deposit
+ *   - Rewards are distributed proportionally based on deposit amount at deposit time
  *   - Uses cumulative rewardPerToken accounting
- *   - Zero-stake deposits are marked as withdrawable (owner can reclaim)
+ *   - Zero-deposit rewards are marked as reclaimable (owner can reclaim)
  *
  * === Fairness ===
  *
- * Early stakers:
+ * Early depositors:
  *   - Receive rewards for a longer duration
- *   - Each reward is distributed proportionally to current stake amounts
- *   - Do NOT receive rewards deposited before their stake
+ *   - Each reward is distributed proportionally to current deposit amounts
+ *   - Do NOT receive rewards deposited before their deposit
  *
  * === Upgradeability ===
  *
  * UUPS Pattern:
  *   - Owner-only upgrade authorization
- *   - Simplified access control (onlyOwner/onlyStakingRoot)
+ *   - Simplified access control (onlyOwner/onlyRewardRoot)
  *   - Built-in Pausable functionality via pool status
  */
-contract CrossStakingPool is
+contract CrossGameRewardPool is
     Initializable,
     PausableUpgradeable,
     ReentrancyGuardTransientUpgradeable,
     UUPSUpgradeable,
-    ICrossStakingPool
+    ICrossGameRewardPool
 {
     using SafeERC20 for IERC20;
     using EnumerableSet for EnumerableSet.AddressSet;
 
     // ==================== Custom Errors ====================
 
-    /// @notice Thrown when stake amount is below minimum required
-    error CSPBelowMinimumStakeAmount();
+    /// @notice Thrown when deposit amount is below minimum required
+    error CSPBelowMinimumDepositAmount();
 
-    /// @notice Thrown when attempting to unstake with no active stake
-    error CSPNoStakeFound();
+    /// @notice Thrown when attempting to withdraw with no active deposit
+    error CSPNoDepositFound();
 
     /// @notice Thrown when a zero address is provided where it's not allowed
     error CSPCanNotZeroAddress();
@@ -68,14 +68,14 @@ contract CrossStakingPool is
     /// @notice Thrown when accessing an invalid reward token
     error CSPInvalidRewardToken();
 
-    /// @notice Thrown when attempting to use staking token as reward token
-    error CSPCanNotUseStakingToken();
+    /// @notice Thrown when attempting to use deposit token as reward token
+    error CSPCanNotUseDepositToken();
 
     /// @notice Thrown when caller is not the authorized router
     error CSPOnlyRouter();
 
-    /// @notice Thrown when attempting withdraw with no withdrawable amount
-    error CSPNoWithdrawableAmount();
+    /// @notice Thrown when attempting reclaim with no reclaimable amount
+    error CSPNoReclaimableAmount();
 
     /// @notice Thrown when attempting to call a function that is not allowed
     error CSPNotAllowedFunction();
@@ -83,11 +83,11 @@ contract CrossStakingPool is
     /// @notice Thrown when caller is not the owner of the pool
     error CSPOnlyOwner();
 
-    /// @notice Thrown when caller is not the staking root
-    error CSPOnlyStakingRoot();
+    /// @notice Thrown when caller is not the reward root
+    error CSPOnlyRewardRoot();
 
-    /// @notice Thrown when attempting to stake in an inactive or paused pool
-    error CSPCannotStakeInCurrentState();
+    /// @notice Thrown when attempting to deposit in an inactive or paused pool
+    error CSPCannotDepositInCurrentState();
 
     /// @notice Thrown when attempting an operation not allowed in current pool state
     error CSPOperationNotAllowedInCurrentState();
@@ -102,14 +102,14 @@ contract CrossStakingPool is
 
     // ==================== State Variables ====================
 
-    /// @notice The staking token (e.g., CROSS or WCROSS)
-    IERC20 public stakingToken;
+    /// @notice The deposit token
+    IERC20 public depositToken;
 
-    /// @notice CrossStaking contract address (used for router validation)
-    ICrossStaking public crossStaking;
+    /// @notice CrossGameReward contract address (used for router validation)
+    ICrossGameReward public crossGameReward;
 
-    /// @notice Minimum amount required for staking
-    uint public minStakeAmount;
+    /// @notice Minimum amount required for depositing
+    uint public minDepositAmount;
 
     /// @notice Set of active reward token addresses
     EnumerableSet.AddressSet private _rewardTokenAddresses;
@@ -120,29 +120,29 @@ contract CrossStakingPool is
     /// @notice Mapping from reward token to reward token data
     mapping(IERC20 => RewardToken) private _rewardTokenData;
 
-    /// @notice Mapping from user address to staked balance
+    /// @notice Mapping from user address to deposited balance
     mapping(address => uint) public balances;
 
     /// @notice Mapping from user address to reward token to user reward data
     mapping(address => mapping(IERC20 => UserReward)) public userRewards;
 
-    /// @notice Total amount of tokens staked in the pool
-    uint public totalStaked;
+    /// @notice Total amount of tokens deposited in the pool
+    uint public totalDeposited;
 
     /// @notice Current status of the pool
-    ICrossStakingPool.PoolStatus public poolStatus;
+    ICrossGameRewardPool.PoolStatus public poolStatus;
 
     // ==================== Events ====================
 
-    /// @notice Emitted when a account stakes tokens
-    /// @param account Address of the account who staked
-    /// @param amount Amount of tokens staked
-    event Staked(address indexed account, uint amount);
+    /// @notice Emitted when a account deposits tokens
+    /// @param account Address of the account who deposited
+    /// @param amount Amount of tokens deposited
+    event Deposited(address indexed account, uint amount);
 
-    /// @notice Emitted when a account unstakes tokens
-    /// @param account Address of the account who unstaked
-    /// @param amount Amount of tokens unstaked
-    event Unstaked(address indexed account, uint amount);
+    /// @notice Emitted when a account withdraws tokens
+    /// @param account Address of the account who withdrew
+    /// @param amount Amount of tokens withdrawn
+    event Withdrawn(address indexed account, uint amount);
 
     /// @notice Emitted when a account claims rewards
     /// @param account Address of the account who claimed
@@ -161,24 +161,24 @@ contract CrossStakingPool is
     /// @notice Emitted when rewards are synced to the pool
     /// @param token Address of the reward token
     /// @param amount Amount of rewards added to the pool
-    /// @param totalStaked Total amount of tokens staked in the pool
-    event RewardSynced(IERC20 indexed token, uint amount, uint totalStaked);
+    /// @param totalDeposited Total amount of tokens deposited in the pool
+    event RewardSynced(IERC20 indexed token, uint amount, uint totalDeposited);
 
-    /// @notice Emitted when admin performs withdrawal
+    /// @notice Emitted when admin reclaims tokens
     /// @param token Address of the reward token
-    /// @param to Address receiving the withdrawn tokens
-    /// @param amount Amount withdrawn
-    event Withdraw(IERC20 indexed token, address indexed to, uint amount);
+    /// @param to Address receiving the reclaimed tokens
+    /// @param amount Amount reclaimed
+    event TokensReclaimed(IERC20 indexed token, address indexed to, uint amount);
 
-    /// @notice Emitted when the minimum stake amount is updated
-    /// @param oldAmount Old minimum stake amount
-    /// @param newAmount New minimum stake amount
-    event MinStakeAmountUpdated(uint oldAmount, uint newAmount);
+    /// @notice Emitted when the minimum deposit amount is updated
+    /// @param oldAmount Old minimum deposit amount
+    /// @param newAmount New minimum deposit amount
+    event MinDepositAmountUpdated(uint oldAmount, uint newAmount);
 
     /// @notice Emitted when the pool status changes
     /// @param oldStatus Old pool status
     /// @param newStatus New pool status
-    event PoolStatusChanged(ICrossStakingPool.PoolStatus oldStatus, ICrossStakingPool.PoolStatus newStatus);
+    event PoolStatusChanged(ICrossGameRewardPool.PoolStatus oldStatus, ICrossGameRewardPool.PoolStatus newStatus);
 
     // ==================== Initializer ====================
 
@@ -192,103 +192,103 @@ contract CrossStakingPool is
         _;
     }
 
-    modifier onlyStakingRoot() {
-        require(msg.sender == address(crossStaking), CSPOnlyStakingRoot());
+    modifier onlyRewardRoot() {
+        require(msg.sender == address(crossGameReward), CSPOnlyRewardRoot());
         _;
     }
 
     /**
-     * @notice Initializes the CrossStakingPool contract
+     * @notice Initializes the CrossGameRewardPool contract
      * @dev Sets up roles and initializes inherited contracts
-     *      msg.sender must be CrossStaking contract
-     *      Pool's DEFAULT_ADMIN_ROLE = CrossStaking's owner (via owner() override)
-     *      STAKING_ROOT_ROLE is granted to CrossStaking contract for pool management
-     * @param _stakingToken Address of the token to be staked
-     * @param _minStakeAmount Minimum amount required for staking
+     *      msg.sender must be CrossGameReward contract
+     *      Pool's DEFAULT_ADMIN_ROLE = CrossGameReward's owner (via owner() override)
+     *      REWARD_ROOT_ROLE is granted to CrossGameReward contract for pool management
+     * @param _depositToken Address of the token to be deposited
+     * @param _minDepositAmount Minimum amount required for depositing
      */
-    function initialize(IERC20 _stakingToken, uint _minStakeAmount) external initializer {
-        require(address(_stakingToken) != address(0), CSPCanNotZeroAddress());
-        require(_minStakeAmount > 0, CSPCanNotZeroValue());
+    function initialize(IERC20 _depositToken, uint _minDepositAmount) external initializer {
+        require(address(_depositToken) != address(0), CSPCanNotZeroAddress());
+        require(_minDepositAmount > 0, CSPCanNotZeroValue());
 
-        // msg.sender is always CrossStaking contract
-        crossStaking = ICrossStaking(msg.sender);
+        // msg.sender is always CrossGameReward contract
+        crossGameReward = ICrossGameReward(msg.sender);
 
         __Pausable_init();
         __ReentrancyGuardTransient_init();
         __UUPSUpgradeable_init();
 
         initializedAt = block.number;
-        stakingToken = _stakingToken;
-        minStakeAmount = _minStakeAmount;
-        poolStatus = ICrossStakingPool.PoolStatus.Active;
+        depositToken = _depositToken;
+        minDepositAmount = _minDepositAmount;
+        poolStatus = ICrossGameRewardPool.PoolStatus.Active;
     }
 
     /**
      * @notice Returns the owner of this pool
-     * @dev Returns CrossStaking's owner (default admin)
-     *      This ensures pool owner is the CrossStaking contract's admin
-     * @return Address of the CrossStaking contract's default admin
+     * @dev Returns CrossGameReward's owner (default admin)
+     *      This ensures pool owner is the CrossGameReward contract's admin
+     * @return Address of the CrossGameReward contract's default admin
      */
     function owner() public view returns (address) {
-        return crossStaking.owner();
+        return crossGameReward.owner();
     }
 
     // ==================== External Functions ====================
 
     /**
-     * @notice Stakes tokens into the pool
-     * @dev Additional stakes are accumulated to existing balance
+     * @notice Deposits tokens into the pool
+     * @dev Additional deposits are accumulated to existing balance
      *      Only allowed when pool is Active
-     * @param amount Amount of tokens to stake
+     * @param amount Amount of tokens to deposit
      */
-    function stake(uint amount) external nonReentrant whenNotPaused {
-        require(poolStatus == ICrossStakingPool.PoolStatus.Active, CSPCannotStakeInCurrentState());
-        _stake(msg.sender, msg.sender, amount);
+    function deposit(uint amount) external nonReentrant whenNotPaused {
+        require(poolStatus == ICrossGameRewardPool.PoolStatus.Active, CSPCannotDepositInCurrentState());
+        _deposit(msg.sender, msg.sender, amount);
     }
 
     /**
-     * @notice Stakes tokens on behalf of another account (Router only)
+     * @notice Deposits tokens on behalf of another account (Router only)
      * @dev Verifies that msg.sender is the registered router
      *      Only allowed when pool is Active
-     * @param account Address of the account to stake for
-     * @param amount Amount of tokens to stake
+     * @param account Address of the account to deposit for
+     * @param amount Amount of tokens to deposit
      */
-    function stakeFor(address account, uint amount) external nonReentrant whenNotPaused {
-        require(poolStatus == ICrossStakingPool.PoolStatus.Active, CSPCannotStakeInCurrentState());
+    function depositFor(address account, uint amount) external nonReentrant whenNotPaused {
+        require(poolStatus == ICrossGameRewardPool.PoolStatus.Active, CSPCannotDepositInCurrentState());
         _checkDelegate(account);
-        _stake(msg.sender, account, amount);
+        _deposit(msg.sender, account, amount);
     }
 
     /**
-     * @notice Unstakes all staked tokens and claims all rewards
+     * @notice Withdraws all deposited tokens and claims all rewards
      * @dev Automatically claims all accumulated rewards
      *      Allowed in Active and Inactive states, blocked in Paused state
      */
-    function unstake() external nonReentrant whenNotPaused {
-        require(poolStatus != ICrossStakingPool.PoolStatus.Paused, CSPOperationNotAllowedInCurrentState());
-        _unstake(msg.sender, msg.sender);
+    function withdraw() external nonReentrant whenNotPaused {
+        require(poolStatus != ICrossGameRewardPool.PoolStatus.Paused, CSPOperationNotAllowedInCurrentState());
+        _withdraw(msg.sender, msg.sender);
     }
 
     /**
-     * @notice Unstakes tokens on behalf of another account (Router only)
+     * @notice Withdraws tokens on behalf of another account (Router only)
      * @dev Verifies that msg.sender is the registered router
      *      Allowed in Active and Inactive states, blocked in Paused state
-     * @param account Address of the account to unstake for
+     * @param account Address of the account to withdraw for
      */
-    function unstakeFor(address account) external nonReentrant whenNotPaused {
-        require(poolStatus != ICrossStakingPool.PoolStatus.Paused, CSPOperationNotAllowedInCurrentState());
+    function withdrawFor(address account) external nonReentrant whenNotPaused {
+        require(poolStatus != ICrossGameRewardPool.PoolStatus.Paused, CSPOperationNotAllowedInCurrentState());
         _checkDelegate(account);
-        _unstake(msg.sender, account);
+        _withdraw(msg.sender, account);
     }
 
     /**
-     * @notice Claims all pending rewards without unstaking
-     * @dev Staked tokens remain in the pool
+     * @notice Claims all pending rewards without withdrawing
+     * @dev Deposited tokens remain in the pool
      *      Allowed in Active and Inactive states, blocked in Paused state
      */
     function claimRewards() external nonReentrant whenNotPaused {
-        require(poolStatus != ICrossStakingPool.PoolStatus.Paused, CSPOperationNotAllowedInCurrentState());
-        require(balances[msg.sender] > 0, CSPNoStakeFound());
+        require(poolStatus != ICrossGameRewardPool.PoolStatus.Paused, CSPOperationNotAllowedInCurrentState());
+        require(balances[msg.sender] > 0, CSPNoDepositFound());
 
         _syncRewards();
         _updateRewards(msg.sender);
@@ -302,8 +302,8 @@ contract CrossStakingPool is
      * @param token Address of the reward token to claim
      */
     function claimReward(IERC20 token) external nonReentrant whenNotPaused {
-        require(poolStatus != ICrossStakingPool.PoolStatus.Paused, CSPOperationNotAllowedInCurrentState());
-        require(balances[msg.sender] > 0, CSPNoStakeFound());
+        require(poolStatus != ICrossGameRewardPool.PoolStatus.Paused, CSPOperationNotAllowedInCurrentState());
+        require(balances[msg.sender] > 0, CSPNoDepositFound());
         // Allow claiming even for removed tokens by checking only _rewardTokenData existence
         require(address(_rewardTokenData[token].token) != address(0), CSPInvalidRewardToken());
 
@@ -454,13 +454,13 @@ contract CrossStakingPool is
 
     /**
      * @notice Adds a new reward token to the pool
-     * @dev Only callable by CrossStaking contract
-     *      Cannot add staking token as reward token
+     * @dev Only callable by CrossGameReward contract
+     *      Cannot add deposit token as reward token
      * @param token Address of the reward token to add
      */
-    function addRewardToken(IERC20 token) external onlyStakingRoot {
+    function addRewardToken(IERC20 token) external onlyRewardRoot {
         require(address(token) != address(0), CSPCanNotZeroAddress());
-        require(address(token) != address(stakingToken), CSPCanNotUseStakingToken());
+        require(address(token) != address(depositToken), CSPCanNotUseDepositToken());
         require(_rewardTokenAddresses.add(address(token)), CSPRewardTokenAlreadyAdded());
         _removedRewardTokenAddresses.remove(address(token));
 
@@ -468,7 +468,7 @@ contract CrossStakingPool is
             token: token,
             rewardPerTokenStored: 0,
             lastBalance: 0,
-            withdrawableAmount: 0,
+            reclaimableAmount: 0,
             distributedAmount: 0,
             isRemoved: false
         });
@@ -478,11 +478,11 @@ contract CrossStakingPool is
 
     /**
      * @notice Removes a reward token from the pool
-     * @dev Only callable by CrossStaking contract
+     * @dev Only callable by CrossGameReward contract
      *      Accumulated rewards can still be claimed after removal
      * @param token Address of the reward token to remove
      */
-    function removeRewardToken(IERC20 token) external onlyStakingRoot {
+    function removeRewardToken(IERC20 token) external onlyRewardRoot {
         // Remove from EnumerableSet
         require(_rewardTokenAddresses.remove(address(token)), CSPInvalidRewardToken());
 
@@ -494,8 +494,8 @@ contract CrossStakingPool is
         uint currentBalance = token.balanceOf(address(this));
 
         // distributedAmount = amount that users can still claim
-        // withdrawableAmount stays as is (owner-withdrawable from zero-stake deposits)
-        rt.distributedAmount = currentBalance - rt.withdrawableAmount;
+        // reclaimableAmount stays as is (owner-reclaimable from zero-deposit rewards)
+        rt.distributedAmount = currentBalance - rt.reclaimableAmount;
         rt.isRemoved = true;
 
         _removedRewardTokenAddresses.add(address(token));
@@ -504,48 +504,48 @@ contract CrossStakingPool is
     }
 
     /**
-     * @notice Retrieves the amount available for withdrawal by owner
-     * @dev Withdrawable amount includes:
-     *      1. Tokens deposited when totalStaked was 0 (always in withdrawableAmount)
-     *      2. For removed tokens: new deposits after removal (currentBalance - distributedAmount - withdrawableAmount)
+     * @notice Retrieves the amount available for reclaim by owner
+     * @dev Reclaimable amount includes:
+     *      1. Tokens deposited when totalDeposited was 0 (always in reclaimableAmount)
+     *      2. For removed tokens: new deposits after removal (currentBalance - distributedAmount - reclaimableAmount)
      * @param token Address of the reward token
-     * @return Amount available for withdrawal by owner
+     * @return Amount available for reclaim by owner
      */
-    function getWithdrawableAmount(IERC20 token) public view returns (uint) {
+    function getReclaimableAmount(IERC20 token) public view returns (uint) {
         RewardToken storage rt = _rewardTokenData[token];
         uint currentBalance = token.balanceOf(address(this));
 
         // Case 1: Token is removed
         if (rt.isRemoved) {
-            // withdrawableAmount: owner-withdrawable (zero-stake deposits)
+            // reclaimableAmount: owner-reclaimable (zero-deposit rewards)
             // distributedAmount: user-claimable (distributed rewards)
-            // currentBalance - distributedAmount - withdrawableAmount = post-removal deposits
+            // currentBalance - distributedAmount - reclaimableAmount = post-removal deposits
             uint userClaimable = rt.distributedAmount;
-            uint ownerWithdrawable = rt.withdrawableAmount;
+            uint ownerReclaimable = rt.reclaimableAmount;
 
-            if (currentBalance > userClaimable + ownerWithdrawable) {
-                // Post-removal deposits + original withdrawable
-                return (currentBalance - userClaimable - ownerWithdrawable) + ownerWithdrawable;
+            if (currentBalance > userClaimable + ownerReclaimable) {
+                // Post-removal deposits + original reclaimable
+                return (currentBalance - userClaimable - ownerReclaimable) + ownerReclaimable;
             }
-            return ownerWithdrawable;
+            return ownerReclaimable;
         }
 
-        // Case 2: Token is active - only zero-stake deposits are withdrawable
-        return rt.withdrawableAmount;
+        // Case 2: Token is active - only zero-deposit rewards are reclaimable
+        return rt.reclaimableAmount;
     }
 
     /**
-     * @notice Performs withdrawal of excess tokens
-     * @dev Only callable by CrossStaking contract (STAKING_ROOT_ROLE)
-     *      Withdraws tokens that cannot be distributed:
-     *      - Tokens deposited when totalStaked was 0
+     * @notice Reclaims excess tokens
+     * @dev Only callable by CrossGameReward contract (REWARD_ROOT_ROLE)
+     *      Reclaims tokens that cannot be distributed:
+     *      - Tokens deposited when totalDeposited was 0
      *      - Tokens deposited after the reward token was removed
      * @param token Address of the reward token
-     * @param to Address to receive the withdrawn tokens
+     * @param to Address to receive the reclaimed tokens
      */
-    function withdraw(IERC20 token, address to) external onlyStakingRoot {
-        uint amount = getWithdrawableAmount(token);
-        require(amount > 0, CSPNoWithdrawableAmount());
+    function reclaimTokens(IERC20 token, address to) external onlyRewardRoot {
+        uint amount = getReclaimableAmount(token);
+        require(amount > 0, CSPNoReclaimableAmount());
         require(to != address(0), CSPCanNotZeroAddress());
 
         RewardToken storage rt = _rewardTokenData[token];
@@ -554,42 +554,42 @@ contract CrossStakingPool is
         // Update lastBalance
         rt.lastBalance = currentBalance - amount;
 
-        // Update withdrawableAmount
-        // For both active and removed tokens, we're withdrawing from withdrawableAmount
-        rt.withdrawableAmount = rt.withdrawableAmount > amount ? rt.withdrawableAmount - amount : 0;
+        // Update reclaimableAmount
+        // For both active and removed tokens, we're reclaiming from reclaimableAmount
+        rt.reclaimableAmount = rt.reclaimableAmount > amount ? rt.reclaimableAmount - amount : 0;
 
         token.safeTransfer(to, amount);
-        emit Withdraw(token, to, amount);
+        emit TokensReclaimed(token, to, amount);
     }
 
     /**
-     * @notice Sets the minimum stake amount
-     * @dev Only callable by CrossStaking contract
-     * @param amount Minimum stake amount
+     * @notice Sets the minimum deposit amount
+     * @dev Only callable by CrossGameReward contract
+     * @param amount Minimum deposit amount
      */
-    function updateMinStakeAmount(uint amount) external onlyStakingRoot {
+    function updateMinDepositAmount(uint amount) external onlyRewardRoot {
         require(amount > 0, CSPCanNotZeroValue());
-        emit MinStakeAmountUpdated(minStakeAmount, amount);
-        minStakeAmount = amount;
+        emit MinDepositAmountUpdated(minDepositAmount, amount);
+        minDepositAmount = amount;
     }
 
     /**
      * @notice Sets the pool status
-     * @dev Only callable by CrossStaking contract
+     * @dev Only callable by CrossGameReward contract
      *      Active: all operations allowed
-     *      Inactive: only claim and unstake allowed
+     *      Inactive: only claim and withdraw allowed
      *      Paused: no operations allowed (also triggers Pausable pause)
      * @param newStatus New pool status (as uint8 to avoid enum type issues)
      */
-    function setPoolStatus(ICrossStakingPool.PoolStatus newStatus) external onlyStakingRoot {
-        ICrossStakingPool.PoolStatus oldStatus = poolStatus;
+    function setPoolStatus(ICrossGameRewardPool.PoolStatus newStatus) external onlyRewardRoot {
+        ICrossGameRewardPool.PoolStatus oldStatus = poolStatus;
         require(oldStatus != newStatus, "Pool status unchanged");
 
         poolStatus = newStatus;
 
         // Sync Pausable state with PoolStatus
-        if (newStatus == ICrossStakingPool.PoolStatus.Paused && !paused()) _pause();
-        else if (newStatus != ICrossStakingPool.PoolStatus.Paused && paused()) _unpause();
+        if (newStatus == ICrossGameRewardPool.PoolStatus.Paused && !paused()) _pause();
+        else if (newStatus != ICrossGameRewardPool.PoolStatus.Paused && paused()) _unpause();
 
         emit PoolStatusChanged(oldStatus, newStatus);
     }
@@ -621,20 +621,20 @@ contract CrossStakingPool is
         if (currentBalance > rt.lastBalance) {
             uint newReward = currentBalance - rt.lastBalance;
 
-            // If there's no staking, treat new rewards as withdrawable amount
-            if (totalStaked == 0) {
-                rt.withdrawableAmount += newReward;
+            // If there's no deposit, treat new rewards as reclaimable amount
+            if (totalDeposited == 0) {
+                rt.reclaimableAmount += newReward;
             } else {
-                // When totalStaked > 0, only distribute amount beyond withdrawableAmount
-                // Calculate distributable amount (current balance minus what's already withdrawable)
+                // When totalDeposited > 0, only distribute amount beyond reclaimableAmount
+                // Calculate distributable amount (current balance minus what's already reclaimable)
                 uint totalDistributable =
-                    currentBalance > rt.withdrawableAmount ? currentBalance - rt.withdrawableAmount : 0;
+                    currentBalance > rt.reclaimableAmount ? currentBalance - rt.reclaimableAmount : 0;
 
                 // Only distribute the newly added portion
-                if (totalDistributable > rt.lastBalance - rt.withdrawableAmount) {
-                    uint distributableReward = totalDistributable - (rt.lastBalance - rt.withdrawableAmount);
-                    rt.rewardPerTokenStored += (distributableReward * PRECISION) / totalStaked;
-                    emit RewardSynced(rt.token, distributableReward, totalStaked);
+                if (totalDistributable > rt.lastBalance - rt.reclaimableAmount) {
+                    uint distributableReward = totalDistributable - (rt.lastBalance - rt.reclaimableAmount);
+                    rt.rewardPerTokenStored += (distributableReward * PRECISION) / totalDeposited;
+                    emit RewardSynced(rt.token, distributableReward, totalDeposited);
                 }
             }
         }
@@ -714,14 +714,14 @@ contract CrossStakingPool is
             uint currentBalance = rt.token.balanceOf(address(this));
 
             // Simulate _syncReward logic for accurate calculation
-            if (currentBalance > rt.lastBalance && totalStaked > 0) {
-                // Only distribute amount beyond withdrawableAmount (match _syncReward logic)
+            if (currentBalance > rt.lastBalance && totalDeposited > 0) {
+                // Only distribute amount beyond reclaimableAmount (match _syncReward logic)
                 uint totalDistributable =
-                    currentBalance > rt.withdrawableAmount ? currentBalance - rt.withdrawableAmount : 0;
+                    currentBalance > rt.reclaimableAmount ? currentBalance - rt.reclaimableAmount : 0;
 
-                if (totalDistributable > rt.lastBalance - rt.withdrawableAmount) {
-                    uint distributableReward = totalDistributable - (rt.lastBalance - rt.withdrawableAmount);
-                    currentRewardPerToken += (distributableReward * PRECISION) / totalStaked;
+                if (totalDistributable > rt.lastBalance - rt.reclaimableAmount) {
+                    uint distributableReward = totalDistributable - (rt.lastBalance - rt.reclaimableAmount);
+                    currentRewardPerToken += (distributableReward * PRECISION) / totalDeposited;
                 }
             }
         }
@@ -793,36 +793,36 @@ contract CrossStakingPool is
         }
     }
 
-    // ==================== Internal Functions: Stake/Unstake ====================
+    // ==================== Internal Functions: Deposit/Withdraw ====================
 
     /**
-     * @dev Internal staking logic
+     * @dev Internal deposit logic
      * @param payer Address sending the tokens
-     * @param account Address to stake for
-     * @param amount Amount to stake
+     * @param account Address to deposit for
+     * @param amount Amount to deposit
      */
-    function _stake(address payer, address account, uint amount) internal {
-        require(amount >= minStakeAmount, CSPBelowMinimumStakeAmount());
+    function _deposit(address payer, address account, uint amount) internal {
+        require(amount >= minDepositAmount, CSPBelowMinimumDepositAmount());
 
         _syncRewards();
         _updateRewards(account);
         _updateRemovedRewards(account); // Update removed token rewards before balance changes
 
-        stakingToken.safeTransferFrom(payer, address(this), amount);
+        depositToken.safeTransferFrom(payer, address(this), amount);
 
         balances[account] += amount;
-        totalStaked += amount;
+        totalDeposited += amount;
 
-        emit Staked(account, amount);
+        emit Deposited(account, amount);
     }
 
     /**
-     * @dev Internal unstaking logic
-     * @param caller Address receiving the unstaked tokens
-     * @param account Address to unstake for
+     * @dev Internal withdraw logic
+     * @param caller Address receiving the withdrawn tokens
+     * @param account Address to withdraw for
      */
-    function _unstake(address caller, address account) internal {
-        require(balances[account] > 0, CSPNoStakeFound());
+    function _withdraw(address caller, address account) internal {
+        require(balances[account] > 0, CSPNoDepositFound());
 
         uint amount = balances[account];
 
@@ -832,12 +832,12 @@ contract CrossStakingPool is
         _claimRewards(account);
         _claimRemovedRewards(account);
 
-        totalStaked -= amount;
-        stakingToken.safeTransfer(caller, amount);
+        totalDeposited -= amount;
+        depositToken.safeTransfer(caller, amount);
 
         delete balances[account];
 
-        emit Unstaked(account, amount);
+        emit Withdrawn(account, amount);
     }
 
     /**
@@ -846,7 +846,7 @@ contract CrossStakingPool is
      */
     function _checkDelegate(address account) internal view {
         require(account != address(0), CSPCanNotZeroAddress());
-        require(msg.sender == ICrossStaking(crossStaking).router(), CSPOnlyRouter());
+        require(msg.sender == ICrossGameReward(crossGameReward).router(), CSPOnlyRouter());
     }
 
     // ==================== UUPS ====================

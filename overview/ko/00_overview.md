@@ -1,8 +1,8 @@
-# Cross Staking Protocol v2.0 - 개요
+# Cross GameReward Protocol v2.0 - 개요
 
 ## 🎯 프로젝트 소개
 
-Cross Staking Protocol은 Native CROSS와 ERC20 토큰을 위한 **확장 가능한 다중 풀 스테이킹 시스템**입니다.
+Cross GameReward Protocol은 Native CROSS와 ERC20 토큰을 위한 **확장 가능한 다중 풀 디파짓 시스템**입니다.
 
 ---
 
@@ -18,9 +18,9 @@ Cross Staking Protocol은 Native CROSS와 ERC20 토큰을 위한 **확장 가능
             │
             ▼
 ┌─────────────────────────────────┐
-│   CrossStakingRouter (CSR)      │
-│   - stakeNative/unstakeNative   │
-│   - stakeERC20/unstakeERC20     │
+│   CrossGameRewardRouter (CSR)      │
+│   - depositNative/withdrawNative   │
+│   - depositERC20/withdrawERC20     │
 │   - 재배포 가능                  │
 └──────┬──────────────────────────┘
        │
@@ -29,7 +29,7 @@ Cross Staking Protocol은 Native CROSS와 ERC20 토큰을 위한 **확장 가능
        │
        ▼
 ┌─────────────────────────────────┐
-│    CrossStaking (CS)            │
+│    CrossGameReward (CS)            │
 │    - UUPS 업그레이더블           │
 │    - createPool (POOL_MANAGER)  │
 │    - setRouter (ADMIN)          │
@@ -37,9 +37,9 @@ Cross Staking Protocol은 Native CROSS와 ERC20 토큰을 위한 **확장 가능
        │ creates
        ▼
 ┌─────────────────────────────────┐
-│  CrossStakingPool (CSP) × n     │
+│  CrossGameRewardPool (CSP) × n     │
 │  - UUPS 업그레이더블             │
-│  - stakeFor/unstakeFor          │
+│  - depositFor/withdrawFor          │
 │  - rewardPerToken 누적          │
 │  - 다중 보상 토큰                │
 └─────────────────────────────────┘
@@ -58,15 +58,15 @@ Cross Staking Protocol은 Native CROSS와 ERC20 토큰을 위한 **확장 가능
 
 ### 2. Native Token 지원
 ```
-✅ Native CROSS 직접 스테이킹
+✅ Native CROSS 직접 디파짓
 ✅ 자동 래핑/언래핑
 ✅ 완벽한 UX
 ```
 
 ### 3. Upgradeable
 ```
-✅ CrossStaking: UUPS
-✅ CrossStakingPool: UUPS
+✅ CrossGameReward: UUPS
+✅ CrossGameRewardPool: UUPS
 ✅ Router: 재배포 가능
 ```
 
@@ -101,20 +101,20 @@ Cross Staking Protocol은 Native CROSS와 ERC20 토큰을 위한 **확장 가능
 
 ### 사용자
 ```solidity
-// Native CROSS 스테이킹
-router.stakeNative{value: 100 ether}(poolId);
+// Native CROSS 디파짓
+router.depositNative{value: 100 ether}(poolId);
 
-// 언스테이킹
-router.unstakeNative(poolId);
+// 언디파짓
+router.withdrawNative(poolId);
 ```
 
 ### 관리자
 ```solidity
 // 풀 생성
-crossStaking.createPool(wcross, 2 days);
+crossDeposit.createPool(wcross, 2 days);
 
 // 보상 토큰 추가
-crossStaking.addRewardToken(poolId, usdt);
+crossDeposit.addRewardToken(poolId, usdt);
 ```
 
 ---
@@ -124,7 +124,7 @@ crossStaking.addRewardToken(poolId, usdt);
 - **테스트**: 212개 100% 통과
 - **Gas**: 최적화 완료
 - **크기**: 모두 24KB 이하
-- **보안**: 다층 방어 (reentrancy, access control, zero-stake protection)
+- **보안**: 다층 방어 (reentrancy, access control, zero-deposit protection)
 
 ---
 

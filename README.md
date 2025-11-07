@@ -1,10 +1,10 @@
-# Cross Staking Protocol
+# Cross GameReward Protocol
 
-Multi-pool staking for native CROSS and ERC-20 tokens
+Multi-pool deposit for native CROSS and ERC-20 tokens
 
 ## 🎯 Overview
 
-Cross Staking Protocol lets you launch and manage multiple staking pools under a single factory. It wraps native CROSS when needed, supports arbitrary ERC-20 rewards, and keeps accounting gas costs flat.
+Cross GameReward Protocol lets you launch and manage multiple deposit pools under a single factory. It wraps native CROSS when needed, supports arbitrary ERC-20 rewards, and keeps accounting gas costs flat.
 
 ### Architecture at a glance
 
@@ -12,26 +12,26 @@ Cross Staking Protocol lets you launch and manage multiple staking pools under a
 User (Native CROSS / ERC-20)
     │
     ▼
-CrossStakingRouter ──► WCROSS (wrap/unwrap)
+CrossGameRewardRouter ──► WCROSS (wrap/unwrap)
     │
     ▼
-CrossStaking (factory, UUPS)
+CrossGameReward (factory, UUPS)
     │ creates
     ▼
-CrossStakingPool × N (UUPS)
+CrossGameRewardPool × N (UUPS)
 ```
 
 ## ✨ Key features
 
 - ✅ **Native CROSS support** – router auto-wraps and unwraps via WCROSS
-- ✅ **Unlimited pools** – multiple pools per staking token
+- ✅ **Unlimited pools** – multiple pools per deposit token
 - ✅ **Multi-reward** – each pool can emit several ERC-20 rewards
 - ✅ **O(1) accounting** – reward distribution uses a `rewardPerToken` accumulator
-- ✅ **Upgradeable** – CrossStaking and pools follow the UUPS pattern
-- ✅ **Simplified access control** – Owner and StakingRoot based permissions
+- ✅ **Upgradeable** – CrossGameReward and pools follow the UUPS pattern
+- ✅ **Simplified access control** – Owner and RewardRoot based permissions
 - ✅ **3-state pool management** – Active/Inactive/Paused for granular control
-- ✅ **Fair reward distribution** – Pre-staking rewards automatically marked as withdrawable
-- ✅ **Removed reward settlement** – rewards for removed tokens are auto-claimed during unstake
+- ✅ **Fair reward distribution** – Pre-deposit rewards automatically marked as withdrawable
+- ✅ **Removed reward settlement** – rewards for removed tokens are auto-claimed during withdraw
 
 ## 🚀 Quick start
 
@@ -51,26 +51,26 @@ forge script script/DeployFullSystem.s.sol:DeployFullSystem \
 
 ## 💡 Usage snippets
 
-### User – stake native CROSS
+### User – deposit native CROSS
 
 ```solidity
 // Approve once
 wcross.approve(address(router), type(uint256).max);
 
-// Stake
-router.stakeNative{value: 100 ether}(poolId);
+// Deposit
+router.depositNative{value: 100 ether}(poolId);
 
-// Unstake + collect rewards
-router.unstakeNative(poolId);
+// Withdraw + collect rewards
+router.withdrawNative(poolId);
 ```
 
 ### Admin – create pool & configure rewards
 
 ```solidity
-(uint256 poolId, ICrossStakingPool pool) =
-    crossStaking.createPool(IERC20(address(wcross)), 1 ether);
+(uint256 poolId, ICrossGameRewardPool pool) =
+    crossDeposit.createPool(IERC20(address(wcross)), 1 ether);
 
-crossStaking.addRewardToken(poolId, IERC20(address(usdt)));
+crossDeposit.addRewardToken(poolId, IERC20(address(usdt)));
 
 // Anyone can fund rewards
 usdt.transfer(address(pool), 1000 ether);
@@ -81,16 +81,16 @@ usdt.transfer(address(pool), 1000 ether);
 | Contract            | Role                                                                            |
 |---------------------|---------------------------------------------------------------------------------|
 | **WCROSS**          | Wraps native CROSS; router-only `deposit` / `withdraw`                         |
-| **CrossStaking**    | Factory (UUPS) – creates pools, manages reward tokens, sets pool status, withdraws unallocated rewards |
-| **CrossStakingPool**| Individual pool (UUPS) – handles stake/unstake/claim with 3-state management (Active/Inactive/Paused), auto-settles removed rewards, handles zero-stake deposits |
-| **CrossStakingRouter** | User entry point – native and ERC-20 staking with automatic wrap/unwrap     |
+| **CrossGameReward**    | Factory (UUPS) – creates pools, manages reward tokens, sets pool status, withdraws unallocated rewards |
+| **CrossGameRewardPool**| Individual pool (UUPS) – handles deposit/withdraw/claim with 3-state management (Active/Inactive/Paused), auto-settles removed rewards, handles zero-deposit deposits |
+| **CrossGameRewardRouter** | User entry point – native and ERC-20 deposit with automatic wrap/unwrap     |
 
 Key storage notes (pool):
 
 ```solidity
-IERC20 public stakingToken;
-address public crossStaking;
-uint256 public minStakeAmount;
+IERC20 public depositToken;
+address public crossDeposit;
+uint256 public minDepositAmount;
 EnumerableSet.AddressSet private _rewardTokenAddresses;
 EnumerableSet.AddressSet private _removedRewardTokenAddresses;
 mapping(IERC20 => RewardToken) private _rewardTokenData;
@@ -98,26 +98,26 @@ mapping(address => mapping(IERC20 => UserReward)) public userRewards;
 ```
 
 Removed reward tokens stay in `_removedRewardTokenAddresses` and are synchronised through
-`_updateRemovedRewards` / `_claimRemovedRewards` whenever an account calls `_unstake`.
+`_updateRemovedRewards` / `_claimRemovedRewards` whenever an account calls `_withdraw`.
 
 ## 🔑 Access Control Model
 
-### CrossStaking
+### CrossGameReward
 | Role                        | Purpose                                                |
 |-----------------------------|--------------------------------------------------------|
 | `DEFAULT_ADMIN_ROLE` (owner) | Router assignment, pool implementation, upgrades       |
 | `MANAGER_ROLE`              | Pool creation, reward tokens, pool status, withdrawals |
 
-### CrossStakingPool
+### CrossGameRewardPool
 | Function Type        | Authority                | Description                              |
 |---------------------|--------------------------|------------------------------------------|
-| `onlyOwner()`       | CrossStaking's owner     | Upgrade authorization                    |
-| `onlyStakingRoot()` | CrossStaking contract    | Reward management, pool status, withdraw |
-| `stakeFor/unstakeFor` | Router (verified)      | Stake/unstake on behalf of users         |
+| `onlyOwner()`       | CrossGameReward's owner     | Upgrade authorization                    |
+| `onlyRewardRoot()` | CrossGameReward contract    | Reward management, pool status, withdraw |
+| `depositFor/withdrawFor` | Router (verified)      | deposit/withdraw on behalf of users         |
 
 **Key Changes:**
 - Removed AccessControlDefaultAdminRules, simplified to modifier-based access
-- All pool management functions callable only through CrossStaking contract
+- All pool management functions callable only through CrossGameReward contract
 - IERC5313 compliant (`owner()` function)
 
 ## 📊 Reward mechanics
@@ -125,16 +125,16 @@ Removed reward tokens stay in `_removedRewardTokenAddresses` and are synchronise
 ### Core principles
 - Uses `rewardPerToken` accumulation (`PRECISION = 1e18`) keeping gas cost constant
 - Anyone can fund rewards by transferring tokens to the pool
-- During staking, use `claimReward(token)` / `claimRewards()` to collect active token rewards
+- During deposit, use `claimReward(token)` / `claimRewards()` to collect active token rewards
 
 ### Reward queries
 - `pendingRewards(user)`: Returns all active reward tokens and pending amounts `(address[] tokens, uint[] rewards)`
 - `pendingReward(user, token)`: Query pending reward for a specific token `uint amount`
 
-### Zero-stake protection
-- Rewards deposited when `totalStaked=0` are classified as `withdrawableAmount`
-- Protects the first staker from receiving these unallocated rewards
-- Owner can recover via `CrossStaking.withdrawFromPool()`
+### Zero-deposit protection
+- Rewards deposited when `totalDeposited=0` are classified as `withdrawableAmount`
+- Protects the first depositor from receiving these unallocated rewards
+- Owner can recover via `CrossGameReward.withdrawFromPool()`
 
 ### Removed token settlement
 - Token balance at removal time is frozen as `distributedAmount`
@@ -145,12 +145,12 @@ Removed reward tokens stay in `_removedRewardTokenAddresses` and are synchronise
 
 1. ReentrancyGuardTransient (EIP-1153)
 2. SafeERC20 transfers
-3. Simplified access control (Owner/StakingRoot modifiers)
+3. Simplified access control (Owner/RewardRoot modifiers)
 4. 3-state pool management (Active/Inactive/Paused)
 5. UUPS upgrade gates
 6. Custom errors for gas efficiency
 7. Router caller verification
-8. Zero-stake reward protection
+8. Zero-deposit reward protection
 
 ## 📚 Documentation
 
@@ -163,7 +163,7 @@ Removed reward tokens stay in `_removedRewardTokenAddresses` and are synchronise
 
 ```bash
 forge test                    # full suite
-forge test --match-contract CrossStaking
+forge test --match-contract CrossGameReward
 forge test --gas-report
 ```
 
@@ -172,40 +172,40 @@ forge test --gas-report
 | Suite                          | Tests |
 |--------------------------------|-------|
 | WCROSS                         | 10    |
-| CrossStaking                   | 33    |
-| CrossStakingRouter             | 28    |
-| CrossStakingPoolStaking        | 18    |
-| CrossStakingPoolRewards        | 27    |
-| CrossStakingPoolAdmin          | 34    |
-| CrossStakingPoolIntegration    | 11    |
-| CrossStakingPoolPendingRewards | 9     |
-| CrossStakingPoolSecurity       | 21    |
-| CrossStakingPoolEdgeCases      | 12    |
+| CrossGameReward                   | 33    |
+| CrossGameRewardRouter             | 28    |
+| CrossGameRewardPoolDeposit        | 18    |
+| CrossGameRewardPoolRewards        | 27    |
+| CrossGameRewardPoolAdmin          | 34    |
+| CrossGameRewardPoolIntegration    | 11    |
+| CrossGameRewardPoolPendingRewards | 9     |
+| CrossGameRewardPoolSecurity       | 21    |
+| CrossGameRewardPoolEdgeCases      | 12    |
 | FullIntegration                | 9     |
 | **Total**                      | **212** |
 
 ## 🔄 Upgrades
 
 ```solidity
-// CrossStaking upgrade
-CrossStaking newImpl = new CrossStaking();
-crossStaking.upgradeToAndCall(address(newImpl), "");
+// CrossGameReward upgrade
+CrossGameReward newImpl = new CrossGameReward();
+crossDeposit.upgradeToAndCall(address(newImpl), "");
 
 // Pool upgrade
-CrossStakingPool newPoolImpl = new CrossStakingPool();
+CrossGameRewardPool newPoolImpl = new CrossGameRewardPool();
 pool.upgradeToAndCall(address(newPoolImpl), "");
 
 // Router replacement
-CrossStakingRouter newRouter = new CrossStakingRouter(address(crossStaking));
-crossStaking.setRouter(address(newRouter));
+CrossGameRewardRouter newRouter = new CrossGameRewardRouter(address(crossDeposit));
+crossDeposit.setRouter(address(newRouter));
 ```
 
 ## ⚙️ Operational notes
 
 - Protect admin keys (router assignment, upgrades) with a multisig or governance module
-- `setPoolStatus(poolId, status)`: 0=Active, 1=Inactive (claim/unstake only), 2=Paused (all operations stopped)
+- `setPoolStatus(poolId, status)`: 0=Active, 1=Inactive (claim/withdraw only), 2=Paused (all operations stopped)
 - Removed reward tokens can be claimed individually via `claimReward(removedToken)`
-- Zero-stake deposits can be recovered via `withdrawFromPool`
+- Zero-deposit deposits can be recovered via `withdrawFromPool`
 
 ## 📜 License
 

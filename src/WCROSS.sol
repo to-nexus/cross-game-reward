@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import {CrossStaking} from "./CrossStaking.sol";
+import {CrossGameReward} from "./CrossGameReward.sol";
 import {IWCROSS} from "./interfaces/IWCROSS.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
@@ -29,17 +29,17 @@ contract WCROSS is ERC20, IWCROSS {
 
     // ==================== State Variables ====================
 
-    /// @notice CrossStaking contract reference for router validation
-    CrossStaking public staking;
+    /// @notice CrossGameReward contract reference for router validation
+    CrossGameReward public gameReward;
 
     // ==================== Constructor ====================
 
     /**
      * @notice Initializes the WCROSS token
-     * @dev Sets the deployer (CrossStaking) as the staking contract reference
+     * @dev Sets the deployer (CrossGameReward) as the game reward contract reference
      */
     constructor() ERC20("Wrapped CROSS", "WCROSS") {
-        staking = CrossStaking(msg.sender);
+        gameReward = CrossGameReward(msg.sender);
     }
 
     // ==================== Receive Function ====================
@@ -60,7 +60,7 @@ contract WCROSS is ERC20, IWCROSS {
      *      Mints WCROSS tokens equivalent to the native CROSS sent
      */
     function deposit() public payable {
-        require(msg.sender == staking.router(), WCROSSUnauthorized());
+        require(msg.sender == gameReward.router(), WCROSSUnauthorized());
         require(msg.value > 0, WCROSSInsufficientBalance());
         _mint(msg.sender, msg.value);
     }
@@ -83,7 +83,7 @@ contract WCROSS is ERC20, IWCROSS {
      * @param amount Amount of WCROSS to unwrap
      */
     function withdrawTo(address to, uint amount) public {
-        require(msg.sender == staking.router(), WCROSSUnauthorized());
+        require(msg.sender == gameReward.router(), WCROSSUnauthorized());
         _burn(msg.sender, amount);
 
         (bool success,) = to.call{value: amount}("");

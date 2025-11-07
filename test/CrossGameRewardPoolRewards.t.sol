@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import "./base/CrossStakingPoolBase.t.sol";
+import "./base/CrossGameRewardPoolBase.t.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /**
- * @title CrossStakingPoolRewardsTest
+ * @title CrossGameRewardPoolRewardsTest
  * @notice Reward accrual, distribution, and claim tests
  */
-contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
+contract CrossGameRewardPoolRewardsTest is CrossGameRewardPoolBase {
     // ==================== Reward accrual tests ====================
 
     function testRewardAccumulation() public {
-        _userStake(user1, 10 ether);
+        _userDeposit(user1, 10 ether);
         _warpSeconds(100);
 
         _depositReward(address(rewardToken1), 100 ether);
@@ -24,30 +24,30 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
         assertEq(rewards[1], 50 ether, "Reward token 2 should accumulate");
     }
 
-    function testRewardAccumulationWithVerySmallStake() public {
-        _userStake(user1, 1 ether); // minimum stake amount
+    function testRewardAccumulationWithVerySmallDeposit() public {
+        _userDeposit(user1, 1 ether); // minimum deposit amount
         _warpSeconds(1000);
 
         _depositReward(address(rewardToken1), 1000 ether);
 
         (, uint[] memory rewards) = pool.pendingRewards(user1);
-        assertEq(rewards[0], 1000 ether, "Small stake should get all rewards");
+        assertEq(rewards[0], 1000 ether, "Small deposit should get all rewards");
     }
 
-    function testRewardAccumulationWithVeryLargeStake() public {
-        _userStake(user1, 1000 ether);
+    function testRewardAccumulationWithVeryLargeDeposit() public {
+        _userDeposit(user1, 1000 ether);
         _warpSeconds(100);
 
         _depositReward(address(rewardToken1), 10000 ether);
 
         (, uint[] memory rewards) = pool.pendingRewards(user1);
-        assertEq(rewards[0], 10000 ether, "Large stake should get all rewards");
+        assertEq(rewards[0], 10000 ether, "Large deposit should get all rewards");
     }
 
     // ==================== Reward claim tests ====================
 
     function testClaimRewards() public {
-        _userStake(user1, 10 ether);
+        _userDeposit(user1, 10 ether);
         _warpSeconds(100);
 
         _depositReward(address(rewardToken1), 100 ether);
@@ -68,7 +68,7 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
     }
 
     function testClaimSpecificReward() public {
-        _userStake(user1, 10 ether);
+        _userDeposit(user1, 10 ether);
         _warpSeconds(100);
 
         _depositReward(address(rewardToken1), 100 ether);
@@ -89,7 +89,7 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
     }
 
     function testMultipleClaimsAccumulate() public {
-        _userStake(user1, 10 ether);
+        _userDeposit(user1, 10 ether);
         _warpSeconds(50);
 
         // First reward batch
@@ -112,15 +112,15 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
     // ==================== Multi-user reward distribution tests ====================
 
     function testMultipleUsersRewardDistribution() public {
-        // User1 stakes 10 CROSS
-        _userStake(user1, 10 ether);
+        // User1 deposits 10 CROSS
+        _userDeposit(user1, 10 ether);
         _warpSeconds(50);
 
-        // User2 stakes 10 CROSS
-        _userStake(user2, 10 ether);
+        // User2 deposits 10 CROSS
+        _userDeposit(user2, 10 ether);
         _warpSeconds(50);
 
-        // Deposit rewards (20 CROSS total staked)
+        // Deposit rewards (20 CROSS total depositd)
         _depositReward(address(rewardToken1), 200 ether);
 
         (, uint[] memory rewardsUser1) = pool.pendingRewards(user1);
@@ -128,17 +128,17 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
 
         // User1: (10 / 20) × 200 = 100 ether
         // User2: (10 / 20) × 200 = 100 ether
-        assertEq(rewardsUser1[0], 100 ether, "User1 gets 50% (equal stakes)");
-        assertEq(rewardsUser2[0], 100 ether, "User2 gets 50% (equal stakes)");
+        assertEq(rewardsUser1[0], 100 ether, "User1 gets 50% (equal deposits)");
+        assertEq(rewardsUser2[0], 100 ether, "User2 gets 50% (equal deposits)");
     }
 
     function testThreeUsersComplexScenario() public {
         // User1: 10 CROSS at t=0
-        _userStake(user1, 10 ether);
+        _userDeposit(user1, 10 ether);
         _warpSeconds(50);
 
         // User2: 20 CROSS at t=50
-        _userStake(user2, 20 ether);
+        _userDeposit(user2, 20 ether);
         _warpSeconds(50);
 
         // At t=100 deposit rewards (total: 30 CROSS)
@@ -153,14 +153,14 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
         assertApproxEqAbs(rewards2[0], 100 ether, 10, "User2: 2/3 of rewards");
     }
 
-    function testRewardDistributionWithUnequalStakes() public {
+    function testRewardDistributionWithUnequalDeposits() public {
         // User1: 30 CROSS
-        _userStake(user1, 30 ether);
+        _userDeposit(user1, 30 ether);
 
         // User2: 70 CROSS
-        _userStake(user2, 70 ether);
+        _userDeposit(user2, 70 ether);
 
-        // Deposit rewards (total stake: 100 CROSS)
+        // Deposit rewards (total deposit: 100 CROSS)
         _depositReward(address(rewardToken1), 1000 ether);
 
         (, uint[] memory rewards1) = pool.pendingRewards(user1);
@@ -175,7 +175,7 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
     // ==================== Multiple reward token tests ====================
 
     function testMultipleRewardTokens() public {
-        _userStake(user1, 10 ether);
+        _userDeposit(user1, 10 ether);
         _warpSeconds(100);
 
         _depositReward(address(rewardToken1), 100 ether);
@@ -188,17 +188,17 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
 
     // ==================== Time-based reward variations ====================
 
-    function testRewardBeforeAndAfterStake() public {
-        // Day 1: User A stakes 100 CROSS
-        _userStake(user1, 100 ether);
+    function testRewardBeforeAndAfterDeposit() public {
+        // Day 1: User A deposits 100 CROSS
+        _userDeposit(user1, 100 ether);
         _warpDays(1);
 
         // Day 2: deposit reward #1 (100)
         _depositReward(address(rewardToken1), 100 ether);
         _warpDays(8);
 
-        // Day 10: User B stakes 100 CROSS
-        _userStake(user2, 100 ether);
+        // Day 10: User B deposits 100 CROSS
+        _userDeposit(user2, 100 ether);
         _warpDays(1);
 
         // Day 11: deposit reward #2 (200)
@@ -220,31 +220,31 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
 
     // ==================== Edge cases ====================
 
-    function testZeroStakers() public {
-        // Deposit rewards with no stakers
+    function testZeroDepositrs() public {
+        // Deposit rewards with no depositrs
         _depositReward(address(rewardToken1), 100 ether);
 
-        // First staker should NOT receive rewards accumulated while pool was empty
+        // First depositr should NOT receive rewards accumulated while pool was empty
         // Those rewards are marked as withdrawable instead
-        _userStake(user1, 10 ether);
+        _userDeposit(user1, 10 ether);
 
         (, uint[] memory rewards) = pool.pendingRewards(user1);
-        assertEq(rewards[0], 0, "First staker does NOT get rewards deposited when pool was empty");
+        assertEq(rewards[0], 0, "First depositr does NOT get rewards deposited when pool was empty");
 
         // The 100 ether should be withdrawable by owner
-        assertEq(pool.getWithdrawableAmount(rewardToken1), 100 ether, "Rewards are withdrawable");
+        assertEq(pool.getReclaimableAmount(rewardToken1), 100 ether, "Rewards are withdrawable");
     }
 
     function testInvalidRewardTokenIndex() public {
-        _userStake(user1, 10 ether);
+        _userDeposit(user1, 10 ether);
 
         vm.prank(user1);
-        vm.expectRevert(CrossStakingPool.CSPInvalidRewardToken.selector);
+        vm.expectRevert(CrossGameRewardPool.CSPInvalidRewardToken.selector);
         pool.claimReward(IERC20(address(uint160(0xdead))));
     }
 
     function testZeroAmountTransfer() public {
-        _userStake(user1, 10 ether);
+        _userDeposit(user1, 10 ether);
 
         // Transferring zero should have no effect
         vm.startPrank(owner);
@@ -257,7 +257,7 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
     }
 
     function testPendingRewardsAfterClaim() public {
-        _userStake(user1, 10 ether);
+        _userDeposit(user1, 10 ether);
         _depositReward(address(rewardToken1), 100 ether);
 
         // Claim
@@ -277,14 +277,14 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
     // ==================== Direct transfer detection tests ====================
 
     function testDirectTransferDetection() public {
-        _userStake(user1, 10 ether);
+        _userDeposit(user1, 10 ether);
 
         // Direct transfer without helper
         vm.prank(owner);
         rewardToken1.transfer(address(pool), 100 ether);
 
-        // Detected when another staking action happens (stake/unstake/claim)
-        _userStake(user2, 10 ether);
+        // Detected when another deposit action happens (deposit/withdraw/claim)
+        _userDeposit(user2, 10 ether);
 
         // Reward should reflect the transfer
         (, uint[] memory rewardsAfter) = pool.pendingRewards(user1);
@@ -292,7 +292,7 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
     }
 
     function testDirectTransferWithDepositReward() public {
-        _userStake(user1, 10 ether);
+        _userDeposit(user1, 10 ether);
 
         // Perform direct transfer first
         vm.prank(owner);
@@ -308,7 +308,7 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
     }
 
     function testMultipleDirectTransfers() public {
-        _userStake(user1, 10 ether);
+        _userDeposit(user1, 10 ether);
 
         // Multiple direct transfers
         vm.startPrank(owner);
@@ -318,7 +318,7 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
         vm.stopPrank();
 
         // One additional action detects them all
-        _userStake(user2, 10 ether);
+        _userDeposit(user2, 10 ether);
 
         (, uint[] memory rewards) = pool.pendingRewards(user1);
         assertEq(rewards[0], 100 ether, "All direct transfers should be detected");
@@ -329,17 +329,17 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
     /// @notice Tests that rounding dust is minimal thanks to PRECISION
     /// @dev With 1e18 PRECISION, dust is measured in wei, not ether!
     function testDustAutoRedistribution() public {
-        // Setup: User1 stakes 1, User2 stakes 2 (1:2 ratio, total 3)
-        _userStake(user1, 1 ether);
-        _userStake(user2, 2 ether);
+        // Setup: User1 deposits 1, User2 deposits 2 (1:2 ratio, total 3)
+        _userDeposit(user1, 1 ether);
+        _userDeposit(user2, 2 ether);
 
         // First distribution: 100 tokens
         _depositReward(address(rewardToken1), 100 ether);
 
         // Thanks to PRECISION (1e18), distribution is very accurate!
         // rewardPerTokenStored = (100 * 1e18 * 1e18) / 3
-        // User1 (1 ether stake): gets exactly 33.333... ether
-        // User2 (2 ether stake): gets exactly 66.666... ether
+        // User1 (1 ether deposit): gets exactly 33.333... ether
+        // User2 (2 ether deposit): gets exactly 66.666... ether
 
         (, uint[] memory rewards1) = pool.pendingRewards(user1);
         (, uint[] memory rewards2) = pool.pendingRewards(user2);
@@ -396,8 +396,8 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
     /// @dev Multiple rounds with PRECISION means dust stays in wei, not ether
     function testDustEventuallyDistributed() public {
         // Setup: 1:2 ratio
-        _userStake(user1, 1 ether);
-        _userStake(user2, 2 ether);
+        _userDeposit(user1, 1 ether);
+        _userDeposit(user2, 2 ether);
 
         uint totalDeposited = 0;
 
@@ -423,11 +423,11 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
         // Dust is minimal (wei, not ether!)
         assertLt(poolDust, 10, "Dust < 10 wei after 10 rounds");
 
-        // User1 unstakes (leaves only User2)
+        // User1 withdraws (leaves only User2)
         vm.prank(user1);
-        pool.unstake();
+        pool.withdraw();
 
-        // Now add one more reward with only User2 staking
+        // Now add one more reward with only User2 depositing
         _depositReward(address(rewardToken1), 100 ether);
         totalDeposited += 100 ether;
 
@@ -447,10 +447,10 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
     /// @notice Tests that dust doesn't grow unbounded over time
     /// @dev Even with worst-case rounding, dust is automatically redistributed
     function testDustDoesNotAccumulateUnbounded() public {
-        // Worst case: many users with odd staking amounts
-        _userStake(user1, 1 ether);
-        _userStake(user2, 2 ether);
-        _userStake(user3, 3 ether);
+        // Worst case: many users with odd deposit amounts
+        _userDeposit(user1, 1 ether);
+        _userDeposit(user2, 2 ether);
+        _userDeposit(user3, 3 ether);
         // Total: 6 ether
 
         uint totalDeposited = 0;
@@ -487,8 +487,8 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
     /// @notice Tests exact accounting: every wei is tracked
     /// @dev Total deposited = Total claimed + Pool balance (should always hold)
     function testExactDustAccounting() public {
-        _userStake(user1, 1 ether);
-        _userStake(user2, 2 ether);
+        _userDeposit(user1, 1 ether);
+        _userDeposit(user2, 2 ether);
 
         uint totalDeposited = 0;
 
@@ -516,102 +516,102 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
         );
     }
 
-    // ==================== Zero stake reward handling tests ====================
+    // ==================== Zero deposit reward handling tests ====================
 
-    function testRewardDepositWhenNoStakers() public {
-        // No one has staked yet
-        assertEq(pool.totalStaked(), 0, "No stakers initially");
+    function testRewardDepositWhenNoDepositors() public {
+        // No one has depositd yet
+        assertEq(pool.totalDeposited(), 0, "No depositrs initially");
 
-        // Deposit rewards when totalStaked = 0 (rewardToken1 is already registered in setup)
+        // Deposit rewards when totalDeposited = 0 (rewardToken1 is already registered in setup)
         _depositReward(address(rewardToken1), 100 ether);
 
-        // Trigger a stake to cause sync (this will make the contract recognize the deposit)
-        _userStake(user1, 1 ether);
+        // Trigger a deposit to cause sync (this will make the contract recognize the deposit)
+        _userDeposit(user1, 1 ether);
 
         // Now the rewards should be marked as withdrawable
-        uint withdrawable = pool.getWithdrawableAmount(rewardToken1);
-        assertEq(withdrawable, 100 ether, "Rewards deposited when stake=0 should be withdrawable");
+        uint withdrawable = pool.getReclaimableAmount(rewardToken1);
+        assertEq(withdrawable, 100 ether, "Rewards deposited when deposit=0 should be withdrawable");
 
-        // Owner can withdraw via CrossStaking
+        // Owner can withdraw via CrossGameReward
         uint ownerBalanceBefore = rewardToken1.balanceOf(owner);
-        crossStaking.withdrawFromPool(1, rewardToken1, owner);
+        crossGameReward.reclaimFromPool(1, rewardToken1, owner);
         assertEq(rewardToken1.balanceOf(owner) - ownerBalanceBefore, 100 ether, "Owner withdrew unallocated rewards");
 
-        // User should not have rewards (deposited before their stake)
+        // User should not have rewards (deposited before their deposit)
         (, uint[] memory rewards) = pool.pendingRewards(user1);
-        assertEq(rewards[0], 0, "User should not have rewards from pre-stake deposit");
+        assertEq(rewards[0], 0, "User should not have rewards from pre-deposit deposit");
     }
 
-    function testRewardDepositBeforeAndAfterStake() public {
-        // Deposit before any stake
+    function testRewardDepositBeforeAndAfterDeposit() public {
+        // Deposit before any deposit
         _depositReward(address(rewardToken1), 50 ether);
 
-        // User stakes (this triggers sync and marks the 50 ether as withdrawable)
-        _userStake(user1, 10 ether);
+        // User deposits (this triggers sync and marks the 50 ether as withdrawable)
+        _userDeposit(user1, 10 ether);
 
         // Check withdrawable amount
-        assertEq(pool.getWithdrawableAmount(rewardToken1), 50 ether, "50 ether withdrawable");
+        assertEq(pool.getReclaimableAmount(rewardToken1), 50 ether, "50 ether withdrawable");
 
-        // Deposit more rewards after stake
+        // Deposit more rewards after deposit
         _depositReward(address(rewardToken1), 100 ether);
 
-        // User should only get the 100 ether deposited after stake
+        // User should only get the 100 ether deposited after deposit
         (, uint[] memory rewards) = pool.pendingRewards(user1);
-        assertApproxEqAbs(rewards[0], 100 ether, 100, "User gets only post-stake rewards");
+        assertApproxEqAbs(rewards[0], 100 ether, 100, "User gets only post-deposit rewards");
 
         // Initial 50 ether should still be withdrawable
-        assertEq(pool.getWithdrawableAmount(rewardToken1), 50 ether, "Initial 50 ether still withdrawable");
+        assertEq(pool.getReclaimableAmount(rewardToken1), 50 ether, "Initial 50 ether still withdrawable");
     }
 
-    function testWithdrawZeroStakeRewards() public {
-        // Deposit when no stakers
+    function testWithdrawZeroDepositRewards() public {
+        // Deposit when no depositrs
         _depositReward(address(rewardToken1), 200 ether);
 
-        // Stake to trigger sync
-        _userStake(user1, 1 ether);
+        // Deposit to trigger sync
+        _userDeposit(user1, 1 ether);
 
         // Verify withdrawable amount
-        assertEq(pool.getWithdrawableAmount(rewardToken1), 200 ether, "200 ether withdrawable");
+        assertEq(pool.getReclaimableAmount(rewardToken1), 200 ether, "200 ether withdrawable");
 
-        // Withdraw via CrossStaking
+        // Withdraw via CrossGameReward
         uint ownerBalanceBefore = rewardToken1.balanceOf(owner);
-        crossStaking.withdrawFromPool(1, rewardToken1, owner);
+        crossGameReward.reclaimFromPool(1, rewardToken1, owner);
         assertEq(rewardToken1.balanceOf(owner) - ownerBalanceBefore, 200 ether, "Withdrew all");
 
         // No more withdrawable
-        assertEq(pool.getWithdrawableAmount(rewardToken1), 0, "Nothing left to withdraw");
+        assertEq(pool.getReclaimableAmount(rewardToken1), 0, "Nothing left to withdraw");
     }
 
     function testCannotWithdrawAllocatedRewards() public {
-        // User stakes first
-        _userStake(user1, 10 ether);
+        // User deposits first
+        _userDeposit(user1, 10 ether);
 
         // Deposit rewards (will be allocated to user1)
         _depositReward(address(rewardToken1), 100 ether);
 
         // No withdrawable amount since rewards are allocated
-        assertEq(pool.getWithdrawableAmount(rewardToken1), 0, "No withdrawable amount");
+        assertEq(pool.getReclaimableAmount(rewardToken1), 0, "No withdrawable amount");
 
         // Cannot withdraw
-        vm.expectRevert(CrossStakingPool.CSPNoWithdrawableAmount.selector);
-        crossStaking.withdrawFromPool(1, rewardToken1, owner);
+        vm.expectRevert(CrossGameRewardPool.CSPNoReclaimableAmount.selector);
+        crossGameReward.reclaimFromPool(1, rewardToken1, owner);
     }
 
-    function testMultipleUsersAfterZeroStakeDeposit() public {
-        // Deposit when no stakers
+    function testMultipleUsersAfterZeroDepositDeposit() public {
+        // Deposit when no depositrs
         _depositReward(address(rewardToken1), 100 ether);
 
-        // User1 stakes (triggers sync, marks 100 ether as withdrawable)
-        _userStake(user1, 10 ether);
+        // User1 deposits (triggers sync, marks 100 ether as withdrawable)
+        _userDeposit(user1, 10 ether);
 
         // Initial 100 ether should be withdrawable
-        assertEq(pool.getWithdrawableAmount(rewardToken1), 100 ether, "Initial deposit withdrawable");
+        assertEq(pool.getReclaimableAmount(rewardToken1), 100 ether, "Initial deposit withdrawable");
 
         // Deposit more rewards
         _depositReward(address(rewardToken1), 200 ether);
 
-        // User2 stakes
-        _userStake(user2, 10 ether);
+        // User2 deposits
+        _userDeposit(user2, 10 ether);
 
         // Deposit more rewards
         _depositReward(address(rewardToken1), 300 ether);
@@ -625,6 +625,6 @@ contract CrossStakingPoolRewardsTest is CrossStakingPoolBase {
         assertApproxEqAbs(rewards2[0], 150 ether, 100, "User2 rewards");
 
         // Initial 100 ether still withdrawable
-        assertEq(pool.getWithdrawableAmount(rewardToken1), 100 ether, "Initial deposit still withdrawable");
+        assertEq(pool.getReclaimableAmount(rewardToken1), 100 ether, "Initial deposit still withdrawable");
     }
 }

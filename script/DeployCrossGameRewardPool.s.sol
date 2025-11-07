@@ -1,24 +1,24 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import "../src/CrossStakingPool.sol";
+import "../src/CrossGameRewardPool.sol";
 import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "forge-std/Script.sol";
 
 /**
- * @title DeployCrossStakingPool
- * @notice CrossStakingPool UUPS 프록시 배포 스크립트
+ * @title DeployCrossGameRewardPool
+ * @notice CrossGameRewardPool UUPS 프록시 배포 스크립트
  * @dev 사용법:
- * forge script script/DeployCrossStakingPool.s.sol:DeployCrossStakingPool \
+ * forge script script/DeployCrossGameRewardPool.s.sol:DeployCrossGameRewardPool \
  *   --rpc-url <RPC_URL> \
  *   --private-key <PRIVATE_KEY> \
  *   --broadcast
  */
-contract DeployCrossStakingPool is Script {
+contract DeployCrossGameRewardPool is Script {
     // 배포할 네트워크의 CROSS 토큰 주소를 여기에 설정
     address public constant CROSS_TOKEN = address(0); // TODO: 실제 CROSS 토큰 주소로 변경
-    uint public constant MIN_STAKE_AMOUNT = 1 ether;
+    uint public constant MIN_DEPOSIT_AMOUNT = 1 ether;
 
     function run() external {
         address deployer = msg.sender;
@@ -26,25 +26,25 @@ contract DeployCrossStakingPool is Script {
         vm.startBroadcast();
 
         // 1. Implementation 배포
-        CrossStakingPool implementation = new CrossStakingPool();
+        CrossGameRewardPool implementation = new CrossGameRewardPool();
         console.log("Implementation deployed at:", address(implementation));
 
         // 2. Initialize data 준비
         bytes memory initData =
-            abi.encodeWithSelector(CrossStakingPool.initialize.selector, IERC20(CROSS_TOKEN), MIN_STAKE_AMOUNT);
+            abi.encodeWithSelector(CrossGameRewardPool.initialize.selector, IERC20(CROSS_TOKEN), MIN_DEPOSIT_AMOUNT);
 
         // 3. Proxy 배포
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
         console.log("Proxy deployed at:", address(proxy));
 
         // 4. Proxy를 통해 컨트랙트 접근
-        CrossStakingPool pool = CrossStakingPool(address(proxy));
+        CrossGameRewardPool pool = CrossGameRewardPool(address(proxy));
         console.log("\n=== Deployment Summary ===");
         console.log("Proxy Address:", address(pool));
         console.log("Implementation Address:", address(implementation));
-        console.log("Staking token (CROSS):", address(pool.stakingToken()));
+        console.log("Deposit token (CROSS):", address(pool.depositToken()));
         console.log("Default Admin:", deployer);
-        console.log("Min Stake Amount:", MIN_STAKE_AMOUNT);
+        console.log("Min Deposit Amount:", MIN_DEPOSIT_AMOUNT);
 
         vm.stopBroadcast();
     }
@@ -59,7 +59,7 @@ contract DeployWithRewards is Script {
     IERC20 public crossToken;
     IERC20[] public rewardTokens;
     uint[] public initialRewardAmounts;
-    uint public constant MIN_STAKE_AMOUNT = 1 ether;
+    uint public constant MIN_DEPOSIT_AMOUNT = 1 ether;
 
     function run() external {
         address deployer = msg.sender;
@@ -70,19 +70,19 @@ contract DeployWithRewards is Script {
         vm.startBroadcast();
 
         // 1. Implementation 배포
-        CrossStakingPool implementation = new CrossStakingPool();
+        CrossGameRewardPool implementation = new CrossGameRewardPool();
         console.log("Implementation deployed at:", address(implementation));
 
         // 2. Initialize data 준비
         bytes memory initData =
-            abi.encodeWithSelector(CrossStakingPool.initialize.selector, crossToken, MIN_STAKE_AMOUNT);
+            abi.encodeWithSelector(CrossGameRewardPool.initialize.selector, crossToken, MIN_DEPOSIT_AMOUNT);
 
         // 3. Proxy 배포
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
         console.log("Proxy deployed at:", address(proxy));
 
         // 4. Proxy를 통해 컨트랙트 접근
-        CrossStakingPool pool = CrossStakingPool(address(proxy));
+        CrossGameRewardPool pool = CrossGameRewardPool(address(proxy));
 
         // 5. 보상 토큰 추가
         for (uint i = 0; i < rewardTokens.length; i++) {
@@ -110,7 +110,7 @@ contract DeployWithRewards is Script {
         console.log("CROSS Token:", address(crossToken));
         console.log("Number of reward tokens:", rewardTokens.length);
         console.log("Default Admin:", deployer);
-        console.log("Min Stake Amount:", MIN_STAKE_AMOUNT);
+        console.log("Min Deposit Amount:", MIN_DEPOSIT_AMOUNT);
 
         vm.stopBroadcast();
     }

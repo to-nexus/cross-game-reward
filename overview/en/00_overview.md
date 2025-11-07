@@ -1,7 +1,7 @@
-# Cross Staking Protocol v2.0 – Overview
+# Cross GameReward Protocol v2.0 – Overview
 
 ## 🎯 Introduction
-Cross Staking Protocol is a **multi-pool staking system** designed for native CROSS and ERC-20 tokens. It wraps native assets automatically and distributes rewards through an efficient `rewardPerToken` accumulator.
+Cross GameReward Protocol is a **multi-pool deposit system** designed for native CROSS and ERC-20 tokens. It wraps native assets automatically and distributes rewards through an efficient `rewardPerToken` accumulator.
 
 ---
 
@@ -10,14 +10,14 @@ Cross Staking Protocol is a **multi-pool staking system** designed for native CR
 ```
 ┌───────────────────────────────┐
 │            User               │
-│ (Native CROSS / ERC-20 stake) │
+│ (Native CROSS / ERC-20 deposit) │
 └──────────────┬────────────────┘
                │
                ▼
 ┌───────────────────────────────┐
-│ CrossStakingRouter (CSR)      │
-│ • stakeNative / unstakeNative │
-│ • stakeERC20 / unstakeERC20   │
+│ CrossGameRewardRouter (CSR)      │
+│ • depositNative / withdrawNative │
+│ • depositERC20 / withdrawERC20   │
 │ • redeployable front-door     │
 └──────┬────────────────────────┘
        │
@@ -25,16 +25,16 @@ Cross Staking Protocol is a **multi-pool staking system** designed for native CR
        │
        ▼
 ┌───────────────────────────────┐
-│ CrossStaking (CS)             │
+│ CrossGameReward (CS)             │
 │ • UUPS upgradeable factory    │
 │ • createPool / setRouter      │
 └──────┬────────────────────────┘
        │ creates
        ▼
 ┌───────────────────────────────┐
-│ CrossStakingPool (CSP) × N    │
+│ CrossGameRewardPool (CSP) × N    │
 │ • UUPS upgradeable pools      │
-│ • stakeFor / unstakeFor       │
+│ • depositFor / withdrawFor       │
 │ • rewardPerToken accumulator  │
 │ • multi reward tokens         │
 └───────────────────────────────┘
@@ -43,14 +43,14 @@ Cross Staking Protocol is a **multi-pool staking system** designed for native CR
 ---
 
 ## ✨ Key Capabilities
-1. **Unlimited pools** – multiple pools per staking token supported.
+1. **Unlimited pools** – multiple pools per deposit token supported.
 2. **Native token UX** – automatic wrap/unwrap via WCROSS.
 3. **Multi-reward** – each pool can emit several ERC-20 reward tokens.
-4. **Upgradeable** – CrossStaking & CrossStakingPool follow UUPS; router is redeployable.
+4. **Upgradeable** – CrossGameReward & CrossGameRewardPool follow UUPS; router is redeployable.
 5. **O(1) reward accounting** – `rewardPerToken` accumulator keeps gas flat per deposit.
-6. **Simplified access control** – Owner and StakingRoot based permissions.
+6. **Simplified access control** – Owner and RewardRoot based permissions.
 7. **3-state pool management** – Active/Inactive/Paused for granular control.
-8. **Fair reward distribution** – Zero-stake deposits automatically marked as withdrawable.
+8. **Fair reward distribution** – Zero-deposit deposits automatically marked as withdrawable.
 
 ---
 
@@ -71,32 +71,32 @@ Cross Staking Protocol is a **multi-pool staking system** designed for native CR
 
 ## 🚀 Quick Start
 
-### User: Stake native CROSS
+### User: Deposit native CROSS
 ```solidity
-// Stake native CROSS (no approval needed - Router auto-wraps)
-router.stakeNative{value: 100 ether}(poolId);
+// Deposit native CROSS (no approval needed - Router auto-wraps)
+router.depositNative{value: 100 ether}(poolId);
 
-// Unstake + claim all rewards
-router.unstakeNative(poolId);
+// Withdraw + claim all rewards
+router.withdrawNative(poolId);
 ```
 
 ### Admin: Create pools & rewards
 ```solidity
 // Create native CROSS pool
 (uint256 poolId, address poolAddr) =
-    crossStaking.createPool(address(wcross), 2 days);
+    crossDeposit.createPool(address(wcross), 2 days);
 
 // Add reward token
-crossStaking.addRewardToken(poolId, address(usdt));
+crossDeposit.addRewardToken(poolId, address(usdt));
 ```
 
 ---
 
 ## 📈 Current Metrics
 - Tests: **212 / 212 passing** (includes comprehensive edge case coverage)
-- Gas footprint: all contracts < 24 KB, stake/unstake ~140–280k gas
-- Reward distribution: O(1) per deposit, proportional to stake share
-- Security: Multi-layered defense (reentrancy, access control, zero-stake protection)
+- Gas footprint: all contracts < 24 KB, deposit/withdraw ~140–280k gas
+- Reward distribution: O(1) per deposit, proportional to deposit share
+- Security: Multi-layered defense (reentrancy, access control, zero-deposit protection)
 
 ---
 

@@ -1,4 +1,4 @@
-module github.com/to-nexus/cross-staking/binding/go
+module github.com/to-nexus/cross-game-reward/binding/go
 
 go 1.25.3
 

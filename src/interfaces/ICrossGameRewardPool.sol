@@ -5,16 +5,16 @@ import {IERC5313} from "@openzeppelin/contracts/interfaces/IERC5313.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /**
- * @title ICrossStakingPool
- * @notice Interface for the CrossStakingPool contract
- * @dev Defines the structure and functions for staking and reward management
+ * @title ICrossGameRewardPool
+ * @notice Interface for the CrossGameRewardPool contract
+ * @dev Defines the structure and functions for deposit and reward management
  *      Implements IERC5313 for standard owner() function
  */
-interface ICrossStakingPool is IERC5313 {
+interface ICrossGameRewardPool is IERC5313 {
     /**
      * @notice Pool status enum
-     * @param Active All operations allowed (stake, unstake, claim)
-     * @param Inactive Only unstake and claim allowed
+     * @param Active All operations allowed (deposit, withdraw, claim)
+     * @param Inactive Only withdraw and claim allowed
      * @param Paused All operations stopped
      */
     enum PoolStatus {
@@ -26,9 +26,9 @@ interface ICrossStakingPool is IERC5313 {
     /**
      * @notice Reward token information structure
      * @param token Address of the reward token
-     * @param rewardPerTokenStored Accumulated reward per token staked
+     * @param rewardPerTokenStored Accumulated reward per token deposited
      * @param lastBalance Last known balance of the reward token
-     * @param withdrawableAmount Amount that owner can withdraw (from zero-stake deposits)
+     * @param reclaimableAmount Amount that owner can reclaim (from zero-deposit rewards)
      * @param distributedAmount Amount distributed to users (for removed tokens, tracks claimable balance)
      * @param isRemoved Whether the reward token has been removed
      */
@@ -36,7 +36,7 @@ interface ICrossStakingPool is IERC5313 {
         IERC20 token;
         uint rewardPerTokenStored;
         uint lastBalance;
-        uint withdrawableAmount;
+        uint reclaimableAmount;
         uint distributedAmount;
         bool isRemoved;
     }
@@ -54,29 +54,29 @@ interface ICrossStakingPool is IERC5313 {
     /// @notice Returns the pool status
     function poolStatus() external view returns (PoolStatus);
 
-    /// @notice Returns the staking token
-    function stakingToken() external view returns (IERC20);
+    /// @notice Returns the deposit token
+    function depositToken() external view returns (IERC20);
 
-    /// @notice Returns the staked balance of a user
+    /// @notice Returns the deposited balance of a user
     function balances(address account) external view returns (uint);
 
-    /// @notice Returns the total amount staked in the pool
-    function totalStaked() external view returns (uint);
+    /// @notice Returns the total amount deposited in the pool
+    function totalDeposited() external view returns (uint);
 
     /// @notice Returns the reward information for a user and token
     function userRewards(address account, IERC20 token) external view returns (uint rewardPerTokenPaid, uint rewards);
 
-    /// @notice Stakes tokens into the pool
-    function stake(uint amount) external;
+    /// @notice Deposits tokens into the pool
+    function deposit(uint amount) external;
 
-    /// @notice Stakes tokens on behalf of another account
-    function stakeFor(address account, uint amount) external;
+    /// @notice Deposits tokens on behalf of another account
+    function depositFor(address account, uint amount) external;
 
-    /// @notice Unstakes all staked tokens and claims rewards
-    function unstake() external;
+    /// @notice Withdraws all deposited tokens and claims rewards
+    function withdraw() external;
 
-    /// @notice Unstakes tokens on behalf of another account
-    function unstakeFor(address account) external;
+    /// @notice Withdraws tokens on behalf of another account
+    function withdrawFor(address account) external;
 
     /// @notice Claims all pending rewards
     function claimRewards() external;
@@ -129,12 +129,12 @@ interface ICrossStakingPool is IERC5313 {
     /// @notice Sets the pool status
     function setPoolStatus(PoolStatus status) external;
 
-    /// @notice Returns the withdrawable amount for a removed reward token
-    function getWithdrawableAmount(IERC20 token) external view returns (uint);
+    /// @notice Returns the reclaimable amount for a removed reward token
+    function getReclaimableAmount(IERC20 token) external view returns (uint);
 
-    /// @notice Withdraws undistributed rewards that were deposited after token removal
-    function withdraw(IERC20 token, address to) external;
+    /// @notice Reclaims undistributed rewards that were deposited after token removal
+    function reclaimTokens(IERC20 token, address to) external;
 
-    /// @notice Updates the minimum stake amount for the pool
-    function updateMinStakeAmount(uint amount) external;
+    /// @notice Updates the minimum deposit amount for the pool
+    function updateMinDepositAmount(uint amount) external;
 }
