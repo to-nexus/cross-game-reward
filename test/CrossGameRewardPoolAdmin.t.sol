@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import "./base/CrossStakingPoolBase.t.sol";
+import "./base/CrossGameRewardPoolBase.t.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /**
- * @title CrossStakingPoolAdminTest
+ * @title CrossGameRewardPoolAdminTest
  * @notice Admin feature tests covering roles, pause, and reward token management
  */
-contract CrossStakingPoolAdminTest is CrossStakingPoolBase {
+contract CrossGameRewardPoolAdminTest is CrossGameRewardPoolBase {
     MockERC20 public rewardToken3;
 
     function setUp() public override {
@@ -20,7 +20,7 @@ contract CrossStakingPoolAdminTest is CrossStakingPoolBase {
     // ==================== Reward token management tests ====================
 
     function testAddRewardToken() public {
-        crossStaking.addRewardToken(1, rewardToken3);
+        crossGameReward.addRewardToken(1, rewardToken3);
 
         assertEq(pool.rewardTokenCount(), 3, "Should have 3 reward tokens");
         assertTrue(pool.isRewardToken(rewardToken3), "Should be registered as reward token");
@@ -33,24 +33,24 @@ contract CrossStakingPoolAdminTest is CrossStakingPoolBase {
     }
 
     function testCannotAddSameRewardTokenTwice() public {
-        crossStaking.addRewardToken(1, rewardToken3);
+        crossGameReward.addRewardToken(1, rewardToken3);
 
-        vm.expectRevert(CrossStakingPool.CSPRewardTokenAlreadyAdded.selector);
-        crossStaking.addRewardToken(1, rewardToken3);
+        vm.expectRevert(CrossGameRewardPool.CSPRewardTokenAlreadyAdded.selector);
+        crossGameReward.addRewardToken(1, rewardToken3);
     }
 
     function testCannotAddZeroAddressAsRewardToken() public {
-        vm.expectRevert(CrossStakingPool.CSPCanNotZeroAddress.selector);
-        crossStaking.addRewardToken(1, IERC20(address(0)));
+        vm.expectRevert(CrossGameRewardPool.CSPCanNotZeroAddress.selector);
+        crossGameReward.addRewardToken(1, IERC20(address(0)));
     }
 
-    function testCannotAddStakingTokenAsReward() public {
-        vm.expectRevert(CrossStakingPool.CSPCanNotUseStakingToken.selector);
-        crossStaking.addRewardToken(1, crossToken);
+    function testCannotAddDepositTokenAsReward() public {
+        vm.expectRevert(CrossGameRewardPool.CSPCanNotUseDepositToken.selector);
+        crossGameReward.addRewardToken(1, crossToken);
     }
 
     function testRewardTokenIndexMapping() public {
-        crossStaking.addRewardToken(1, rewardToken3);
+        crossGameReward.addRewardToken(1, rewardToken3);
 
         // Check if token is registered
         assertTrue(pool.isRewardToken(rewardToken3), "Third token should be registered");
@@ -62,8 +62,8 @@ contract CrossStakingPoolAdminTest is CrossStakingPoolBase {
     // ==================== Reward deposit permissions ====================
 
     function testDirectTransferReward() public {
-        // User2 stakes first
-        _userStake(user2, 10 ether);
+        // User2 deposits first
+        _userDeposit(user2, 10 ether);
 
         // Any address can transfer rewards directly
         vm.startPrank(user1);
@@ -79,11 +79,11 @@ contract CrossStakingPoolAdminTest is CrossStakingPoolBase {
     // ==================== Remove Reward Token ====================
 
     function testRemoveRewardToken() public {
-        _userStake(user1, 10 ether);
+        _userDeposit(user1, 10 ether);
         _depositReward(address(rewardToken1), 100 ether);
 
-        // Remove reward token via CrossStaking
-        crossStaking.removeRewardToken(1, rewardToken1);
+        // Remove reward token via CrossGameReward
+        crossGameReward.removeRewardToken(1, rewardToken1);
 
         // Verify removed from set
         assertFalse(pool.isRewardToken(rewardToken1), "Should be removed from set");
@@ -98,29 +98,29 @@ contract CrossStakingPoolAdminTest is CrossStakingPoolBase {
     }
 
     function testCannotRemoveNonExistentToken() public {
-        vm.expectRevert(CrossStakingPool.CSPInvalidRewardToken.selector);
-        crossStaking.removeRewardToken(1, rewardToken3);
+        vm.expectRevert(CrossGameRewardPool.CSPInvalidRewardToken.selector);
+        crossGameReward.removeRewardToken(1, rewardToken3);
     }
 
     function testOnlyRewardManagerCanRemove() public {
         vm.prank(user1);
         vm.expectRevert();
-        crossStaking.removeRewardToken(1, rewardToken1);
+        crossGameReward.removeRewardToken(1, rewardToken1);
     }
 
     function testRemovedTokenNoNewRewards() public {
-        _userStake(user1, 10 ether);
+        _userDeposit(user1, 10 ether);
         _depositReward(address(rewardToken1), 100 ether);
 
-        // Remove token via CrossStaking
-        crossStaking.removeRewardToken(1, rewardToken1);
+        // Remove token via CrossGameReward
+        crossGameReward.removeRewardToken(1, rewardToken1);
 
         // Try to add new rewards (won't be distributed because not in set)
         rewardToken1.mint(owner, 50 ether);
         rewardToken1.transfer(address(pool), 50 ether);
 
         // Sync won't happen for removed token
-        _userStake(user2, 10 ether);
+        _userDeposit(user2, 10 ether);
 
         // user1 should only have original 100, not 150
         vm.prank(user1);
@@ -131,28 +131,28 @@ contract CrossStakingPoolAdminTest is CrossStakingPoolBase {
 
     // ==================== Withdraw ====================
 
-    function testWithdraw() public {
-        _userStake(user1, 10 ether);
+    function testTokensReclaimed() public {
+        _userDeposit(user1, 10 ether);
         _depositReward(address(rewardToken1), 100 ether);
 
-        // Remove token via CrossStaking
-        crossStaking.removeRewardToken(1, rewardToken1);
+        // Remove token via CrossGameReward
+        crossGameReward.removeRewardToken(1, rewardToken1);
 
         // Accidentally deposit additional rewards
         rewardToken1.mint(owner, 50 ether);
         rewardToken1.transfer(address(pool), 50 ether);
 
         // Check withdrawable amount
-        uint withdrawable = pool.getWithdrawableAmount(rewardToken1);
+        uint withdrawable = pool.getReclaimableAmount(rewardToken1);
         assertEq(withdrawable, 50 ether, "Should be able to withdraw extra deposit");
 
-        // Perform withdrawal via CrossStaking
+        // Perform withdrawal via CrossGameReward
         uint ownerBalanceBefore = rewardToken1.balanceOf(owner);
-        crossStaking.withdrawFromPool(1, rewardToken1, owner);
+        crossGameReward.reclaimFromPool(1, rewardToken1, owner);
 
         // Confirm withdrawal result
         assertEq(rewardToken1.balanceOf(owner) - ownerBalanceBefore, 50 ether, "Withdraw succeeded");
-        assertEq(pool.getWithdrawableAmount(rewardToken1), 0, "No more withdrawable");
+        assertEq(pool.getReclaimableAmount(rewardToken1), 0, "No more withdrawable");
 
         // User can still claim rewards
         vm.prank(user1);
@@ -161,11 +161,11 @@ contract CrossStakingPoolAdminTest is CrossStakingPoolBase {
     }
 
     function testWithdrawAfterUserClaim() public {
-        _userStake(user1, 10 ether);
+        _userDeposit(user1, 10 ether);
         _depositReward(address(rewardToken1), 100 ether);
 
-        // Remove token (removed balance = 100) via CrossStaking
-        crossStaking.removeRewardToken(1, rewardToken1);
+        // Remove token (removed balance = 100) via CrossGameReward
+        crossGameReward.removeRewardToken(1, rewardToken1);
 
         // Accidentally add 50 more (total balance becomes 150)
         rewardToken1.mint(owner, 50 ether);
@@ -176,35 +176,35 @@ contract CrossStakingPoolAdminTest is CrossStakingPoolBase {
         pool.claimReward(rewardToken1);
 
         // Withdrawable = current balance - (balance at removal - claimed amount)
-        uint withdrawable = pool.getWithdrawableAmount(rewardToken1);
+        uint withdrawable = pool.getReclaimableAmount(rewardToken1);
         assertEq(withdrawable, 50 ether, "Still 50 withdrawable after user claim");
 
-        // Owner can perform the withdrawal via CrossStaking
+        // Owner can perform the withdrawal via CrossGameReward
         uint ownerBalanceBefore = rewardToken1.balanceOf(owner);
-        crossStaking.withdrawFromPool(1, rewardToken1, owner);
+        crossGameReward.reclaimFromPool(1, rewardToken1, owner);
         assertEq(rewardToken1.balanceOf(owner) - ownerBalanceBefore, 50 ether, "Withdraw only extra deposits");
     }
 
     function testCannotWithdrawNonRemovedToken() public view {
         // Cannot withdraw rewards for a token that is still registered
-        uint withdrawable = pool.getWithdrawableAmount(rewardToken1);
+        uint withdrawable = pool.getReclaimableAmount(rewardToken1);
         assertEq(withdrawable, 0, "Non-removed token has 0 withdrawable");
     }
 
     function testCannotWithdrawZero() public {
-        // Remove but no extra deposits via CrossStaking
-        crossStaking.removeRewardToken(1, rewardToken1);
+        // Remove but no extra deposits via CrossGameReward
+        crossGameReward.removeRewardToken(1, rewardToken1);
 
         // No extra deposits - cannot withdraw
-        vm.expectRevert(CrossStakingPool.CSPNoWithdrawableAmount.selector);
-        crossStaking.withdrawFromPool(1, rewardToken1, owner);
+        vm.expectRevert(CrossGameRewardPool.CSPNoReclaimableAmount.selector);
+        crossGameReward.reclaimFromPool(1, rewardToken1, owner);
     }
 
-    function testOnlyManagerCanWithdraw() public {
-        _userStake(user1, 10 ether);
+    function testOnlyManagerCanTokensReclaimed() public {
+        _userDeposit(user1, 10 ether);
         _depositReward(address(rewardToken1), 100 ether);
 
-        crossStaking.removeRewardToken(1, rewardToken1);
+        crossGameReward.removeRewardToken(1, rewardToken1);
 
         rewardToken1.mint(owner, 50 ether);
         rewardToken1.transfer(address(pool), 50 ether);
@@ -212,86 +212,86 @@ contract CrossStakingPoolAdminTest is CrossStakingPoolBase {
         // Non-manager cannot withdraw
         vm.prank(user1);
         vm.expectRevert();
-        crossStaking.withdrawFromPool(1, rewardToken1, user1);
+        crossGameReward.reclaimFromPool(1, rewardToken1, user1);
     }
 
     // ==================== Pool Status Tests ====================
 
     function testSetPoolStatusPaused() public {
-        crossStaking.setPoolStatus(1, ICrossStakingPool.PoolStatus.Paused); // Paused = 2
+        crossGameReward.setPoolStatus(1, ICrossGameRewardPool.PoolStatus.Paused); // Paused = 2
 
         assertEq(uint(pool.poolStatus()), 2, "Pool should be paused");
         assertTrue(pool.paused(), "Pool should be paused");
     }
 
     function testSetPoolStatusInactive() public {
-        crossStaking.setPoolStatus(1, ICrossStakingPool.PoolStatus.Inactive); // Inactive = 1
+        crossGameReward.setPoolStatus(1, ICrossGameRewardPool.PoolStatus.Inactive); // Inactive = 1
 
         assertEq(uint(pool.poolStatus()), 1, "Pool should be inactive");
         assertFalse(pool.paused(), "Pool should not be paused");
     }
 
     function testSetPoolStatusActive() public {
-        crossStaking.setPoolStatus(1, ICrossStakingPool.PoolStatus.Inactive); // Inactive
-        crossStaking.setPoolStatus(1, ICrossStakingPool.PoolStatus.Active); // Active = 0
+        crossGameReward.setPoolStatus(1, ICrossGameRewardPool.PoolStatus.Inactive); // Inactive
+        crossGameReward.setPoolStatus(1, ICrossGameRewardPool.PoolStatus.Active); // Active = 0
 
         assertEq(uint(pool.poolStatus()), 0, "Pool should be active");
         assertFalse(pool.paused(), "Pool should not be paused");
     }
 
-    function testOnlyStakingRootCanSetStatus() public {
+    function testOnlyRewardRootCanSetStatus() public {
         vm.prank(user1);
         vm.expectRevert();
-        pool.setPoolStatus(ICrossStakingPool.PoolStatus.Paused); // Paused
+        pool.setPoolStatus(ICrossGameRewardPool.PoolStatus.Paused); // Paused
     }
 
-    function testCannotStakeWhenPaused() public {
-        crossStaking.setPoolStatus(1, ICrossStakingPool.PoolStatus.Paused); // Paused
+    function testCannotDepositWhenPaused() public {
+        crossGameReward.setPoolStatus(1, ICrossGameRewardPool.PoolStatus.Paused); // Paused
 
         vm.startPrank(user1);
         crossToken.approve(address(pool), 10 ether);
         // When paused, PausableUpgradeable.EnforcedPause is thrown first (from whenNotPaused modifier)
         vm.expectRevert();
-        pool.stake(10 ether);
+        pool.deposit(10 ether);
         vm.stopPrank();
     }
 
-    function testCannotStakeWhenInactive() public {
-        crossStaking.setPoolStatus(1, ICrossStakingPool.PoolStatus.Inactive); // Inactive
+    function testCannotDepositWhenInactive() public {
+        crossGameReward.setPoolStatus(1, ICrossGameRewardPool.PoolStatus.Inactive); // Inactive
 
         vm.startPrank(user1);
         crossToken.approve(address(pool), 10 ether);
-        vm.expectRevert(CrossStakingPool.CSPCannotStakeInCurrentState.selector);
-        pool.stake(10 ether);
+        vm.expectRevert(CrossGameRewardPool.CSPCannotDepositInCurrentState.selector);
+        pool.deposit(10 ether);
         vm.stopPrank();
     }
 
-    function testCanUnstakeWhenInactive() public {
-        _userStake(user1, 10 ether);
+    function testCanWithdrawWhenInactive() public {
+        _userDeposit(user1, 10 ether);
 
-        crossStaking.setPoolStatus(1, ICrossStakingPool.PoolStatus.Inactive); // Inactive
+        crossGameReward.setPoolStatus(1, ICrossGameRewardPool.PoolStatus.Inactive); // Inactive
 
         vm.prank(user1);
-        pool.unstake();
-        assertEq(pool.balances(user1), 0, "Should be able to unstake when inactive");
+        pool.withdraw();
+        assertEq(pool.balances(user1), 0, "Should be able to withdraw when inactive");
     }
 
-    function testCannotUnstakeWhenPaused() public {
-        _userStake(user1, 10 ether);
+    function testCannotWithdrawWhenPaused() public {
+        _userDeposit(user1, 10 ether);
 
-        crossStaking.setPoolStatus(1, ICrossStakingPool.PoolStatus.Paused); // Paused
+        crossGameReward.setPoolStatus(1, ICrossGameRewardPool.PoolStatus.Paused); // Paused
 
         vm.prank(user1);
         // When paused, PausableUpgradeable.EnforcedPause is thrown first (from whenNotPaused modifier)
         vm.expectRevert();
-        pool.unstake();
+        pool.withdraw();
     }
 
     function testCanClaimWhenInactive() public {
-        _userStake(user1, 10 ether);
+        _userDeposit(user1, 10 ether);
         _depositReward(address(rewardToken1), 100 ether);
 
-        crossStaking.setPoolStatus(1, ICrossStakingPool.PoolStatus.Inactive); // Inactive
+        crossGameReward.setPoolStatus(1, ICrossGameRewardPool.PoolStatus.Inactive); // Inactive
 
         vm.prank(user1);
         pool.claimRewards();
@@ -299,10 +299,10 @@ contract CrossStakingPoolAdminTest is CrossStakingPoolBase {
     }
 
     function testCannotClaimWhenPaused() public {
-        _userStake(user1, 10 ether);
+        _userDeposit(user1, 10 ether);
         _depositReward(address(rewardToken1), 100 ether);
 
-        crossStaking.setPoolStatus(1, ICrossStakingPool.PoolStatus.Paused); // Paused
+        crossGameReward.setPoolStatus(1, ICrossGameRewardPool.PoolStatus.Paused); // Paused
 
         vm.prank(user1);
         // When paused, PausableUpgradeable.EnforcedPause is thrown first (from whenNotPaused modifier)
@@ -310,49 +310,49 @@ contract CrossStakingPoolAdminTest is CrossStakingPoolBase {
         pool.claimRewards();
     }
 
-    function testStakeAfterReactivation() public {
-        crossStaking.setPoolStatus(1, ICrossStakingPool.PoolStatus.Inactive); // Inactive
-        crossStaking.setPoolStatus(1, ICrossStakingPool.PoolStatus.Active); // Active
+    function testDepositAfterReactivation() public {
+        crossGameReward.setPoolStatus(1, ICrossGameRewardPool.PoolStatus.Inactive); // Inactive
+        crossGameReward.setPoolStatus(1, ICrossGameRewardPool.PoolStatus.Active); // Active
 
-        _userStake(user1, 10 ether);
-        assertEq(pool.balances(user1), 10 ether, "Should be able to stake after reactivation");
+        _userDeposit(user1, 10 ether);
+        assertEq(pool.balances(user1), 10 ether, "Should be able to deposit after reactivation");
     }
 
     // ==================== Access control tests ====================
 
     function testOwner() public view {
-        // Pool owner is CrossStaking contract's owner (default admin)
-        assertTrue(pool.owner() == owner, "Pool owner should be CrossStaking's owner");
+        // Pool owner is CrossGameReward contract's owner (default admin)
+        assertTrue(pool.owner() == owner, "Pool owner should be CrossGameReward's owner");
     }
 
-    function testCrossStakingReference() public view {
-        // CrossStaking contract reference
+    function testCrossGameRewardReference() public view {
+        // CrossGameReward contract reference
         assertTrue(
-            address(pool.crossStaking()) == address(crossStaking),
-            "Pool crossStaking should be the CrossStaking contract"
+            address(pool.crossGameReward()) == address(crossGameReward),
+            "Pool crossGameReward should be the CrossGameReward contract"
         );
     }
 
-    function testOnlyStakingRootCanChangeStatus() public {
+    function testOnlyRewardRootCanChangeStatus() public {
         // User1 cannot set status
         vm.prank(user1);
         vm.expectRevert();
-        pool.setPoolStatus(ICrossStakingPool.PoolStatus.Paused); // Paused
+        pool.setPoolStatus(ICrossGameRewardPool.PoolStatus.Paused); // Paused
 
-        // CrossStaking can set status
-        crossStaking.setPoolStatus(1, ICrossStakingPool.PoolStatus.Paused); // Pool 1, Paused status
-        assertTrue(pool.paused(), "CrossStaking (STAKING_ROOT) can set status");
+        // CrossGameReward can set status
+        crossGameReward.setPoolStatus(1, ICrossGameRewardPool.PoolStatus.Paused); // Pool 1, Paused status
+        assertTrue(pool.paused(), "CrossGameReward (REWARD_ROOT) can set status");
     }
 
-    function testOnlyStakingRootCanAddRewardToken() public {
+    function testOnlyRewardRootCanAddRewardToken() public {
         // User1 cannot add a reward token
         vm.prank(user1);
         vm.expectRevert();
         pool.addRewardToken(rewardToken3);
 
-        // CrossStaking can add the token
-        crossStaking.addRewardToken(1, rewardToken3);
-        assertEq(pool.rewardTokenCount(), 3, "CrossStaking can add reward token");
+        // CrossGameReward can add the token
+        crossGameReward.addRewardToken(1, rewardToken3);
+        assertEq(pool.rewardTokenCount(), 3, "CrossGameReward can add reward token");
     }
 
     // ==================== UUPS upgrade authorization tests ====================
@@ -370,7 +370,7 @@ contract CrossStakingPoolAdminTest is CrossStakingPoolBase {
     // ==================== Initialization tests ====================
 
     function testInitialConfiguration() public view {
-        assertEq(address(pool.stakingToken()), address(crossToken), "Staking token should be set");
+        assertEq(address(pool.depositToken()), address(crossToken), "Deposit token should be set");
         assertEq(pool.rewardTokenCount(), 2, "Should have 2 reward tokens from setup");
         assertFalse(pool.paused(), "Should not be paused initially");
         assertEq(uint(pool.poolStatus()), 0, "Should be active initially");

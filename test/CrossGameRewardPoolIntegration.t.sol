@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import "./base/CrossStakingPoolBase.t.sol";
+import "./base/CrossGameRewardPoolBase.t.sol";
 
 /**
- * @title CrossStakingPoolIntegrationTest
+ * @title CrossGameRewardPoolIntegrationTest
  * @notice Complex scenario and integration tests
  */
-contract CrossStakingPoolIntegrationTest is CrossStakingPoolBase {
+contract CrossGameRewardPoolIntegrationTest is CrossGameRewardPoolBase {
     // ==================== Realistic scenario tests ====================
 
     function testCompleteUserJourney() public {
@@ -16,22 +16,22 @@ contract CrossStakingPoolIntegrationTest is CrossStakingPoolBase {
         uint user2InitialCross = crossToken.balanceOf(user2);
         uint user3InitialCross = crossToken.balanceOf(user3);
 
-        // Day 0: User1 stakes 50 CROSS
-        _userStake(user1, 50 ether);
+        // Day 0: User1 deposits 50 CROSS
+        _userDeposit(user1, 50 ether);
         assertEq(crossToken.balanceOf(user1), user1InitialCross - 50 ether, "User1 CROSS decreased");
         assertEq(pool.balances(user1), 50 ether, "User1 pool balance: 50");
-        assertEq(pool.totalStaked(), 50 ether, "Total staked: 50");
+        assertEq(pool.totalDeposited(), 50 ether, "Total depositd: 50");
 
         // Day 1: First reward
         _warpDays(1);
         _depositReward(address(rewardToken1), 100 ether);
 
-        // Day 2: User2 stakes 100 CROSS
+        // Day 2: User2 deposits 100 CROSS
         _warpDays(1);
-        _userStake(user2, 100 ether);
+        _userDeposit(user2, 100 ether);
         assertEq(crossToken.balanceOf(user2), user2InitialCross - 100 ether, "User2 CROSS decreased");
         assertEq(pool.balances(user2), 100 ether, "User2 pool balance: 100");
-        assertEq(pool.totalStaked(), 150 ether, "Total staked: 150");
+        assertEq(pool.totalDeposited(), 150 ether, "Total depositd: 150");
 
         // Day 3: Second reward
         _warpDays(1);
@@ -44,50 +44,50 @@ contract CrossStakingPoolIntegrationTest is CrossStakingPoolBase {
         pool.claimRewards();
 
         assertEq(crossToken.balanceOf(user1), user1CrossBeforeClaim, "User1 CROSS unchanged after claim");
-        assertEq(pool.balances(user1), 50 ether, "User1 stake unchanged");
+        assertEq(pool.balances(user1), 50 ether, "User1 deposit unchanged");
 
         uint user1Claimed = rewardToken1.balanceOf(user1);
         assertTrue(user1Claimed > 0, "User1 claimed rewards");
 
-        // Day 5: User3 stakes 150 CROSS
+        // Day 5: User3 deposits 150 CROSS
         _warpDays(1);
-        _userStake(user3, 150 ether);
+        _userDeposit(user3, 150 ether);
         assertEq(crossToken.balanceOf(user3), user3InitialCross - 150 ether, "User3 CROSS decreased");
         assertEq(pool.balances(user3), 150 ether, "User3 pool balance: 150");
-        assertEq(pool.totalStaked(), 300 ether, "Total staked: 300");
+        assertEq(pool.totalDeposited(), 300 ether, "Total depositd: 300");
 
         // Day 6: Third reward
         _warpDays(1);
         _depositReward(address(rewardToken1), 300 ether);
 
-        // Day 7: Everyone unstakes
+        // Day 7: Everyone withdraws
         _warpDays(1);
 
-        // User1 unstake
+        // User1 withdraw
         uint user1RewardBefore = rewardToken1.balanceOf(user1);
         uint user1CrossBefore = crossToken.balanceOf(user1);
         vm.prank(user1);
-        pool.unstake();
+        pool.withdraw();
 
         assertEq(crossToken.balanceOf(user1), user1CrossBefore + 50 ether, "User1 gets 50 CROSS back");
         assertEq(crossToken.balanceOf(user1), user1InitialCross, "User1 CROSS fully restored");
         assertEq(pool.balances(user1), 0, "User1 balance cleared");
         uint user1Total = rewardToken1.balanceOf(user1) - user1RewardBefore + user1Claimed;
 
-        // User2 unstake
+        // User2 withdraw
         uint user2CrossBefore = crossToken.balanceOf(user2);
         vm.prank(user2);
-        pool.unstake();
+        pool.withdraw();
 
         assertEq(crossToken.balanceOf(user2), user2CrossBefore + 100 ether, "User2 gets 100 CROSS back");
         assertEq(crossToken.balanceOf(user2), user2InitialCross, "User2 CROSS fully restored");
         assertEq(pool.balances(user2), 0, "User2 balance cleared");
         uint user2Total = rewardToken1.balanceOf(user2);
 
-        // User3 unstake
+        // User3 withdraw
         uint user3CrossBefore = crossToken.balanceOf(user3);
         vm.prank(user3);
-        pool.unstake();
+        pool.withdraw();
 
         assertEq(crossToken.balanceOf(user3), user3CrossBefore + 150 ether, "User3 gets 150 CROSS back");
         assertEq(crossToken.balanceOf(user3), user3InitialCross, "User3 CROSS fully restored");
@@ -100,15 +100,15 @@ contract CrossStakingPoolIntegrationTest is CrossStakingPoolBase {
         assertApproxEqAbs(totalRewards, 550 ether, 100, "Total rewards match deposits");
 
         // Ensure all CROSS has been returned
-        assertEq(pool.totalStaked(), 0, "All CROSS unstaked from pool");
+        assertEq(pool.totalDeposited(), 0, "All CROSS withdrawd from pool");
         assertEq(crossToken.balanceOf(address(pool)), 0, "Pool has no CROSS");
     }
 
     function testMultipleRewardTokensComplexScenario() public {
-        // Users stake
-        _userStake(user1, 100 ether);
-        _userStake(user2, 200 ether);
-        _userStake(user3, 300 ether);
+        // Users deposit
+        _userDeposit(user1, 100 ether);
+        _userDeposit(user2, 200 ether);
+        _userDeposit(user3, 300 ether);
 
         // Multiple reward deposits over time
         _warpDays(1);
@@ -126,7 +126,7 @@ contract CrossStakingPoolIntegrationTest is CrossStakingPoolBase {
         (, uint[] memory rewards2) = pool.pendingRewards(user2);
         (, uint[] memory rewards3) = pool.pendingRewards(user3);
 
-        // Total staked: 600
+        // Total depositd: 600
         // User1: 100/600 = 16.67%
         // User2: 200/600 = 33.33%
         // User3: 300/600 = 50%
@@ -142,21 +142,21 @@ contract CrossStakingPoolIntegrationTest is CrossStakingPoolBase {
         assertApproxEqAbs(rewards3[1], 450 ether, 100, "User3 reward2: 50%");
     }
 
-    function testDynamicStakingAndUnstaking() public {
-        // Initial stakes
-        _userStake(user1, 100 ether);
-        _userStake(user2, 200 ether);
+    function testDynamicDepositingAndWithdrawing() public {
+        // Initial deposits
+        _userDeposit(user1, 100 ether);
+        _userDeposit(user2, 200 ether);
 
         _warpDays(1);
         _depositReward(address(rewardToken1), 300 ether);
 
-        // User1 unstakes
+        // User1 withdraws
         vm.prank(user1);
-        pool.unstake();
+        pool.withdraw();
         uint user1Rewards = rewardToken1.balanceOf(user1);
 
-        // User3 stakes
-        _userStake(user3, 300 ether);
+        // User3 deposits
+        _userDeposit(user3, 300 ether);
 
         _warpDays(1);
         _depositReward(address(rewardToken1), 500 ether);
@@ -174,10 +174,10 @@ contract CrossStakingPoolIntegrationTest is CrossStakingPoolBase {
         assertApproxEqAbs(rewards3[0], 300 ether, 100, "User3 only second reward");
     }
 
-    function testRepeatedStakeAndClaim() public {
+    function testRepeatedDepositAndClaim() public {
         for (uint i = 0; i < 5; i++) {
-            // Stake
-            _userStake(user1, 10 ether);
+            // Deposit
+            _userDeposit(user1, 10 ether);
 
             // Reward
             _warpDays(1);
@@ -194,11 +194,11 @@ contract CrossStakingPoolIntegrationTest is CrossStakingPoolBase {
         assertApproxEqAbs(totalClaimed, 500 ether, 0.001 ether, "Should accumulate all claims");
 
         // Final balance
-        assertEq(pool.balances(user1), 50 ether, "Should have accumulated stakes");
+        assertEq(pool.balances(user1), 50 ether, "Should have accumulated deposits");
     }
 
-    function testLongTermStaking() public {
-        _userStake(user1, 100 ether);
+    function testLongTermDepositing() public {
+        _userDeposit(user1, 100 ether);
 
         // 1 year of weekly rewards
         for (uint i = 0; i < 52; i++) {
@@ -209,9 +209,9 @@ contract CrossStakingPoolIntegrationTest is CrossStakingPoolBase {
         (, uint[] memory rewards) = pool.pendingRewards(user1);
         assertApproxEqAbs(rewards[0], 5200 ether, 0.01 ether, "1 year of rewards");
 
-        // Unstake after 1 year
+        // Withdraw after 1 year
         vm.prank(user1);
-        pool.unstake();
+        pool.withdraw();
 
         assertEq(crossToken.balanceOf(user1), 1000 ether, "Should get all CROSS back");
         assertApproxEqAbs(rewardToken1.balanceOf(user1), 5200 ether, 0.01 ether, "Should get all rewards");
@@ -219,13 +219,13 @@ contract CrossStakingPoolIntegrationTest is CrossStakingPoolBase {
 
     // ==================== Stress tests ====================
 
-    function testManyUsersStaking() public {
-        // 100 users staking the same amount (simplified to 10)
+    function testManyUsersDepositing() public {
+        // 100 users depositing the same amount (simplified to 10)
         address[] memory users = new address[](10); // simplified to 10 users
         for (uint i = 0; i < 10; i++) {
             users[i] = address(uint160(i + 100));
             crossToken.transfer(users[i], 100 ether);
-            _userStake(users[i], 10 ether);
+            _userDeposit(users[i], 10 ether);
         }
 
         _warpDays(1);
@@ -239,7 +239,7 @@ contract CrossStakingPoolIntegrationTest is CrossStakingPoolBase {
     }
 
     function testHighFrequencyRewards() public {
-        _userStake(user1, 100 ether);
+        _userDeposit(user1, 100 ether);
 
         // Deposit rewards 100 times (simulating daily drops)
         for (uint i = 0; i < 100; i++) {
@@ -253,12 +253,12 @@ contract CrossStakingPoolIntegrationTest is CrossStakingPoolBase {
     // ==================== Edge-case integration ====================
 
     function testZeroBalanceAfterMultipleOperations() public {
-        _userStake(user1, 100 ether);
+        _userDeposit(user1, 100 ether);
         _depositReward(address(rewardToken1), 100 ether);
 
         vm.startPrank(user1);
         pool.claimRewards();
-        pool.unstake();
+        pool.withdraw();
         vm.stopPrank();
 
         assertEq(pool.balances(user1), 0, "Balance should be zero");
@@ -268,15 +268,15 @@ contract CrossStakingPoolIntegrationTest is CrossStakingPoolBase {
     }
 
     function testRewardAccuracyWithPrecision() public {
-        // Very small stake with large reward
-        _userStake(user1, 1 ether);
+        // Very small deposit with large reward
+        _userDeposit(user1, 1 ether);
         _depositReward(address(rewardToken1), 10000 ether); // adjusted to a smaller scale
 
         (, uint[] memory rewards) = pool.pendingRewards(user1);
         assertApproxEqAbs(rewards[0], 10000 ether, 100, "Should handle large rewards");
 
-        // Very large stake with small reward
-        _userStake(user2, 1000 ether);
+        // Very large deposit with small reward
+        _userDeposit(user2, 1000 ether);
         _depositReward(address(rewardToken1), 1 ether);
 
         (, uint[] memory rewards2) = pool.pendingRewards(user2);
@@ -285,7 +285,7 @@ contract CrossStakingPoolIntegrationTest is CrossStakingPoolBase {
     }
 
     function testSequentialClaimsPreserveAccuracy() public {
-        _userStake(user1, 100 ether);
+        _userDeposit(user1, 100 ether);
 
         for (uint i = 0; i < 10; i++) {
             _depositReward(address(rewardToken1), 100 ether);
@@ -303,7 +303,7 @@ contract CrossStakingPoolIntegrationTest is CrossStakingPoolBase {
 
     function testTypicalDeFiUsage() public {
         // Week 1: Initial liquidity providers
-        _userStake(user1, 500 ether);
+        _userDeposit(user1, 500 ether);
         _warpDays(7);
 
         // Week 2: Protocol starts distributing rewards
@@ -311,24 +311,24 @@ contract CrossStakingPoolIntegrationTest is CrossStakingPoolBase {
         _warpDays(7);
 
         // Week 3: More users join
-        _userStake(user2, 500 ether);
+        _userDeposit(user2, 500 ether);
         _depositReward(address(rewardToken1), 2000 ether);
         _warpDays(7);
 
         // Week 4: User1 claims and adds more
         vm.prank(user1);
         pool.claimRewards();
-        _userStake(user1, 200 ether);
+        _userDeposit(user1, 200 ether);
         _depositReward(address(rewardToken1), 3000 ether);
         _warpDays(7);
 
-        // Week 5: User2 partially unstakes
+        // Week 5: User2 partially withdraws
         vm.prank(user2);
-        pool.unstake();
+        pool.withdraw();
 
         // Final state check
-        assertTrue(pool.totalStaked() > 0, "Pool should still have stakers");
+        assertTrue(pool.totalDeposited() > 0, "Pool should still have depositrs");
         assertTrue(rewardToken1.balanceOf(user1) > 0, "User1 should have claimed rewards");
-        assertTrue(rewardToken1.balanceOf(user2) > 0, "User2 should have rewards from unstake");
+        assertTrue(rewardToken1.balanceOf(user2) > 0, "User2 should have rewards from withdraw");
     }
 }

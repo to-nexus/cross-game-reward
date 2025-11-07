@@ -1,4 +1,4 @@
-# Cross Staking Protocol – Documentation Hub
+# Cross GameReward Protocol – Documentation Hub
 
 ## 📚 Language Packs
 - **한국어 (ko)**
@@ -17,10 +17,10 @@
 ## 🚀 Quick Reference
 - `rewardPerToken` accumulation powers all reward distribution:
   ```
-  rewardPerTokenStored += (newReward × 1e18) / totalStaked
+  rewardPerTokenStored += (newReward × 1e18) / totalDeposited
   userReward = userBalance × (rewardPerTokenStored - userCheckpoint) / 1e18
   ```
-- 4 core contracts: `CrossStaking`, `CrossStakingPool`, `CrossStakingRouter`, `WCROSS`
+- 4 core contracts: `CrossGameReward`, `CrossGameRewardPool`, `CrossGameRewardRouter`, `WCROSS`
 - Foundry test-suite: 9 files / 159 cases (`forge test`)
 
 ---
@@ -34,7 +34,7 @@
 ---
 
 ## ⚠️ Current Status Highlights
-- High-severity issue H-01 (removed reward token claims) fixed on 2025-11-03; removed tokens are now auto-settled during unstake while active stakes continue to use the standard claim functions. See both language versions of `03_security_and_testing.md` for helper details and regression coverage.
+- High-severity issue H-01 (removed reward token claims) fixed on 2025-11-03; removed tokens are now auto-settled during withdraw while active deposits continue to use the standard claim functions. See both language versions of `03_security_and_testing.md` for helper details and regression coverage.
 - Operational controls (router assignment, UUPS upgrades, pausing) remain centralized under the `DEFAULT_ADMIN_ROLE`; multi-sig governance is recommended before production rollout.
 
 ---

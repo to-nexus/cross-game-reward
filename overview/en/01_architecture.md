@@ -1,7 +1,7 @@
-# Cross Staking Protocol – Architecture
+# Cross GameReward Protocol – Architecture
 
 ## 📐 Overview
-The protocol exposes a modular multi-pool staking topology built around a `rewardPerToken` accumulator. This document explains how the contracts interact and which responsibilities reside where.
+The protocol exposes a modular multi-pool deposit topology built around a `rewardPerToken` accumulator. This document explains how the contracts interact and which responsibilities reside where.
 
 ---
 
@@ -15,9 +15,9 @@ The protocol exposes a modular multi-pool staking topology built around a `rewar
                │
                ▼
 ┌───────────────────────────────┐
-│ CrossStakingRouter            │
-│ • stakeNative / unstakeNative │
-│ • stakeERC20 / unstakeERC20   │
+│ CrossGameRewardRouter            │
+│ • depositNative / withdrawNative │
+│ • depositERC20 / withdrawERC20   │
 │ • stateless, redeployable     │
 └──────┬────────────────────────┘
        │
@@ -25,14 +25,14 @@ The protocol exposes a modular multi-pool staking topology built around a `rewar
        │
        ▼
 ┌───────────────────────────────┐
-│ CrossStaking (factory)        │
+│ CrossGameReward (factory)        │
 │ • UUPS upgradeable            │
 │ • createPool / setRouter      │
 └──────┬────────────────────────┘
        │ creates
        ▼
 ┌───────────────────────────────┐
-│ CrossStakingPool × N          │
+│ CrossGameRewardPool × N          │
 │ • UUPS upgradeable            │
 │ • rewardPerToken accounting   │
 │ • multi reward token support  │
@@ -44,11 +44,11 @@ The protocol exposes a modular multi-pool staking topology built around a `rewar
 ## 🔧 Contract Details
 
 ### 1. WCROSS
-- Purpose: wrap native CROSS into an ERC-20 for staking.
-- Storage: `CrossStaking public staking`.
-- Router-only operations enforced through `require(msg.sender == staking.router())`.
+- Purpose: wrap native CROSS into an ERC-20 for deposit.
+- Storage: `CrossGameReward public deposit`.
+- Router-only operations enforced through `require(msg.sender == deposit.router())`.
 
-### 2. CrossStaking (factory)
+### 2. CrossGameReward (factory)
 - Storage highlights:
   ```solidity
   address public wcross;
@@ -64,12 +64,12 @@ The protocol exposes a modular multi-pool staking topology built around a `rewar
   - Track pool metadata (`PoolInfo`).
   - Pause/unpause pools via `setPoolActive`.
 
-### 3. CrossStakingPool
+### 3. CrossGameRewardPool
 - Storage highlights:
   ```solidity
-  IERC20 public stakingToken;
-  address public crossStaking;
-  uint256 public minStakeAmount;
+  IERC20 public depositToken;
+  address public crossDeposit;
+  uint256 public minDepositAmount;
   mapping(address => uint256) public balances;
   mapping(address => mapping(IERC20 => UserReward)) public userRewards;
   EnumerableSet.AddressSet private _rewardTokenAddresses;
@@ -77,21 +77,21 @@ The protocol exposes a modular multi-pool staking topology built around a `rewar
   mapping(IERC20 => RewardToken) private _rewardTokenData;
   ```
 - Roles:
-  - `DEFAULT_ADMIN_ROLE` → CrossStaking admin (via `owner()` override).
-  - `STAKING_ROOT_ROLE` → CrossStaking contract.
+  - `DEFAULT_ADMIN_ROLE` → CrossGameReward admin (via `owner()` override).
+  - `REWARD_ROOT_ROLE` → CrossGameReward contract.
   - `REWARD_MANAGER_ROLE`, `PAUSER_ROLE` delegated as needed.
 - Key functions:
-  - `stake` / `stakeFor` (router enforced via `_checkDelegate`).
-  - `unstake` / `unstakeFor` – full withdrawal plus reward claim.
-  - `addRewardToken`, `removeRewardToken` (auto-claims removed tokens on unstake), `withdraw`.
+  - `deposit` / `depositFor` (router enforced via `_checkDelegate`).
+  - `withdraw` / `withdrawFor` – full withdrawal plus reward claim.
+  - `addRewardToken`, `removeRewardToken` (auto-claims removed tokens on withdraw), `withdraw`.
 
-### 4. CrossStakingRouter
+### 4. CrossGameRewardRouter
 - Immutable references:
   ```solidity
-  CrossStaking public immutable crossStaking;
+  CrossGameReward public immutable crossDeposit;
   IWCROSS public immutable wcross;
   ```
-- Wraps native deposits, forwards ERC-20 stakes via `stakeFor`, handles `unstake` flows and reward delivery.
+- Wraps native deposits, forwards ERC-20 deposits via `depositFor`, handles `withdraw` flows and reward delivery.
 
 ---
 
@@ -105,24 +105,24 @@ The protocol exposes a modular multi-pool staking topology built around a `rewar
 
 ## 🧭 Data Interactions
 - Pools keep an address-set of active reward tokens; removed tokens remain in storage for historical claims.
-- `CrossStaking` maintains:
+- `CrossGameReward` maintains:
   - `_allPoolIds` enumerable set (global list).
-  - `_poolsByStakingToken` mapping (token → pool IDs).
+  - `_poolsByDepositToken` mapping (token → pool IDs).
 - Router performs no storage writes beyond allowances; all accounting lives in pools.
 
 ---
 
 ## 🔄 Upgrade Strategy
-- Both `CrossStaking` and `CrossStakingPool` implement `_authorizeUpgrade` guarded by `DEFAULT_ADMIN_ROLE`.
+- Both `CrossGameReward` and `CrossGameRewardPool` implement `_authorizeUpgrade` guarded by `DEFAULT_ADMIN_ROLE`.
 - Storage gap reserved (50 slots total, 8 used in factory, 9 used in pool).
 - Router is intentionally immutable; deploy a new instance and call `setRouter`.
 
 ---
 
 ## 🧪 Integration Notes
-- Direct pool interactions (`stake`) remain available for power users (e.g., WCROSS LPs).
-- Native staking path requires router assignment on the factory before first deposit.
-- Removed reward tokens are auto-settled during `_unstake`; active positions still use `claimReward`/`claimRewards` for partial withdrawals.
+- Direct pool interactions (`deposit`) remain available for power users (e.g., WCROSS LPs).
+- Native deposit path requires router assignment on the factory before first deposit.
+- Removed reward tokens are auto-settled during `_withdraw`; active positions still use `claimReward`/`claimRewards` for partial withdrawals.
 
 ---
 

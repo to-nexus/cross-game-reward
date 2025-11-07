@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import {CrossStaking} from "../src/CrossStaking.sol";
-import {CrossStakingPool} from "../src/CrossStakingPool.sol";
+import {CrossGameReward} from "../src/CrossGameReward.sol";
+import {CrossGameRewardPool} from "../src/CrossGameRewardPool.sol";
 
-import {CrossStakingRouter} from "../src/CrossStakingRouter.sol";
+import {CrossGameRewardRouter} from "../src/CrossGameRewardRouter.sol";
 import {WCROSS} from "../src/WCROSS.sol";
-import {ICrossStakingPool} from "../src/interfaces/ICrossStakingPool.sol";
+import {ICrossGameRewardPool} from "../src/interfaces/ICrossGameRewardPool.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {Test} from "forge-std/Test.sol";
 
@@ -14,9 +14,9 @@ import {IERC20Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.so
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 contract WCROSSTest is Test {
-    CrossStaking public crossStaking;
-    CrossStakingPool public poolImplementation;
-    CrossStakingRouter public router;
+    CrossGameReward public crossGameReward;
+    CrossGameRewardPool public poolImplementation;
+    CrossGameRewardRouter public router;
     WCROSS public wcross;
 
     address public owner;
@@ -33,17 +33,17 @@ contract WCROSSTest is Test {
         vm.deal(user2, 1000 ether);
 
         // Deploy system
-        poolImplementation = new CrossStakingPool();
+        poolImplementation = new CrossGameRewardPool();
 
-        CrossStaking implementation = new CrossStaking();
+        CrossGameReward implementation = new CrossGameReward();
         bytes memory initData =
-            abi.encodeCall(CrossStaking.initialize, (ICrossStakingPool(address(poolImplementation)), owner, 2 days));
+            abi.encodeCall(CrossGameReward.initialize, (ICrossGameRewardPool(address(poolImplementation)), owner, 2 days));
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
-        crossStaking = CrossStaking(address(proxy));
+        crossGameReward = CrossGameReward(address(proxy));
 
-        router = new CrossStakingRouter(address(crossStaking));
-        wcross = WCROSS(payable(address(crossStaking.wcross())));
-        crossStaking.setRouter(address(router));
+        router = new CrossGameRewardRouter(address(crossGameReward));
+        wcross = WCROSS(payable(address(crossGameReward.wcross())));
+        crossGameReward.setRouter(address(router));
     }
 
     // ==================== Deposit (router only) ====================
@@ -149,39 +149,39 @@ contract WCROSSTest is Test {
 
     function testDepositForIntegration() public {
         uint poolId;
-        ICrossStakingPool poolAddress;
+        ICrossGameRewardPool poolAddress;
 
         // Create pool
-        (poolId, poolAddress) = crossStaking.createPool(IERC20(address(wcross)), 1 ether);
+        (poolId, poolAddress) = crossGameReward.createPool(IERC20(address(wcross)), 1 ether);
 
-        // User stakes via router
+        // User deposits via router
         vm.startPrank(user1);
-        router.stakeNative{value: 10 ether}(poolId);
+        router.depositNative{value: 10 ether}(poolId);
         vm.stopPrank();
 
-        // Verify WCROSS was minted and staked
-        CrossStakingPool pool = CrossStakingPool(address(poolAddress));
-        assertEq(pool.balances(user1), 10 ether, "Staked via router");
+        // Verify WCROSS was minted and depositd
+        CrossGameRewardPool pool = CrossGameRewardPool(address(poolAddress));
+        assertEq(pool.balances(user1), 10 ether, "Deposited via router");
     }
 
     function testWithdrawForIntegration() public {
-        // Setup: stake first
-        (uint poolId, ICrossStakingPool poolAddress) = crossStaking.createPool(IERC20(address(wcross)), 1 ether);
+        // Setup: deposit first
+        (uint poolId, ICrossGameRewardPool poolAddress) = crossGameReward.createPool(IERC20(address(wcross)), 1 ether);
 
         vm.startPrank(user1);
-        router.stakeNative{value: 10 ether}(poolId);
+        router.depositNative{value: 10 ether}(poolId);
         vm.stopPrank();
 
-        // Unstake
+        // Withdraw
         uint balanceBefore = user1.balance;
         vm.prank(user1);
-        router.unstakeNative(poolId);
+        router.withdrawNative(poolId);
 
         // Verify native CROSS returned
         assertEq(user1.balance, balanceBefore + 10 ether, "Native CROSS returned");
 
-        CrossStakingPool pool = CrossStakingPool(address(poolAddress));
-        assertEq(pool.balances(user1), 0, "Unstaked");
+        CrossGameRewardPool pool = CrossGameRewardPool(address(poolAddress));
+        assertEq(pool.balances(user1), 0, "Withdrawn");
     }
 }
 

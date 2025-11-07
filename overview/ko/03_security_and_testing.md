@@ -21,8 +21,8 @@ Layer 7: Router Check
 ### 1. ReentrancyGuardTransient
 
 **보호 대상:**
-- stake, stakeFor
-- unstake, unstakeFor
+- deposit, depositFor
+- withdraw, withdrawFor
 - claimRewards, claimReward
 
 **특징:**
@@ -35,8 +35,8 @@ Layer 7: Router Check
 ```solidity
 using SafeERC20 for IERC20;
 
-stakingToken.safeTransferFrom(msg.sender, address(this), amount);
-stakingToken.safeTransfer(user, amount);
+depositToken.safeTransferFrom(msg.sender, address(this), amount);
+depositToken.safeTransfer(user, amount);
 ```
 
 **보호:**
@@ -46,13 +46,13 @@ stakingToken.safeTransfer(user, amount);
 
 ### 3. AccessControl
 
-**CrossStaking:**
+**CrossGameReward:**
 ```solidity
 DEFAULT_ADMIN_ROLE      // 시스템 관리
 POOL_MANAGER_ROLE       // 풀 생성/관리
 ```
 
-**CrossStakingPool:**
+**CrossGameRewardPool:**
 ```solidity
 DEFAULT_ADMIN_ROLE      // 풀 관리
 REWARD_MANAGER_ROLE     // 보상 토큰 관리
@@ -67,18 +67,18 @@ PAUSER_ROLE             // 긴급 정지
 ### 4. Pausable
 
 **적용 함수:**
-- stake, stakeFor
-- unstake, unstakeFor
+- deposit, depositFor
+- withdraw, withdrawFor
 - claimRewards, claimReward
 
 **사용:**
 ```solidity
 // 긴급 정지
-crossStaking.setPoolActive(poolId, false);
+crossDeposit.setPoolActive(poolId, false);
 // → pool.pause() 자동 호출
 
 // 재개
-crossStaking.setPoolActive(poolId, true);
+crossDeposit.setPoolActive(poolId, true);
 // → pool.unpause() 자동 호출
 ```
 
@@ -95,16 +95,16 @@ function _authorizeUpgrade(address newImplementation)
 
 **Storage Gap:**
 ```solidity
-uint[50] private __gap;  // CrossStaking
-uint[41] private __gap;  // CrossStakingPool
+uint[50] private __gap;  // CrossGameReward
+uint[41] private __gap;  // CrossGameRewardPool
 ```
 
 ### 6. 제거된 보상 토큰 자동 정산
 
 - 보상 토큰을 제거하면 주소가 `_removedRewardTokenAddresses`에 보관되고 활성 목록에서 제외됩니다.
-- `_unstake` 흐름은 `_updateRemovedRewards`와 `_claimRemovedRewards`를 호출해 제거된 토큰까지 자동 정산·지급합니다.
-- 스테이킹을 유지한 채 부분 청구하려면 기존과 동일하게 `claimReward`/`claimRewards`를 호출해야 하며, 이때는 활성 토큰만 동기화됩니다.
-- 회귀 테스트 `testRemovedRewardTokenClaimedOnUnstake`와 `testClaimRemovedRewardAfterUnstakeDoesNotRevert`가 동작을 검증합니다.
+- `_withdraw` 흐름은 `_updateRemovedRewards`와 `_claimRemovedRewards`를 호출해 제거된 토큰까지 자동 정산·지급합니다.
+- 디파짓을 유지한 채 부분 청구하려면 기존과 동일하게 `claimReward`/`claimRewards`를 호출해야 하며, 이때는 활성 토큰만 동기화됩니다.
+- 회귀 테스트 `testRemovedRewardTokenClaimedOnUndeposit`와 `testClaimRemovedRewardAfterUndepositDoesNotRevert`가 동작을 검증합니다.
 
 ### 7. Custom Errors
 
@@ -115,31 +115,31 @@ uint[41] private __gap;  // CrossStakingPool
 
 **Naming Convention:**
 ```
-CS   - CrossStaking
-CSP  - CrossStakingPool
-CSR  - CrossStakingRouter
+CS   - CrossGameReward
+CSP  - CrossGameRewardPool
+CSR  - CrossGameRewardRouter
 WCROSS - WCROSS
 
-예: CSPNoStakeFound, CSRInvalidAmount
+예: CSPNoDepositFound, CSRInvalidAmount
 ```
 
 ### 8. Router Check
 
-**CrossStakingPool:**
+**CrossGameRewardPool:**
 ```solidity
 function _checkDelegate(address account) internal view {
     require(account != address(0), CSPCanNotZeroAddress());
-    require(msg.sender == ICrossStaking(crossStaking).router(), CSPOnlyRouter());
+    require(msg.sender == ICrossGameReward(crossDeposit).router(), CSPOnlyRouter());
 }
 ```
 
 **WCROSS:**
 ```solidity
-require(msg.sender == staking.router(), WCROSSUnauthorized());
+require(msg.sender == deposit.router(), WCROSSUnauthorized());
 ```
 
 **보호:**
-- stakeFor/unstakeFor는 Router만 호출
+- depositFor/withdrawFor는 Router만 호출
 - 권한 없는 접근 차단
 
 ---
@@ -151,14 +151,14 @@ require(msg.sender == staking.router(), WCROSSUnauthorized());
 ```
 test/
 ├── WCROSS.t.sol                 (10개)
-├── CrossStaking.t.sol           (33개)
-├── CrossStakingRouter.t.sol     (15개)
+├── CrossGameReward.t.sol           (33개)
+├── CrossGameRewardRouter.t.sol     (15개)
 ├── FullIntegration.t.sol        (9개)
-├── CrossStakingPoolStaking.t.sol      (18개)
-├── CrossStakingPoolRewards.t.sol      (18개)
-├── CrossStakingPoolAdmin.t.sol        (24개)
-├── CrossStakingPoolIntegration.t.sol  (11개)
-└── CrossStakingPoolSecurity.t.sol     (21개)
+├── CrossGameRewardPoolDeposit.t.sol      (18개)
+├── CrossGameRewardPoolRewards.t.sol      (18개)
+├── CrossGameRewardPoolAdmin.t.sol        (24개)
+├── CrossGameRewardPoolIntegration.t.sol  (11개)
+└── CrossGameRewardPoolSecurity.t.sol     (21개)
 
 총 159개 테스트
 ```
@@ -166,7 +166,7 @@ test/
 ### 테스트 카테고리
 
 #### 기능 테스트 (Functional)
-- 스테이킹/언스테이킹
+- 디파짓/언디파짓
 - 보상 계산/분배
 - 풀 생성/관리
 - Router 기능
@@ -200,11 +200,11 @@ assertApproxEqAbs(userReward, expectedReward, 1 ether);
 ### 2. 상태 일관성
 
 ```solidity
-assertEq(pool.totalStaked(), stakingToken.balanceOf(address(pool)));
+assertEq(pool.totalDeposited(), depositToken.balanceOf(address(pool)));
 ```
 
 **검증:**
-- totalStaked == 실제 잔액
+- totalDeposited == 실제 잔액
 - 보상 토큰 잔액 일치
 
 ### 3. rewardPerToken 누적
@@ -221,11 +221,11 @@ assertGe(newRewardPerToken, oldRewardPerToken);
 
 ```solidity
 vm.expectRevert(CSPOnlyRouter.selector);
-pool.stakeFor(user, amount);  // Non-router call
+pool.depositFor(user, amount);  // Non-router call
 ```
 
 **검증:**
-- Router만 stakeFor/unstakeFor 호출 가능
+- Router만 depositFor/withdrawFor 호출 가능
 - 권한 없는 접근 차단
 
 ---
@@ -257,11 +257,11 @@ pool.stakeFor(user, amount);  // Non-router call
 
 | 함수 | Gas | 비고 |
 |------|-----|------|
-| stake | ~143k | 기본 스테이킹 |
-| stakeFor | ~145k | Router용 |
-| unstake | ~288k | 보상 포함 |
-| stakeNative | ~177k | 래핑 포함 |
-| unstakeNative | ~235k | 언래핑 포함 |
+| deposit | ~143k | 기본 디파짓 |
+| depositFor | ~145k | Router용 |
+| withdraw | ~288k | 보상 포함 |
+| depositNative | ~177k | 래핑 포함 |
+| withdrawNative | ~235k | 언래핑 포함 |
 | createPool | ~571k | 풀 생성 |
 
 ### 최적화 기법
@@ -280,7 +280,7 @@ pool.stakeFor(user, amount);  // Non-router call
 ```solidity
 function testExample() public {
     // Arrange
-    _userStake(user1, 100 ether);
+    _userDeposit(user1, 100 ether);
     
     // Act
     _depositReward(address(rewardToken), 1000 ether);
@@ -298,14 +298,14 @@ function testExample() public {
 ### 3. 명확한 네이밍
 
 ```solidity
-testStakeNativeMultipleTimes()
-testRewardDistributionWithZeroStaked()
+testDepositNativeMultipleTimes()
+testRewardDistributionWithZeroDeposited()
 ```
 
 ### 4. Helper 함수
 
 ```solidity
-_userStake(address user, uint amount)
+_userDeposit(address user, uint amount)
 _depositReward(address token, uint amount)
 _warpDays(uint days_)
 ```
@@ -329,15 +329,15 @@ WCROSS (10개):
   - Transfer 기능
   - Integration
 
-CrossStaking (33개):
+CrossGameReward (33개):
   - 풀 생성/관리
   - Router 관리
   - View 함수
   - 업그레이드
 
-CrossStakingRouter (15개):
-  - Native 스테이킹
-  - ERC20 스테이킹
+CrossGameRewardRouter (15개):
+  - Native 디파짓
+  - ERC20 디파짓
   - 에러 케이스
 
 FullIntegration (9개):
@@ -345,8 +345,8 @@ FullIntegration (9개):
   - 다중 풀
   - 보상 정확성
 
-CrossStakingPool (92개):
-  - 스테이킹 (18개)
+CrossGameRewardPool (92개):
+  - 디파짓 (18개)
   - 보상 (18개)
   - 관리자 (24개)
   - 통합 (11개)
@@ -372,7 +372,7 @@ CrossStakingPool (92개):
    - 충분한 정밀도
 
 4. **불변성**
-   - totalStaked == 실제 잔액
+   - totalDeposited == 실제 잔액
    - 보상 보존
 
 5. **업그레이드**
@@ -396,8 +396,8 @@ CrossStakingPool (92개):
 ---
 
 ## 🗝️ 운영 및 거버넌스 주의
-- `DEFAULT_ADMIN_ROLE` 보유자는 Router 교체, 새 풀 구현 지정, 업그레이드 승인 등 핵심 권한을 독점함 (`CrossStaking`, `CrossStakingPool`). 멀티시그 또는 거버넌스 설계를 권장.
-- `pause` 상태에서는 스테이킹·언스테이킹·클레임 모두 차단되므로, 긴급 상황에서 자금 인출 정책을 사전에 정의해야 함.
+- `DEFAULT_ADMIN_ROLE` 보유자는 Router 교체, 새 풀 구현 지정, 업그레이드 승인 등 핵심 권한을 독점함 (`CrossGameReward`, `CrossGameRewardPool`). 멀티시그 또는 거버넌스 설계를 권장.
+- `pause` 상태에서는 디파짓·언디파짓·클레임 모두 차단되므로, 긴급 상황에서 자금 인출 정책을 사전에 정의해야 함.
 
 ---
 
@@ -406,6 +406,6 @@ CrossStakingPool (92개):
 **현재 상태 요약**
 - ✅ Foundry 기반 159개 테스트 통과 (2025-11-03)
 - ✅ OZ 기반 방어 계층·재진입 보호 적용
-- ✅ 제거된 보상 토큰은 언스테이킹 시 자동 정산되어 미지급 위험 제거
+- ✅ 제거된 보상 토큰은 언디파짓 시 자동 정산되어 미지급 위험 제거
 
 **다음**: [test/README.md](../test/README.md)

@@ -24,20 +24,20 @@
 #### 1. 보상 입금 시
 
 ```
-if (totalStaked == 0) {
+if (totalDeposited == 0) {
     withdrawableAmount += newReward  // 분배하지 않음
 } else {
     // withdrawableAmount가 이미 있어도, 그건 lastBalance에 포함됨
-    rewardPerTokenStored += (newReward × PRECISION) / totalStaked
+    rewardPerTokenStored += (newReward × PRECISION) / totalDeposited
 }
 
 PRECISION = 1e18
 ```
 
-**Zero-Stake 보호:**
-- totalStaked=0 일 때 예치된 보상은 분배하지 않고 `withdrawableAmount`로 분류
+**Zero-Deposit 보호:**
+- totalDeposited=0 일 때 예치된 보상은 분배하지 않고 `withdrawableAmount`로 분류
 - owner가 `withdrawFromPool`을 통해 회수 가능
-- 첫 번째 staker가 과거 보상을 독점하지 못하도록 방지
+- 첫 번째 depositr가 과거 보상을 독점하지 못하도록 방지
 
 **보상 토큰 제거 후:**
 - 제거 시점의 분배 가능한 보상은 `distributedAmount`에 저장 (사용자 claim 가능)
@@ -45,15 +45,15 @@ PRECISION = 1e18
 - 제거 후 추가 예치된 토큰도 owner가 회수 가능
 
 **의미:**
-- "1개의 스테이킹 토큰이 받을 수 있는 누적 보상량"
+- "1개의 디파짓 토큰이 받을 수 있는 누적 보상량"
 - PRECISION으로 스케일업하여 정밀도 유지
 
 **예시:**
 ```
-상황: 100 토큰 스테이킹 중, 50 보상 입금
+상황: 100 토큰 디파짓 중, 50 보상 입금
 계산: rewardPerTokenStored += (50 × 1e18) / 100
      = 0.5 × 1e18
-의미: 스테이킹 토큰 1개당 0.5 보상
+의미: 디파짓 토큰 1개당 0.5 보상
 ```
 
 #### 2. 사용자 보상 계산 시
@@ -64,7 +64,7 @@ totalReward = storedRewards + earned
 ```
 
 **변수:**
-- `userBalance`: 사용자의 스테이킹 수량
+- `userBalance`: 사용자의 디파짓 수량
 - `rewardPerTokenStored`: 현재 누적 토큰당 보상
 - `userCheckpoint`: 사용자가 마지막으로 정산한 시점의 값
 - `storedRewards`: 이미 계산되어 저장된 보상
@@ -77,7 +77,7 @@ totalReward = storedRewards + earned
 
 ```
 Day 0: Alice 100 토큰 예치
-  totalStaked = 100
+  totalDeposited = 100
   rewardPerTokenStored = 0
   Alice.checkpoint = 0
 
@@ -87,7 +87,7 @@ Day 3: 보상 100 입금
 
 Day 5: Bob 100 토큰 예치
   Bob.checkpoint = 1e18
-  totalStaked = 200
+  totalDeposited = 200
 
 Day 10: 보상 100 입금
   rewardPerTokenStored = 1e18 + (100 × 1e18) / 200 = 1.5e18
@@ -132,11 +132,11 @@ Bob: 100/200 = 50%
 
 ## 💡 특수 케이스
 
-### 스테이커 없을 때 보상 (Zero-Stake 보호)
+### 디파짓터 없을 때 보상 (Zero-Deposit 보호)
 
 ```solidity
 function _syncReward(IERC20 token) internal {
-    if (totalStaked == 0) {
+    if (totalDeposited == 0) {
         rt.withdrawableAmount += newReward;  // 분배하지 않고 회수 가능하게 표시
         rt.lastBalance = currentBalance;
         return;
@@ -146,16 +146,16 @@ function _syncReward(IERC20 token) internal {
 ```
 
 **동작 (현재 버전):**
-1. totalStaked = 0일 때 보상 입금
+1. totalDeposited = 0일 때 보상 입금
 2. 보상이 `withdrawableAmount`로 분류됨
 3. 첫 스테이커는 이 보상을 받지 **못함**
-4. Owner가 `CrossStaking.withdrawFromPool()`로 회수 가능
+4. Owner가 `CrossGameReward.withdrawFromPool()`로 회수 가능
 
 **예시:**
 ```
 1. 풀 비어있음
 2. 보상 1000 입금 → withdrawableAmount = 1000
-3. Alice 스테이킹
+3. Alice 디파짓
 4. Alice는 1000을 받지 못함 (공정한 분배)
 5. 이후 100 보상 입금 → Alice만 100을 받음
 6. Owner가 withdrawableAmount 1000을 회수 가능

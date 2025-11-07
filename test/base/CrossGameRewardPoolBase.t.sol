@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import "../../src/CrossStaking.sol";
-import "../../src/CrossStakingPool.sol";
-import "../../src/interfaces/ICrossStakingPool.sol";
+import "../../src/CrossGameReward.sol";
+import "../../src/CrossGameRewardPool.sol";
+import "../../src/interfaces/ICrossGameRewardPool.sol";
 import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -24,13 +24,13 @@ contract MockERC20 is ERC20 {
 }
 
 /**
- * @title CrossStakingPoolBase
+ * @title CrossGameRewardPoolBase
  * @notice Shared base contract used by all pool tests
  * @dev Provides setup and convenience helpers
  */
-abstract contract CrossStakingPoolBase is Test {
-    CrossStaking public crossStaking;
-    CrossStakingPool public pool;
+abstract contract CrossGameRewardPoolBase is Test {
+    CrossGameReward public crossGameReward;
+    CrossGameRewardPool public pool;
     MockERC20 public crossToken;
     MockERC20 public rewardToken1;
     MockERC20 public rewardToken2;
@@ -46,19 +46,19 @@ abstract contract CrossStakingPoolBase is Test {
         rewardToken1 = new MockERC20("Reward Token 1", "RWD1");
         rewardToken2 = new MockERC20("Reward Token 2", "RWD2");
 
-        // Deploy CrossStaking via UUPS pattern
-        CrossStakingPool poolImplementation = new CrossStakingPool();
-        CrossStaking stakingImplementation = new CrossStaking();
+        // Deploy CrossGameReward via UUPS pattern
+        CrossGameRewardPool poolImplementation = new CrossGameRewardPool();
+        CrossGameReward gameRewardImplementation = new CrossGameReward();
 
         bytes memory initData =
-            abi.encodeCall(CrossStaking.initialize, (ICrossStakingPool(address(poolImplementation)), owner, 2 days));
+            abi.encodeCall(CrossGameReward.initialize, (ICrossGameRewardPool(address(poolImplementation)), owner, 2 days));
 
-        ERC1967Proxy proxy = new ERC1967Proxy(address(stakingImplementation), initData);
-        crossStaking = CrossStaking(address(proxy));
+        ERC1967Proxy proxy = new ERC1967Proxy(address(gameRewardImplementation), initData);
+        crossGameReward = CrossGameReward(address(proxy));
 
-        // Create pool through the CrossStaking factory
-        (uint poolId, ICrossStakingPool poolInterface) = crossStaking.createPool(IERC20(address(crossToken)), 1 ether);
-        pool = CrossStakingPool(address(poolInterface));
+        // Create pool through the CrossGameReward factory
+        (uint poolId, ICrossGameRewardPool poolInterface) = crossGameReward.createPool(IERC20(address(crossToken)), 1 ether);
+        pool = CrossGameRewardPool(address(poolInterface));
 
         // Distribute CROSS tokens to users
         crossToken.transfer(user1, 1000 ether);
@@ -69,20 +69,20 @@ abstract contract CrossStakingPoolBase is Test {
         rewardToken1.transfer(owner, 100000 ether);
         rewardToken2.transfer(owner, 100000 ether);
 
-        // Register reward tokens via CrossStaking
-        crossStaking.addRewardToken(poolId, IERC20(address(rewardToken1)));
-        crossStaking.addRewardToken(poolId, IERC20(address(rewardToken2)));
+        // Register reward tokens via CrossGameReward
+        crossGameReward.addRewardToken(poolId, IERC20(address(rewardToken1)));
+        crossGameReward.addRewardToken(poolId, IERC20(address(rewardToken2)));
     }
 
     // ==================== Helper functions ====================
 
     /**
-     * @notice Helper to stake on behalf of a user
+     * @notice Helper to deposit on behalf of a user
      */
-    function _userStake(address user, uint amount) internal {
+    function _userDeposit(address user, uint amount) internal {
         vm.startPrank(user);
         crossToken.approve(address(pool), amount);
-        pool.stake(amount);
+        pool.deposit(amount);
         vm.stopPrank();
     }
 

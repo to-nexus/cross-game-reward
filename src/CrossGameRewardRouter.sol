@@ -1,0 +1,259 @@
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.28;
+
+import {IERC20Permit} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
+import {IERC20, SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+
+import {ICrossGameReward} from "./interfaces/ICrossGameReward.sol";
+import {ICrossGameRewardPool} from "./interfaces/ICrossGameRewardPool.sol";
+import {ICrossGameRewardRouter} from "./interfaces/ICrossGameRewardRouter.sol";
+import {IWCROSS} from "./interfaces/IWCROSS.sol";
+
+/**
+ * @title CrossGameRewardRouter
+ * @notice Interface between users and game reward pools
+ * @dev Handles native CROSS wrapping and deposit operations
+ *
+ * Key Features:
+ * - Wraps native CROSS to WCROSS and deposits
+ * - Withdraws WCROSS and returns native CROSS
+ * - Supports general ERC20 token deposits
+ */
+contract CrossGameRewardRouter is ICrossGameRewardRouter {
+    using SafeERC20 for IERC20;
+
+    // ==================== Errors ====================
+
+    /// @notice Thrown when an invalid amount is provided
+    error CSRInvalidAmount();
+
+    /// @notice Thrown when a zero address is provided where it's not allowed
+    error CSRCanNotZeroAddress();
+
+    /// @notice Thrown when a transfer fails
+    error CSRTransferFailed();
+
+    /// @notice Thrown when attempting native operations on a non-WCROSS pool
+    error CSRNotWCROSSPool();
+
+    /// @notice Thrown when attempting to withdraw with no active deposit
+    error CSRNoDepositFound();
+
+    // ==================== Events ====================
+
+    /// @notice Emitted when a user deposits native CROSS
+    /// @param user Address of the user who deposited
+    /// @param poolId ID of the pool deposited into
+    /// @param amount Amount of native CROSS deposited
+    event DepositedNative(address indexed user, uint indexed poolId, uint amount);
+
+    /// @notice Emitted when a user withdraws to native CROSS
+    /// @param user Address of the user who withdrew
+    /// @param poolId ID of the pool withdrawn from
+    /// @param amount Amount of native CROSS withdrawn
+    event WithdrawnNative(address indexed user, uint indexed poolId, uint amount);
+
+    /// @notice Emitted when a user deposits ERC20 tokens
+    /// @param user Address of the user who deposited
+    /// @param poolId ID of the pool deposited into
+    /// @param token Address of the deposited token
+    /// @param amount Amount of tokens deposited
+    event DepositedERC20(address indexed user, uint indexed poolId, address token, uint amount);
+
+    /// @notice Emitted when a user withdraws ERC20 tokens
+    /// @param user Address of the user who withdrew
+    /// @param poolId ID of the pool withdrawn from
+    /// @param token Address of the withdrawn token
+    /// @param amount Amount of tokens withdrawn
+    event WithdrawnERC20(address indexed user, uint indexed poolId, address token, uint amount);
+
+    // ==================== State Variables ====================
+
+    /// @notice CrossGameReward contract reference
+    ICrossGameReward public immutable crossGameReward;
+
+    /// @notice WCROSS token reference
+    IWCROSS public immutable wcross;
+
+    // ==================== Constructor ====================
+
+    /**
+     * @notice Initializes the CrossGameRewardRouter
+     * @param _crossGameReward Address of the CrossGameReward contract
+     */
+    constructor(address _crossGameReward) {
+        require(_crossGameReward != address(0), CSRCanNotZeroAddress());
+
+        crossGameReward = ICrossGameReward(_crossGameReward);
+        wcross = crossGameReward.wcross();
+    }
+
+    // ==================== Native CROSS Deposit ====================
+
+    /**
+     * @notice Deposits native CROSS tokens
+     * @dev Wraps native CROSS to WCROSS and deposits into the pool
+     * @param poolId ID of the pool to deposit into
+     */
+    function depositNative(uint poolId) external payable {
+        require(msg.value > 0, CSRInvalidAmount());
+
+        ICrossGameRewardPool pool = _getPoolAndValidateWCROSS(poolId);
+
+        // Router wraps native CROSS to WCROSS
+        wcross.deposit{value: msg.value}();
+
+        // Router deposits to pool on behalf of msg.sender
+        IERC20(wcross).forceApprove(address(pool), msg.value);
+        pool.depositFor(msg.sender, msg.value);
+
+        emit DepositedNative(msg.sender, poolId, msg.value);
+    }
+
+    /**
+     * @notice Withdraws and returns native CROSS tokens
+     * @dev Withdraws WCROSS from pool and unwraps to native CROSS
+     * @param poolId ID of the pool to withdraw from
+     */
+    function withdrawNative(uint poolId) external {
+        ICrossGameRewardPool pool = _getPoolAndValidateWCROSS(poolId);
+
+        uint depositedAmount = pool.balances(msg.sender);
+        require(depositedAmount > 0, CSRNoDepositFound());
+
+        // Withdraw from pool (WCROSS sent to Router, rewards sent to msg.sender)
+        pool.withdrawFor(msg.sender);
+
+        // Router unwraps and sends native CROSS directly to user
+        wcross.withdrawTo(msg.sender, depositedAmount);
+
+        emit WithdrawnNative(msg.sender, poolId, depositedAmount);
+    }
+
+    // ==================== ERC20 Deposit (General Tokens) ====================
+
+    /**
+     * @notice Deposits ERC20 tokens
+     * @dev Transfers tokens from user and deposits into the pool
+     * @param poolId ID of the pool to deposit into
+     * @param amount Amount of tokens to deposit
+     */
+    function depositERC20(uint poolId, uint amount) external {
+        require(amount > 0, CSRInvalidAmount());
+
+        ICrossGameRewardPool pool = _getPool(poolId);
+        IERC20 depositToken = pool.depositToken();
+
+        _depositERC20(poolId, pool, depositToken, amount);
+    }
+
+    /**
+     * @notice Deposits ERC20 tokens using EIP-2612 permit
+     * @dev Performs permit + transfer + deposit in a single transaction (for tokens supporting EIP-2612)
+     * @param poolId ID of the pool to deposit into
+     * @param amount Amount of tokens to deposit
+     * @param deadline Permit signature deadline
+     * @param v Permit signature v
+     * @param r Permit signature r
+     * @param s Permit signature s
+     */
+    function depositERC20WithPermit(uint poolId, uint amount, uint deadline, uint8 v, bytes32 r, bytes32 s) external {
+        require(amount > 0, CSRInvalidAmount());
+
+        ICrossGameRewardPool pool = _getPool(poolId);
+        IERC20 depositToken = pool.depositToken();
+
+        // Approve Router via EIP-2612 permit
+        IERC20Permit(address(depositToken)).permit(msg.sender, address(this), amount, deadline, v, r, s);
+
+        _depositERC20(poolId, pool, depositToken, amount);
+    }
+
+    /**
+     * @notice Withdraws ERC20 tokens
+     * @dev Withdraws all deposited tokens and claims rewards
+     * @param poolId ID of the pool to withdraw from
+     */
+    function withdrawERC20(uint poolId) external {
+        ICrossGameRewardPool pool = _getPool(poolId);
+        IERC20 depositToken = pool.depositToken();
+
+        uint depositedAmount = pool.balances(msg.sender);
+        require(depositedAmount > 0, CSRNoDepositFound());
+
+        // Withdraw (deposit tokens sent to Router, rewards to msg.sender)
+        pool.withdrawFor(msg.sender);
+
+        // Transfer deposit tokens from Router to user
+        depositToken.safeTransfer(msg.sender, depositedAmount);
+
+        emit WithdrawnERC20(msg.sender, poolId, address(depositToken), depositedAmount);
+    }
+
+    // ==================== View Functions ====================
+
+    /**
+     * @notice Retrieves user's deposit information
+     * @param poolId ID of the pool
+     * @param user Address of the user
+     * @return depositedAmount Amount of tokens deposited
+     * @return rewardTokens Array of reward token addresses
+     * @return pendingRewards Array of pending rewards for each reward token
+     */
+    function getUserDepositInfo(uint poolId, address user)
+        external
+        view
+        returns (uint depositedAmount, address[] memory rewardTokens, uint[] memory pendingRewards)
+    {
+        ICrossGameRewardPool pool = _getPool(poolId);
+        depositedAmount = pool.balances(user);
+        (rewardTokens, pendingRewards) = pool.pendingRewards(user);
+    }
+
+    /**
+     * @notice Checks if a pool is a native CROSS pool
+     * @param poolId ID of the pool
+     * @return True if the pool uses WCROSS as deposit token
+     */
+    function isNativePool(uint poolId) external view returns (bool) {
+        ICrossGameRewardPool pool = _getPool(poolId);
+        return address(pool.depositToken()) == address(wcross);
+    }
+
+    // ==================== Internal Functions ====================
+
+    /**
+     * @dev Retrieves pool address and returns pool instance
+     * @param poolId ID of the pool
+     * @return Pool contract instance
+     */
+    function _getPool(uint poolId) internal view returns (ICrossGameRewardPool) {
+        return crossGameReward.getPoolAddress(poolId);
+    }
+
+    /**
+     * @dev Retrieves pool and validates it's a WCROSS pool
+     * @param poolId ID of the pool
+     * @return pool Pool contract instance
+     */
+    function _getPoolAndValidateWCROSS(uint poolId) internal view returns (ICrossGameRewardPool pool) {
+        pool = _getPool(poolId);
+        require(address(pool.depositToken()) == address(wcross), CSRNotWCROSSPool());
+    }
+
+    /**
+     * @dev Deposits ERC20 tokens from user and deposits into the pool
+     * @param poolId ID of the pool to deposit into
+     * @param pool Pool contract instance
+     * @param token ERC20 token contract instance
+     * @param amount Amount of tokens to deposit
+     */
+    function _depositERC20(uint poolId, ICrossGameRewardPool pool, IERC20 token, uint amount) internal {
+        // Transfer tokens from user and deposit to pool
+        token.safeTransferFrom(msg.sender, address(this), amount);
+        token.forceApprove(address(pool), amount);
+        pool.depositFor(msg.sender, amount);
+
+        emit DepositedERC20(msg.sender, poolId, address(token), amount);
+    }
+}

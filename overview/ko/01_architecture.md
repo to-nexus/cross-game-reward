@@ -1,8 +1,8 @@
-# Cross Staking Protocol - 아키텍처
+# Cross GameReward Protocol - 아키텍처
 
 ## 📐 개요
 
-Cross Staking Protocol은 **rewardPerToken 누적 방식**을 사용하는 다중 풀 스테이킹 시스템입니다.
+Cross GameReward Protocol은 **rewardPerToken 누적 방식**을 사용하는 다중 풀 디파짓 시스템입니다.
 
 ### 핵심 특징
 
@@ -27,9 +27,9 @@ Cross Staking Protocol은 **rewardPerToken 누적 방식**을 사용하는 다�
                │
                ▼
 ┌──────────────────────────────────┐
-│    CrossStakingRouter            │
-│  • stakeNative/unstakeNative     │
-│  • stakeERC20/unstakeERC20       │
+│    CrossGameRewardRouter            │
+│  • depositNative/withdrawNative     │
+│  • depositERC20/withdrawERC20       │
 │  • 재배포 가능                    │
 └──────┬───────────────────────────┘
        │
@@ -38,7 +38,7 @@ Cross Staking Protocol은 **rewardPerToken 누적 방식**을 사용하는 다�
        │
        ▼
 ┌──────────────────────────────────┐
-│     CrossStaking                 │
+│     CrossGameReward                 │
 │   • UUPS 업그레이더블             │
 │   • createPool                   │
 │   • setRouter                    │
@@ -46,9 +46,9 @@ Cross Staking Protocol은 **rewardPerToken 누적 방식**을 사용하는 다�
        │ creates
        ▼
 ┌──────────────────────────────────┐
-│   CrossStakingPool × n           │
+│   CrossGameRewardPool × n           │
 │   • UUPS 업그레이더블             │
-│   • stakeFor/unstakeFor          │
+│   • depositFor/withdrawFor          │
 │   • rewardPerToken 누적          │
 └──────────────────────────────────┘
 ```
@@ -63,7 +63,7 @@ Cross Staking Protocol은 **rewardPerToken 누적 방식**을 사용하는 다�
 
 **상태 변수:**
 ```solidity
-CrossStaking public staking;  // CrossStaking 참조
+CrossGameReward public deposit;  // CrossGameReward 참조
 ```
 
 **주요 함수:**
@@ -73,11 +73,11 @@ withdraw(uint amount)         // Router만 가능
 ```
 
 **접근 제어:**
-- `msg.sender == staking.router()` 검증
+- `msg.sender == deposit.router()` 검증
 
 ---
 
-### 2. CrossStaking
+### 2. CrossGameReward
 
 **역할:** 풀 팩토리 및 관리자
 
@@ -91,7 +91,7 @@ mapping(uint => PoolInfo) public pools;   // 풀 정보
 
 **주요 함수:**
 ```solidity
-createPool(address stakingToken, uint minStakeAmount)
+createPool(address depositToken, uint minDepositAmount)
   returns (uint poolId, address poolAddress)
 
 addRewardToken(uint poolId, address rewardToken)
@@ -107,16 +107,16 @@ setRouter(address _router)
 
 ---
 
-### 3. CrossStakingPool
+### 3. CrossGameRewardPool
 
-**역할:** 개별 스테이킹 풀
+**역할:** 개별 디파짓 풀
 
 **상태 변수:**
 ```solidity
-IERC20 public stakingToken;                        // 스테이킹 토큰
-ICrossStaking public crossStaking;                 // CrossStaking 참조
-uint public minStakeAmount;                        // 최소 스테이킹 수량
-uint public totalStaked;                           // 전체 예치량
+IERC20 public depositToken;                        // 디파짓 토큰
+ICrossGameReward public crossDeposit;                 // CrossGameReward 참조
+uint public minDepositAmount;                      // 최소 디파짓 수량
+uint public totalDeposited;                        // 전체 예치량
 PoolStatus public poolStatus;                      // Active/Inactive/Paused
 mapping(address => uint) public balances;          // 사용자 예치량
 
@@ -128,48 +128,48 @@ mapping(address => mapping(IERC20 => UserReward)) public userRewards; // 사용�
 
 **주요 함수:**
 ```solidity
-stake(uint amount)                        // Active 상태에서만 가능
-stakeFor(address account, uint amount)    // Router 전용, Active 상태만
-unstake()                                 // Active/Inactive 상태 가능
-unstakeFor(address account)               // Router 전용
+deposit(uint amount)                        // Active 상태에서만 가능
+depositFor(address account, uint amount)    // Router 전용, Active 상태만
+withdraw()                                 // Active/Inactive 상태 가능
+withdrawFor(address account)               // Router 전용
 claimRewards()                            // Active/Inactive 상태 가능
 claimReward(IERC20 token)
-addRewardToken(IERC20 token)              // CrossStaking만 호출 가능
-removeRewardToken(IERC20 token)           // CrossStaking만 호출 가능
-withdraw(IERC20 token, address to)        // CrossStaking만 호출 가능
-setPoolStatus(uint8 status)               // CrossStaking만 호출 가능
+addRewardToken(IERC20 token)              // CrossGameReward만 호출 가능
+removeRewardToken(IERC20 token)           // CrossGameReward만 호출 가능
+withdraw(IERC20 token, address to)        // CrossGameReward만 호출 가능
+setPoolStatus(uint8 status)               // CrossGameReward만 호출 가능
 ```
 
 **Pool Status:**
-- **Active**: 모든 작업 가능 (stake, unstake, claim)
-- **Inactive**: stake 불가, unstake/claim만 가능
+- **Active**: 모든 작업 가능 (deposit, withdraw, claim)
+- **Inactive**: deposit 불가, withdraw/claim만 가능
 - **Paused**: 모든 작업 불가
 
-> 제거된 보상 토큰은 `_removedRewardTokenAddresses`로 이동하며, `_unstake` 과정에서 자동 정산·지급됩니다.
-> totalStaked=0 일 때 예치된 보상은 `withdrawableAmount`로 분류되어 owner가 회수할 수 있습니다.
+> 제거된 보상 토큰은 `_removedRewardTokenAddresses`로 이동하며, `_withdraw` 과정에서 자동 정산·지급됩니다.
+> totalDeposited=0 일 때 예치된 보상은 `withdrawableAmount`로 분류되어 owner가 회수할 수 있습니다.
 
 **Access Control:**
-- `onlyOwner()`: CrossStaking의 owner만 가능 (upgrade 등)
-- `onlyStakingRoot()`: CrossStaking 컨트랙트만 가능 (관리 함수들)
+- `onlyOwner()`: CrossGameReward의 owner만 가능 (upgrade 등)
+- `onlyRewardRoot()`: CrossGameReward 컨트랙트만 가능 (관리 함수들)
 
 ---
 
-### 4. CrossStakingRouter
+### 4. CrossGameRewardRouter
 
 **역할:** 사용자 인터페이스
 
 **상태 변수:**
 ```solidity
-CrossStaking public immutable crossStaking;
+CrossGameReward public immutable crossDeposit;
 IWCROSS public immutable wcross;
 ```
 
 **주요 함수:**
 ```solidity
-stakeNative(uint poolId) payable
-unstakeNative(uint poolId)
-stakeERC20(uint poolId, uint amount)
-unstakeERC20(uint poolId)
+depositNative(uint poolId) payable
+withdrawNative(uint poolId)
+depositERC20(uint poolId, uint amount)
+withdrawERC20(uint poolId)
 ```
 
 **Helper 함수:**
@@ -184,38 +184,38 @@ _getPoolAndValidateWCROSS(uint poolId) internal view
 
 ### AccessControl
 
-**CrossStaking:**
+**CrossGameReward:**
 ```solidity
 DEFAULT_ADMIN_ROLE      // 시스템 관리, 업그레이드
 POOL_MANAGER_ROLE       // 풀 생성/관리
 ```
 
-**CrossStakingPool:**
+**CrossGameRewardPool:**
 ```solidity
-DEFAULT_ADMIN_ROLE      // 풀 관리 (CrossStaking이 보유)
+DEFAULT_ADMIN_ROLE      // 풀 관리 (CrossGameReward이 보유)
 REWARD_MANAGER_ROLE     // 보상 토큰 추가
-PAUSER_ROLE             // 긴급 정지 (CrossStaking이 보유)
+PAUSER_ROLE             // 긴급 정지 (CrossGameReward이 보유)
 ```
 
 ### Router 권한 체크
 
 ```solidity
-// CrossStakingPool
+// CrossGameRewardPool
 function _checkDelegate(address account) internal view {
     require(account != address(0), CSPCanNotZeroAddress());
-    require(msg.sender == ICrossStaking(crossStaking).router(), CSPOnlyRouter());
+    require(msg.sender == ICrossGameReward(crossDeposit).router(), CSPOnlyRouter());
 }
 ```
 
 **적용:**
-- stakeFor()
-- unstakeFor()
+- depositFor()
+- withdrawFor()
 
 ### WCROSS 권한 체크
 
 ```solidity
 function deposit() public payable {
-    require(msg.sender == staking.router(), WCROSSUnauthorized());
+    require(msg.sender == deposit.router(), WCROSSUnauthorized());
     // ...
 }
 ```
@@ -228,7 +228,7 @@ function deposit() public payable {
 
 **핵심 공식:**
 ```
-rewardPerTokenStored += (newReward × 1e18) / totalStaked
+rewardPerTokenStored += (newReward × 1e18) / totalDeposited
 userReward = userBalance × (rewardPerTokenStored - userCheckpoint) / 1e18
 ```
 
@@ -243,7 +243,7 @@ userReward = userBalance × (rewardPerTokenStored - userCheckpoint) / 1e18
 ```solidity
 function _syncReward(address tokenAddress) internal {
     // 스테이커가 없으면 동기화하지 않음
-    if (totalStaked == 0) return;
+    if (totalDeposited == 0) return;
     
     // lastBalance 업데이트 안함
     // → 다음 스테이커가 모두 받음
@@ -266,20 +266,20 @@ function _syncReward(address tokenAddress) internal {
 **모든 함수에서 준수:**
 ```solidity
 // 1. Checks
-require(balances[msg.sender] > 0, CSPNoStakeFound());
+require(balances[msg.sender] > 0, CSPNoDepositFound());
 
 // 2. Effects
 balances[msg.sender] = 0;
-totalStaked -= amount;
+totalDeposited -= amount;
 
 // 3. Interactions
-stakingToken.safeTransfer(msg.sender, amount);
+depositToken.safeTransfer(msg.sender, amount);
 ```
 
 ### 3. 이벤트 기반 투명성
 
 **모든 주요 액션에 이벤트:**
-- Staked, Unstaked
+- Deposited, Withdrawn
 - RewardSynced
 - RewardClaimed
 - PoolCreated
@@ -291,7 +291,7 @@ stakingToken.safeTransfer(msg.sender, amount);
 
 ### UUPS Proxy 패턴
 
-**CrossStaking:**
+**CrossGameReward:**
 ```solidity
 function _authorizeUpgrade(address newImplementation) 
     internal 
@@ -300,7 +300,7 @@ function _authorizeUpgrade(address newImplementation)
 {}
 ```
 
-**CrossStakingPool:**
+**CrossGameRewardPool:**
 ```solidity
 function _authorizeUpgrade(address newImplementation) 
     internal 
@@ -311,18 +311,18 @@ function _authorizeUpgrade(address newImplementation)
 
 **Storage Gap:**
 ```solidity
-uint[50] private __gap;  // CrossStaking
-uint[41] private __gap;  // CrossStakingPool
+uint[50] private __gap;  // CrossGameReward
+uint[41] private __gap;  // CrossGameRewardPool
 ```
 
 ### Router 교체
 
 ```solidity
 // 새 Router 배포
-CrossStakingRouter newRouter = new CrossStakingRouter(address(crossStaking));
+CrossGameRewardRouter newRouter = new CrossGameRewardRouter(address(crossDeposit));
 
-// CrossStaking에서 Router 변경
-crossStaking.setRouter(address(newRouter));
+// CrossGameReward에서 Router 변경
+crossDeposit.setRouter(address(newRouter));
 ```
 
 ---
@@ -349,9 +349,9 @@ crossStaking.setRouter(address(newRouter));
 
 ## 📖 요약
 
-**Cross Staking Protocol은:**
+**Cross GameReward Protocol은:**
 
-1. Multi-Pool 스테이킹 시스템
+1. Multi-Pool 디파짓 시스템
 2. Native CROSS 지원
 3. UUPS 업그레이더블
 4. 역할 기반 보안

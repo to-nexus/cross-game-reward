@@ -1,17 +1,17 @@
-# Cross Staking Protocol - Project Summary
+# Cross GameReward Protocol - Project Summary
 
 ## 🎯 Overview
 
-Cross Staking Protocol is a multi-pool staking system for native CROSS and ERC-20 tokens. A single factory deploys upgradeable pools, the router handles wrap/unwrap logic, and rewards are distributed with flat gas cost.
+Cross GameReward Protocol is a multi-pool deposit system for native CROSS and ERC-20 tokens. A single factory deploys upgradeable pools, the router handles wrap/unwrap logic, and rewards are distributed with flat gas cost.
 
 ### Value proposition
 
 - ✅ Native CROSS and ERC-20 in one framework  
 - ✅ Unlimited pools per token, each with independent configuration  
 - ✅ Accurate reward allocation with `rewardPerToken` accumulator  
-- ✅ Simplified access control with Owner/StakingRoot modifiers
+- ✅ Simplified access control with Owner/RewardRoot modifiers
 - ✅ 3-state pool management (Active/Inactive/Paused)
-- ✅ Fair reward distribution with zero-stake protection
+- ✅ Fair reward distribution with zero-deposit protection
 - ✅ Enhanced reward query APIs with token addresses
 - ✅ Hardened security stack with upgrade gates and role separation
 
@@ -23,50 +23,50 @@ Cross Staking Protocol is a multi-pool staking system for native CROSS and ERC-2
 User (Native CROSS / ERC-20)
     │
     ▼
-CrossStakingRouter ──► WCROSS (wrap)
+CrossGameRewardRouter ──► WCROSS (wrap)
     │
     ▼
-CrossStaking (UUPS factory)
+CrossGameReward (UUPS factory)
     │ creates
     ▼
-CrossStakingPool × N (UUPS pools)
+CrossGameRewardPool × N (UUPS pools)
 ```
 
 | Component            | Responsibility                                                           |
 |----------------------|---------------------------------------------------------------------------|
-| CrossStaking         | Creates pools, manages reward tokens, sets pool status, configures router |
-| CrossStakingPool     | Holds stake balances, updates rewards, 3-state management                |
-| CrossStakingRouter   | User entry point for native and ERC-20 staking, drives WCROSS            |
+| CrossGameReward         | Creates pools, manages reward tokens, sets pool status, configures router |
+| CrossGameRewardPool     | Holds deposit balances, updates rewards, 3-state management                |
+| CrossGameRewardRouter   | User entry point for native and ERC-20 deposit, drives WCROSS            |
 | WCROSS               | Wraps native CROSS; only the router may call `deposit/withdraw`          |
 
 ---
 
 ## 🔄 Operational flows
 
-### Native staking
+### Native deposit
 1. User approves WCROSS to the router  
-2. `stakeNative` wraps native CROSS into WCROSS and stakes via `stakeFor`  
-3. `unstakeNative` claims rewards, unwraps WCROSS, and returns native CROSS
+2. `depositNative` wraps native CROSS into WCROSS and deposits via `depositFor`  
+3. `withdrawNative` claims rewards, unwraps WCROSS, and returns native CROSS
 
-### ERC-20 staking
-1. User approves the router for the staking token  
-2. Router transfers tokens, calls `stakeFor`, and records the position  
-3. `unstakeERC20` returns the principal to the user and rewards directly from the pool
+### ERC-20 deposit
+1. User approves the router for the deposit token  
+2. Router transfers tokens, calls `depositFor`, and records the position  
+3. `withdrawERC20` returns the principal to the user and rewards directly from the pool
 
 ### Reward funding & queries
 - Any address can transfer reward tokens to the pool  
 - `_syncReward` detects balance deltas during the next interaction  
-- `rewardPerTokenStored` keeps the per-stake reward up to date with O(1) gas
+- `rewardPerTokenStored` keeps the per-deposit reward up to date with O(1) gas
 
 **Reward Query APIs:**
 - `pendingRewards(user)`: Returns all active reward tokens and amounts → `(address[] tokens, uint[] rewards)`
 - `pendingReward(user, token)`: Query specific token reward → `uint amount`
-- `getUserStakingInfo(poolId, user)`: Unified staking info → `(uint stakedAmount, address[] tokens, uint[] rewards)`
+- `getUserDepositInfo(poolId, user)`: Unified deposit info → `(uint depositedAmount, address[] tokens, uint[] rewards)`
 
-### Zero-stake protection
-- Rewards deposited when `totalStaked=0` are classified as `withdrawableAmount`
-- Protects first staker from receiving unallocated pre-staking rewards
-- Owner can recover via `CrossStaking.withdrawFromPool()`
+### Zero-deposit protection
+- Rewards deposited when `totalDeposited=0` are classified as `withdrawableAmount`
+- Protects first depositor from receiving unallocated pre-deposit rewards
+- Owner can recover via `CrossGameReward.withdrawFromPool()`
 
 ### Removed reward tokens
 - `removeRewardToken` freezes distributable balance as `distributedAmount`
@@ -78,27 +78,27 @@ CrossStakingPool × N (UUPS pools)
 ## 🎯 Key Features
 
 ### 1. 3-State Pool Management
-- **Active (0)**: All operations allowed (stake, unstake, claim)
-- **Inactive (1)**: Only unstake and claim allowed
+- **Active (0)**: All operations allowed (deposit, withdraw, claim)
+- **Inactive (1)**: Only withdraw and claim allowed
 - **Paused (2)**: All operations stopped
 
-Control: `CrossStaking.setPoolStatus(poolId, status)`
+Control: `CrossGameReward.setPoolStatus(poolId, status)`
 
 ### 2. Reward Mechanics
 - **O(1) gas**: `rewardPerToken` accumulation pattern
-- **Zero-stake protection**: Prevents unfair rewards to first staker
+- **Zero-deposit protection**: Prevents unfair rewards to first depositor
 - **Removed tokens**: `distributedAmount` (user-claimable) vs `withdrawableAmount` (owner-recoverable)
 - **Accuracy**: Mathematically guaranteed proportional distribution
 
 ### 3. Access Control
-**CrossStaking:**
+**CrossGameReward:**
 - `DEFAULT_ADMIN_ROLE` (owner): Router assignment, pool implementation, upgrades
 - `MANAGER_ROLE`: Pool creation, reward tokens, pool status, withdrawals
 
-**CrossStakingPool:**
-- `onlyOwner()`: CrossStaking's owner, upgrade authorization
-- `onlyStakingRoot()`: CrossStaking contract, all management functions
-- `onlyRouter`: Router-only, `stakeFor/unstakeFor`
+**CrossGameRewardPool:**
+- `onlyOwner()`: CrossGameReward's owner, upgrade authorization
+- `onlyRewardRoot()`: CrossGameReward contract, all management functions
+- `onlyRouter`: Router-only, `depositFor/withdrawFor`
 
 ---
 
@@ -106,18 +106,18 @@ Control: `CrossStaking.setPoolStatus(poolId, status)`
 
 1. **ReentrancyGuardTransient (EIP-1153)** wraps every state-changing entry point  
 2. **SafeERC20** handles token transfers safely  
-3. **Simplified access control** with Owner/StakingRoot modifiers
+3. **Simplified access control** with Owner/RewardRoot modifiers
 4. **3-state pool management** for granular control
 5. **UUPS upgrade paths** restricted to owner
 6. **Custom errors** to reduce gas and clarify revert reasons  
 7. **Router caller checks** on pool and WCROSS methods
-8. **Zero-stake protection** prevents unfair reward allocation
+8. **Zero-deposit protection** prevents unfair reward allocation
 9. **Event optimization** removes duplicate emissions
 
 Operational guidance:
 - Protect admin keys (router changes, upgrades) with a multisig/governance process  
 - `setPoolStatus(poolId, status)`: 0=Active, 1=Inactive, 2=Paused
-- Zero-stake deposits recoverable via `withdrawFromPool`
+- Zero-deposit deposits recoverable via `withdrawFromPool`
 
 ---
 
@@ -125,7 +125,7 @@ Operational guidance:
 
 ```bash
 forge test                                  # full suite
-forge test --match-contract CrossStaking   # specific contract
+forge test --match-contract CrossGameReward   # specific contract
 forge test --gas-report                    # gas report
 ```
 
@@ -134,19 +134,19 @@ forge test --gas-report                    # gas report
 | Suite                          | Passed tests |
 |--------------------------------|--------------|
 | WCROSS                         | 10           |
-| CrossStaking                   | 33           |
-| CrossStakingRouter             | 28           |
-| CrossStakingPoolStaking        | 18           |
-| CrossStakingPoolRewards        | 27           |
-| CrossStakingPoolAdmin          | 34           |
-| CrossStakingPoolIntegration    | 11           |
-| CrossStakingPoolPendingRewards | 9            |
-| CrossStakingPoolSecurity       | 21           |
-| CrossStakingPoolEdgeCases      | 12           |
+| CrossGameReward                   | 33           |
+| CrossGameRewardRouter             | 28           |
+| CrossGameRewardPoolDeposit        | 18           |
+| CrossGameRewardPoolRewards        | 27           |
+| CrossGameRewardPoolAdmin          | 34           |
+| CrossGameRewardPoolIntegration    | 11           |
+| CrossGameRewardPoolPendingRewards | 9            |
+| CrossGameRewardPoolSecurity       | 21           |
+| CrossGameRewardPoolEdgeCases      | 12           |
 | FullIntegration                | 9            |
 | **Total**                      | **212**      |
 
-**Coverage:** ~100%, covering multi-pool deployment, reward removal, router flows, zero-stake scenarios, stress cases, and invariant checks.
+**Coverage:** ~100%, covering multi-pool deployment, reward removal, router flows, zero-deposit scenarios, stress cases, and invariant checks.
 
 ### Recent Improvements
 1. ✅ Enhanced API: `pendingRewards()` returns token addresses
@@ -171,7 +171,7 @@ forge test --gas-report                    # gas report
 - ✅ 212/212 tests passing  
 - ✅ Zero compilation warnings
 - ✅ Reentrancy protection and role checks verified  
-- ✅ Zero-stake protection implemented
+- ✅ Zero-deposit protection implemented
 - ✅ Removed reward token settlement validated  
 - ✅ UUPS upgrade paths tested (`upgradeToAndCall`)  
 - ✅ Documentation up-to-date
@@ -228,7 +228,7 @@ MIT
 
 ## ✨ Conclusion
 
-Cross Staking Protocol is **fully tested and documented, production-ready**:
+Cross GameReward Protocol is **fully tested and documented, production-ready**:
 - 212 tests passing (100%)
 - Enhanced API for better UX
 - Optimized event logging
