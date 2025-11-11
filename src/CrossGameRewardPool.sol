@@ -102,6 +102,9 @@ contract CrossGameRewardPool is
 
     // ==================== State Variables ====================
 
+    /// @notice The name of the pool
+    string public poolName;
+
     /// @notice The deposit token
     IERC20 public depositToken;
 
@@ -206,9 +209,10 @@ contract CrossGameRewardPool is
      * @param _depositToken Address of the token to be deposited
      * @param _minDepositAmount Minimum amount required for depositing
      */
-    function initialize(IERC20 _depositToken, uint _minDepositAmount) external initializer {
+    function initialize(string memory _poolName, IERC20 _depositToken, uint _minDepositAmount) external initializer {
         require(address(_depositToken) != address(0), CSPCanNotZeroAddress());
         require(_minDepositAmount > 0, CSPCanNotZeroValue());
+        require(bytes(_poolName).length > 0, CSPCanNotZeroValue());
 
         // msg.sender is always CrossGameReward contract
         crossGameReward = ICrossGameReward(msg.sender);
@@ -218,6 +222,7 @@ contract CrossGameRewardPool is
         __UUPSUpgradeable_init();
 
         initializedAt = block.number;
+        poolName = _poolName;
         depositToken = _depositToken;
         minDepositAmount = _minDepositAmount;
         poolStatus = ICrossGameRewardPool.PoolStatus.Active;

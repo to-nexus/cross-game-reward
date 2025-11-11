@@ -57,7 +57,7 @@ abstract contract CrossGameRewardPoolBase is Test {
         crossGameReward = CrossGameReward(address(proxy));
 
         // Create pool through the CrossGameReward factory
-        (uint poolId, ICrossGameRewardPool poolInterface) = crossGameReward.createPool(IERC20(address(crossToken)), 1 ether);
+        (uint poolId, ICrossGameRewardPool poolInterface) = crossGameReward.createPool("CROSS Token Pool", IERC20(address(crossToken)), 1 ether);
         pool = CrossGameRewardPool(address(poolInterface));
 
         // Distribute CROSS tokens to users

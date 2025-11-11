@@ -23,6 +23,7 @@ interface ICrossGameReward is IERC5313 {
      */
     struct PoolInfo {
         uint poolId;
+        string poolName;
         ICrossGameRewardPool pool;
         IERC20 depositToken;
         uint createdAt;
@@ -41,7 +42,7 @@ interface ICrossGameReward is IERC5313 {
     function nextPoolId() external view returns (uint);
 
     /// @notice Creates a new game reward pool
-    function createPool(IERC20 depositToken, uint minDepositAmount)
+    function createPool(string memory poolName, IERC20 depositToken, uint minDepositAmount)
         external
         returns (uint poolId, ICrossGameRewardPool poolAddress);
 

@@ -39,7 +39,10 @@ contract DeployFullSystem is Script {
         // 2. CrossGameReward Implementation & Proxy 배포 (WCROSS를 생성함)
         CrossGameReward crossGameRewardImpl = new CrossGameReward();
         bytes memory initData = abi.encodeWithSelector(
-            CrossGameReward.initialize.selector, ICrossGameRewardPool(address(poolImplementation)), deployer, INITIAL_DELAY
+            CrossGameReward.initialize.selector,
+            ICrossGameRewardPool(address(poolImplementation)),
+            deployer,
+            INITIAL_DELAY
         );
         ERC1967Proxy crossGameRewardProxy = new ERC1967Proxy(address(crossGameRewardImpl), initData);
         CrossGameReward crossGameReward = CrossGameReward(address(crossGameRewardProxy));
@@ -93,7 +96,10 @@ contract DeployWithPools is Script {
         // 2. CrossGameReward 배포 (UUPS - WCROSS를 생성함)
         CrossGameReward crossGameRewardImpl = new CrossGameReward();
         bytes memory initData = abi.encodeWithSelector(
-            CrossGameReward.initialize.selector, ICrossGameRewardPool(address(poolImplementation)), deployer, INITIAL_DELAY
+            CrossGameReward.initialize.selector,
+            ICrossGameRewardPool(address(poolImplementation)),
+            deployer,
+            INITIAL_DELAY
         );
         ERC1967Proxy crossGameRewardProxy = new ERC1967Proxy(address(crossGameRewardImpl), initData);
         CrossGameReward crossGameReward = CrossGameReward(address(crossGameRewardProxy));
@@ -108,7 +114,8 @@ contract DeployWithPools is Script {
         crossGameReward.setRouter(address(router));
 
         // 6. Native CROSS 풀 생성
-        (uint nativePoolId, ICrossGameRewardPool nativePool) = crossGameReward.createPool(IERC20(address(wcross)), 1 ether);
+        (uint nativePoolId, ICrossGameRewardPool nativePool) =
+            crossGameReward.createPool("Native CROSS Pool", IERC20(address(wcross)), 1 ether);
 
         console.log("\n=== Full Deployment Summary ===");
         console.log("WCROSS:", address(wcross));

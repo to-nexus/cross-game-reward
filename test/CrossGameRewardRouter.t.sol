@@ -72,9 +72,9 @@ contract CrossGameRewardRouterTest is Test {
         permitToken = new MockERC20Permit("Permit Token", "PTK");
 
         // Create pools
-        (nativePoolId, nativePool) = crossGameReward.createPool(IERC20(address(wcross)), 1 ether);
-        (erc20PoolId, erc20Pool) = crossGameReward.createPool(IERC20(address(depositToken)), 1 ether);
-        (permitPoolId, permitPool) = crossGameReward.createPool(IERC20(address(permitToken)), 1 ether);
+        (nativePoolId, nativePool) = crossGameReward.createPool("Native WCROSS Pool", IERC20(address(wcross)), 1 ether);
+        (erc20PoolId, erc20Pool) = crossGameReward.createPool("Deposit Token Pool", IERC20(address(depositToken)), 1 ether);
+        (permitPoolId, permitPool) = crossGameReward.createPool("Permit Token Pool", IERC20(address(permitToken)), 1 ether);
 
         // Add reward tokens
         crossGameReward.addRewardToken(nativePoolId, IERC20(address(rewardToken)));

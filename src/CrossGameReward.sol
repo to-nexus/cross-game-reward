@@ -4,10 +4,10 @@ pragma solidity 0.8.28;
 import {AccessControlDefaultAdminRulesUpgradeable as AccessControl} from
     "@openzeppelin/contracts-upgradeable/access/extensions/AccessControlDefaultAdminRulesUpgradeable.sol";
 import {Initializable, UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-
 import {IERC5313} from "@openzeppelin/contracts/interfaces/IERC5313.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
 import {CrossGameRewardPool} from "./CrossGameRewardPool.sol";
@@ -140,25 +140,37 @@ contract CrossGameReward is Initializable, AccessControl, UUPSUpgradeable, ICros
      * @return poolId ID of the newly created pool
      * @return pool Address of the newly created pool
      */
-    function createPool(IERC20 depositToken, uint minDepositAmount)
+    function createPool(string memory poolName, IERC20 depositToken, uint minDepositAmount)
         external
         onlyRole(MANAGER_ROLE)
         returns (uint poolId, ICrossGameRewardPool pool)
     {
         require(address(depositToken) != address(0), CSCanNotZeroAddress());
         require(minDepositAmount > 0, CSCanNotZeroValue());
+        require(bytes(poolName).length > 0, CSCanNotZeroValue());
 
         poolId = nextPoolId++;
 
-        // Deploy pool as UUPS proxy
-        // Pool will set CrossGameReward as msg.sender and get owner from defaultAdmin()
-        bytes memory initData = abi.encodeCall(CrossGameRewardPool.initialize, (depositToken, minDepositAmount));
+        // Deploy the proxy via CREATE2 with deterministic address
+        bytes32 salt = keccak256(abi.encodePacked(poolName, address(depositToken)));
+        bytes memory proxyBytecode = abi.encodePacked(
+            type(ERC1967Proxy).creationCode,
+            abi.encode(
+                address(poolImplementation),
+                abi.encodeCall(CrossGameRewardPool.initialize, (poolName, depositToken, minDepositAmount))
+            )
+        );
 
-        ERC1967Proxy proxy = new ERC1967Proxy(address(poolImplementation), initData);
-        pool = ICrossGameRewardPool(address(proxy));
+        pool = ICrossGameRewardPool(Create2.deploy(0, salt, proxyBytecode));
 
         // Store pool information
-        pools[poolId] = PoolInfo({poolId: poolId, pool: pool, depositToken: depositToken, createdAt: block.timestamp});
+        pools[poolId] = PoolInfo({
+            poolId: poolId,
+            poolName: poolName,
+            pool: pool,
+            depositToken: depositToken,
+            createdAt: block.timestamp
+        });
 
         poolIds[pool] = poolId;
         _allPoolIds.add(poolId);

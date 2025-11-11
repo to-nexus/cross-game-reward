@@ -152,7 +152,7 @@ contract WCROSSTest is Test {
         ICrossGameRewardPool poolAddress;
 
         // Create pool
-        (poolId, poolAddress) = crossGameReward.createPool(IERC20(address(wcross)), 1 ether);
+        (poolId, poolAddress) = crossGameReward.createPool("WCROSS Pool", IERC20(address(wcross)), 1 ether);
 
         // User deposits via router
         vm.startPrank(user1);
@@ -166,7 +166,7 @@ contract WCROSSTest is Test {
 
     function testWithdrawForIntegration() public {
         // Setup: deposit first
-        (uint poolId, ICrossGameRewardPool poolAddress) = crossGameReward.createPool(IERC20(address(wcross)), 1 ether);
+        (uint poolId, ICrossGameRewardPool poolAddress) = crossGameReward.createPool("WCROSS Pool", IERC20(address(wcross)), 1 ether);
 
         vm.startPrank(user1);
         router.depositNative{value: 10 ether}(poolId);
