@@ -331,13 +331,10 @@ contract CrossGameRewardPool is
         tokens = new address[](length);
         rewards = new uint[](length);
 
-        for (uint i = 0; i < length;) {
+        for (uint i = 0; i < length; i++) {
             IERC20 token = IERC20(_rewardTokenAddresses.at(i));
             tokens[i] = address(token);
             rewards[i] = _calculatePendingReward(token, user);
-            unchecked {
-                ++i;
-            }
         }
     }
 
@@ -436,7 +433,7 @@ contract CrossGameRewardPool is
         tokens = new address[](length);
         rewards = new uint[](length);
 
-        for (uint i = 0; i < length;) {
+        for (uint i = 0; i < length; i++) {
             IERC20 token = IERC20(_removedRewardTokenAddresses.at(i));
             tokens[i] = address(token);
 
@@ -449,10 +446,6 @@ contract CrossGameRewardPool is
             // Calculate earned rewards since last update
             uint earned = _calculateEarned(ur, userBalance, rt.rewardPerTokenStored);
             rewards[i] = ur.rewards + earned;
-
-            unchecked {
-                ++i;
-            }
         }
     }
 
@@ -608,12 +601,9 @@ contract CrossGameRewardPool is
      */
     function _syncRewards() internal {
         uint length = _rewardTokenAddresses.length();
-        for (uint i = 0; i < length;) {
+        for (uint i = 0; i < length; i++) {
             IERC20 token = IERC20(_rewardTokenAddresses.at(i));
             _syncReward(token);
-            unchecked {
-                ++i;
-            }
         }
     }
 
@@ -657,12 +647,9 @@ contract CrossGameRewardPool is
      */
     function _updateRewards(address user) internal {
         uint length = _rewardTokenAddresses.length();
-        for (uint i = 0; i < length;) {
+        for (uint i = 0; i < length; i++) {
             IERC20 token = IERC20(_rewardTokenAddresses.at(i));
             _updateReward(token, user);
-            unchecked {
-                ++i;
-            }
         }
     }
 
@@ -745,12 +732,9 @@ contract CrossGameRewardPool is
      */
     function _claimRewards(address user) internal {
         uint length = _rewardTokenAddresses.length();
-        for (uint i = 0; i < length;) {
+        for (uint i = 0; i < length; i++) {
             IERC20 token = IERC20(_rewardTokenAddresses.at(i));
             _claimReward(token, user);
-            unchecked {
-                ++i;
-            }
         }
     }
 
@@ -783,23 +767,17 @@ contract CrossGameRewardPool is
 
     function _updateRemovedRewards(address user) private {
         uint length = _removedRewardTokenAddresses.length();
-        for (uint i = 0; i < length;) {
+        for (uint i = 0; i < length; i++) {
             IERC20 token = IERC20(_removedRewardTokenAddresses.at(i));
             _updateReward(token, user);
-            unchecked {
-                ++i;
-            }
         }
     }
 
     function _claimRemovedRewards(address user) private {
         uint length = _removedRewardTokenAddresses.length();
-        for (uint i = 0; i < length;) {
+        for (uint i = 0; i < length; i++) {
             IERC20 token = IERC20(_removedRewardTokenAddresses.at(i));
             _claimReward(token, user);
-            unchecked {
-                ++i;
-            }
         }
     }
 
