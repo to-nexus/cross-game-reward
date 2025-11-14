@@ -27,6 +27,9 @@ contract WCROSS is ERC20, IWCROSS {
     /// @notice Thrown when native CROSS transfer fails
     error WCROSSTransferFailed();
 
+    /// @notice Thrown when attempting to withdraw to an invalid address
+    error WCROSSInvalidAddress();
+
     // ==================== State Variables ====================
 
     /// @notice CrossGameReward contract reference for router validation
@@ -84,6 +87,7 @@ contract WCROSS is ERC20, IWCROSS {
      */
     function withdrawTo(address to, uint amount) public {
         require(msg.sender == gameReward.router(), WCROSSUnauthorized());
+        require(to != address(0), WCROSSInvalidAddress());
         _burn(msg.sender, amount);
 
         (bool success,) = to.call{value: amount}("");
