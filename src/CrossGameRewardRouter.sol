@@ -30,9 +30,6 @@ contract CrossGameRewardRouter is ICrossGameRewardRouter {
     /// @notice Thrown when a zero address is provided where it's not allowed
     error CSRCanNotZeroAddress();
 
-    /// @notice Thrown when a transfer fails
-    error CSRTransferFailed();
-
     /// @notice Thrown when attempting native operations on a non-WCROSS pool
     error CSRNotWCROSSPool();
 
