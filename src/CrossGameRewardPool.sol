@@ -150,6 +150,12 @@ contract CrossGameRewardPool is
     /// @param amount Amount of reward tokens claimed
     event RewardClaimed(address indexed account, IERC20 indexed token, uint amount);
 
+    /// @notice Emitted when a account claims rewards failed
+    /// @param account Address of the account who claimed
+    /// @param token Address of the reward token claimed
+    /// @param amount Amount of reward tokens claimed
+    event RewardClaimFailed(address indexed account, IERC20 indexed token, uint amount);
+
     /// @notice Emitted when a new reward token is added
     /// @param token Address of the added reward token
     event RewardTokenAdded(IERC20 indexed token);
@@ -758,17 +764,20 @@ contract CrossGameRewardPool is
         uint reward = ur.rewards;
 
         if (reward > 0) {
-            ur.rewards = 0;
-
             RewardToken storage rt = _rewardTokenData[token];
-            rt.token.safeTransfer(user, reward);
 
-            rt.lastBalance -= reward;
-
-            // Deduct from distributedAmount if token was removed (user is claiming distributed rewards)
-            if (rt.isRemoved) rt.distributedAmount = rt.distributedAmount > reward ? rt.distributedAmount - reward : 0;
-
-            emit RewardClaimed(user, rt.token, reward);
+            bool ok = rt.token.trySafeTransfer(user, reward);
+            if (!ok) {
+                emit RewardClaimFailed(user, rt.token, reward);
+            } else {
+                ur.rewards = 0;
+                rt.lastBalance -= reward;
+                // Deduct from distributedAmount if token was removed (user is claiming distributed rewards)
+                if (rt.isRemoved) {
+                    rt.distributedAmount = rt.distributedAmount > reward ? rt.distributedAmount - reward : 0;
+                }
+                emit RewardClaimed(user, rt.token, reward);
+            }
         }
     }
 
