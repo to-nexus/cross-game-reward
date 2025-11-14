@@ -456,13 +456,14 @@ contract CrossGameRewardPool is
      * @notice Adds a new reward token to the pool
      * @dev Only callable by CrossGameReward contract
      *      Cannot add deposit token as reward token
+     *      Cannot add a removed reward token
      * @param token Address of the reward token to add
      */
     function addRewardToken(IERC20 token) external onlyRewardRoot {
         require(address(token) != address(0), CSPCanNotZeroAddress());
         require(address(token) != address(depositToken), CSPCanNotUseDepositToken());
+        require(!_removedRewardTokenAddresses.contains(address(token)), CSPInvalidRewardToken());
         require(_rewardTokenAddresses.add(address(token)), CSPRewardTokenAlreadyAdded());
-        _removedRewardTokenAddresses.remove(address(token));
 
         _rewardTokenData[token] = RewardToken({
             token: token,
