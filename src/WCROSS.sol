@@ -33,7 +33,7 @@ contract WCROSS is ERC20, IWCROSS {
     // ==================== State Variables ====================
 
     /// @notice CrossGameReward contract reference for router validation
-    CrossGameReward public gameReward;
+    CrossGameReward public immutable gameReward;
 
     // ==================== Constructor ====================
 
