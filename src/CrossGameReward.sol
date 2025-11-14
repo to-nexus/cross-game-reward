@@ -384,5 +384,5 @@ contract CrossGameReward is Initializable, AccessControl, UUPSUpgradeable, ICros
     /**
      * @dev Storage gap for future upgrades
      */
-    uint[41] private __gap;
+    uint[40] private __gap;
 }
