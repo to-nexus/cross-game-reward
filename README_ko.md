@@ -29,6 +29,7 @@ CrossGameRewardPool × n (개별 풀)
 - ✅ **3단계 풀 상태**: Active/Inactive/Paused로 세밀한 제어
 - ✅ **공정한 보상 분배**: 디파짓 前 예치된 보상 자동 회수 가능
 - ✅ **제거된 보상 자동 정산**: 출금 시 제거된 토큰 보상 자동 지급
+- ✅ **보상 청구 복구**: 전송 실패 시에도 원금 출금 가능, 이후 재청구 지원
 
 ## 🚀 빠른 시작
 
@@ -44,7 +45,7 @@ forge install
 forge test
 ```
 
-**현재: 212/212 테스트 통과**
+**현재: 222/222 테스트 통과**
 
 ### 배포 예시
 
@@ -156,6 +157,7 @@ usdt.transfer(address(pool), 1000 ether);
 - Custom Errors로 가스 절감 및 명확한 revert
 - Router 호출자 검증
 - Zero-deposit 보상 보호
+- 보상 전송 실패 시 복구 메커니즘 (trySafeTransfer + stored rewards)
 
 ## 📚 문서
 

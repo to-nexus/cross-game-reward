@@ -50,14 +50,16 @@ abstract contract CrossGameRewardPoolBase is Test {
         CrossGameRewardPool poolImplementation = new CrossGameRewardPool();
         CrossGameReward gameRewardImplementation = new CrossGameReward();
 
-        bytes memory initData =
-            abi.encodeCall(CrossGameReward.initialize, (ICrossGameRewardPool(address(poolImplementation)), owner, 2 days));
+        bytes memory initData = abi.encodeCall(
+            CrossGameReward.initialize, (ICrossGameRewardPool(address(poolImplementation)), owner, 2 days)
+        );
 
         ERC1967Proxy proxy = new ERC1967Proxy(address(gameRewardImplementation), initData);
         crossGameReward = CrossGameReward(address(proxy));
 
         // Create pool through the CrossGameReward factory
-        (uint poolId, ICrossGameRewardPool poolInterface) = crossGameReward.createPool(IERC20(address(crossToken)), 1 ether);
+        (uint poolId, ICrossGameRewardPool poolInterface) =
+            crossGameReward.createPool(IERC20(address(crossToken)), 1 ether);
         pool = CrossGameRewardPool(address(poolInterface));
 
         // Distribute CROSS tokens to users

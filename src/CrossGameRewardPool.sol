@@ -239,6 +239,27 @@ contract CrossGameRewardPool is
         return crossGameReward.owner();
     }
 
+    // ==================== Internal Helper Functions ====================
+
+    /**
+     * @dev Checks if user has stored rewards in any token
+     * @param user Address to check
+     * @return True if user has any unclaimed rewards
+     */
+    function _hasStoredRewards(address user) private view returns (bool) {
+        uint length = _rewardTokenAddresses.length();
+        for (uint i = 0; i < length; ++i) {
+            IERC20 token = IERC20(_rewardTokenAddresses.at(i));
+            if (userRewards[user][token].rewards > 0) return true;
+        }
+        length = _removedRewardTokenAddresses.length();
+        for (uint i = 0; i < length; ++i) {
+            IERC20 token = IERC20(_removedRewardTokenAddresses.at(i));
+            if (userRewards[user][token].rewards > 0) return true;
+        }
+        return false;
+    }
+
     // ==================== External Functions ====================
 
     /**
@@ -291,32 +312,51 @@ contract CrossGameRewardPool is
      * @notice Claims all pending rewards without withdrawing
      * @dev Deposited tokens remain in the pool
      *      Allowed in Active and Inactive states, blocked in Paused state
+     *      Can claim even with zero balance if stored rewards exist (for failed transfer recovery)
      */
     function claimRewards() external nonReentrant whenNotPaused {
         require(poolStatus != ICrossGameRewardPool.PoolStatus.Paused, CGRPNotAllowedInCurrentState());
-        require(balances[msg.sender] > 0, CGRPNoDepositFound());
 
-        _syncRewards();
-        _updateRewards(msg.sender);
+        uint userBalance = balances[msg.sender];
+        bool hasRewards = _hasStoredRewards(msg.sender);
+
+        require(userBalance > 0 || hasRewards, CGRPNoDepositFound());
+
+        // Only sync and update if user has active balance
+        // (no point updating rewards when balance is 0)
+        if (userBalance > 0) {
+            _syncRewards();
+            _updateRewards(msg.sender);
+            _updateRemovedRewards(msg.sender);
+        }
+
+        // Claim all rewards (both active and removed)
         _claimRewards(msg.sender);
+        _claimRemovedRewards(msg.sender);
     }
 
     /**
      * @notice Claims pending rewards for a specific reward token
      * @dev Can claim rewards even for removed tokens
      *      Allowed in Active and Inactive states, blocked in Paused state
+     *      Can claim even with zero balance if stored rewards exist (for failed transfer recovery)
      * @param token Address of the reward token to claim
      */
     function claimReward(IERC20 token) external nonReentrant whenNotPaused {
         require(poolStatus != ICrossGameRewardPool.PoolStatus.Paused, CGRPNotAllowedInCurrentState());
-        require(balances[msg.sender] > 0, CGRPNoDepositFound());
-        // Allow claiming even for removed tokens by checking only _rewardTokenData existence
+
+        uint userBalance = balances[msg.sender];
+        uint storedReward = userRewards[msg.sender][token].rewards;
+
+        require(userBalance > 0 || storedReward > 0, CGRPNoDepositFound());
         require(address(_rewardTokenData[token].token) != address(0), CGRPInvalidRewardToken());
 
-        // Only sync for tokens that haven't been removed
-        if (_rewardTokenAddresses.contains(address(token))) _syncReward(token);
+        // Only sync and update if user has active balance
+        if (userBalance > 0) {
+            if (_rewardTokenAddresses.contains(address(token))) _syncReward(token);
+            _updateReward(token, msg.sender);
+        }
 
-        _updateReward(token, msg.sender);
         _claimReward(token, msg.sender);
     }
 

@@ -55,8 +55,9 @@ contract CrossGameRewardRouterTest is Test {
 
         // Deploy CrossGameReward as a UUPS proxy (instantiates WCROSS)
         CrossGameReward implementation = new CrossGameReward();
-        bytes memory initData =
-            abi.encodeCall(CrossGameReward.initialize, (ICrossGameRewardPool(address(poolImplementation)), owner, 2 days));
+        bytes memory initData = abi.encodeCall(
+            CrossGameReward.initialize, (ICrossGameRewardPool(address(poolImplementation)), owner, 2 days)
+        );
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
         crossGameReward = CrossGameReward(address(proxy));
 
