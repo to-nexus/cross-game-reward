@@ -74,7 +74,7 @@ contract CrossGameRewardPoolSecurityTest is CrossGameRewardPoolBase {
     function testCannotDepositZeroAmount() public {
         vm.startPrank(user1);
         crossToken.approve(address(pool), 0);
-        vm.expectRevert(CrossGameRewardPool.CSPBelowMinimumDepositAmount.selector);
+        vm.expectRevert(CrossGameRewardPool.CGRPBelowMinimumDepositAmount.selector);
         pool.deposit(0);
         vm.stopPrank();
     }
@@ -353,7 +353,7 @@ contract CrossGameRewardPoolSecurityTest is CrossGameRewardPoolBase {
         // Below minimum should fail
         vm.startPrank(user1);
         crossToken.approve(address(pool), belowMin);
-        vm.expectRevert(CrossGameRewardPool.CSPBelowMinimumDepositAmount.selector);
+        vm.expectRevert(CrossGameRewardPool.CGRPBelowMinimumDepositAmount.selector);
         pool.deposit(belowMin);
 
         // Exact minimum should succeed

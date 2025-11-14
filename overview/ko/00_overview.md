@@ -18,7 +18,7 @@ Cross GameReward Protocol은 Native CROSS와 ERC20 토큰을 위한 **확장 가
             │
             ▼
 ┌─────────────────────────────────┐
-│   CrossGameRewardRouter (CSR)      │
+│   CrossGameRewardRouter (CGRR)      │
 │   - depositNative/withdrawNative   │
 │   - depositERC20/withdrawERC20     │
 │   - 재배포 가능                  │
@@ -29,7 +29,7 @@ Cross GameReward Protocol은 Native CROSS와 ERC20 토큰을 위한 **확장 가
        │
        ▼
 ┌─────────────────────────────────┐
-│    CrossGameReward (CS)            │
+│    CrossGameReward (CGR)            │
 │    - UUPS 업그레이더블           │
 │    - createPool (POOL_MANAGER)  │
 │    - setRouter (ADMIN)          │
@@ -37,7 +37,7 @@ Cross GameReward Protocol은 Native CROSS와 ERC20 토큰을 위한 **확장 가
        │ creates
        ▼
 ┌─────────────────────────────────┐
-│  CrossGameRewardPool (CSP) × n     │
+│  CrossGameRewardPool (CGRP) × n     │
 │  - UUPS 업그레이더블             │
 │  - depositFor/withdrawFor          │
 │  - rewardPerToken 누적          │

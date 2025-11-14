@@ -36,8 +36,9 @@ contract CrossGameRewardTest is Test {
 
         // Deploy CrossGameReward as UUPS proxy
         CrossGameReward implementation = new CrossGameReward();
-        bytes memory initData =
-            abi.encodeCall(CrossGameReward.initialize, (ICrossGameRewardPool(address(poolImplementation)), owner, 2 days));
+        bytes memory initData = abi.encodeCall(
+            CrossGameReward.initialize, (ICrossGameRewardPool(address(poolImplementation)), owner, 2 days)
+        );
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
         crossGameReward = CrossGameReward(address(proxy));
 
@@ -99,7 +100,7 @@ contract CrossGameRewardTest is Test {
     }
 
     function testCannotCreatePoolWithZeroAddress() public {
-        vm.expectRevert(CrossGameReward.CSCanNotZeroAddress.selector);
+        vm.expectRevert(CrossGameReward.CGRCanNotZeroAddress.selector);
         crossGameReward.createPool(IERC20(address(0)), 1 ether);
     }
 
@@ -141,7 +142,7 @@ contract CrossGameRewardTest is Test {
     function testCannotAddRewardTokenToNonExistentPool() public {
         MockERC20 rewardToken = new MockERC20("Reward", "RWD");
 
-        vm.expectRevert(CrossGameReward.CSPoolNotFound.selector);
+        vm.expectRevert(CrossGameReward.CGRPoolNotFound.selector);
         crossGameReward.addRewardToken(999, IERC20(address(rewardToken)));
     }
 
@@ -188,7 +189,7 @@ contract CrossGameRewardTest is Test {
     }
 
     function testCannotSetStatusOnNonExistentPool() public {
-        vm.expectRevert(CrossGameReward.CSPoolNotFound.selector);
+        vm.expectRevert(CrossGameReward.CGRPoolNotFound.selector);
         crossGameReward.setPoolStatus(999, ICrossGameRewardPool.PoolStatus.Inactive);
     }
 
@@ -228,10 +229,10 @@ contract CrossGameRewardTest is Test {
     }
 
     function testCannotGetNonExistentPool() public {
-        vm.expectRevert(CrossGameReward.CSPoolNotFound.selector);
+        vm.expectRevert(CrossGameReward.CGRPoolNotFound.selector);
         crossGameReward.getPoolInfo(999);
 
-        vm.expectRevert(CrossGameReward.CSPoolNotFound.selector);
+        vm.expectRevert(CrossGameReward.CGRPoolNotFound.selector);
         crossGameReward.getPoolAddress(999);
     }
 
@@ -316,7 +317,7 @@ contract CrossGameRewardTest is Test {
     }
 
     function testCannotSetZeroAddressAsRouter() public {
-        vm.expectRevert(CrossGameReward.CSCanNotZeroAddress.selector);
+        vm.expectRevert(CrossGameReward.CGRCanNotZeroAddress.selector);
         crossGameReward.setRouter(address(0));
     }
 

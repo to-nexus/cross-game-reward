@@ -115,12 +115,12 @@ uint[41] private __gap;  // CrossGameRewardPool
 
 **Naming Convention:**
 ```
-CS   - CrossGameReward
-CSP  - CrossGameRewardPool
-CSR  - CrossGameRewardRouter
+CGR   - CrossGameReward
+CGRP  - CrossGameRewardPool
+CGRR  - CrossGameRewardRouter
 WCROSS - WCROSS
 
-예: CSPNoDepositFound, CSRInvalidAmount
+예: CGRPNoDepositFound, CGRRInvalidAmount
 ```
 
 ### 8. Router Check
@@ -128,8 +128,8 @@ WCROSS - WCROSS
 **CrossGameRewardPool:**
 ```solidity
 function _checkDelegate(address account) internal view {
-    require(account != address(0), CSPCanNotZeroAddress());
-    require(msg.sender == ICrossGameReward(crossDeposit).router(), CSPOnlyRouter());
+    require(account != address(0), CGRPCanNotZeroAddress());
+    require(msg.sender == ICrossGameReward(crossDeposit).router(), CGRPOnlyRouter());
 }
 ```
 
@@ -220,7 +220,7 @@ assertGe(newRewardPerToken, oldRewardPerToken);
 ### 4. Router 권한
 
 ```solidity
-vm.expectRevert(CSPOnlyRouter.selector);
+vm.expectRevert(CGRPOnlyRouter.selector);
 pool.depositFor(user, amount);  // Non-router call
 ```
 

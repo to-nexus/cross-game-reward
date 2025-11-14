@@ -51,46 +51,46 @@ contract CrossGameRewardPool is
     // ==================== Custom Errors ====================
 
     /// @notice Thrown when deposit amount is below minimum required
-    error CSPBelowMinimumDepositAmount();
+    error CGRPBelowMinimumDepositAmount();
 
     /// @notice Thrown when attempting to withdraw with no active deposit
-    error CSPNoDepositFound();
+    error CGRPNoDepositFound();
 
     /// @notice Thrown when a zero address is provided where it's not allowed
-    error CSPCanNotZeroAddress();
+    error CGRPCanNotZeroAddress();
 
     /// @notice Thrown when a zero value is provided where it's not allowed
-    error CSPCanNotZeroValue();
+    error CGRPCanNotZeroValue();
 
     /// @notice Thrown when attempting to add an already existing reward token
-    error CSPRewardTokenAlreadyAdded();
+    error CGRPRewardTokenAlreadyAdded();
 
     /// @notice Thrown when accessing an invalid reward token
-    error CSPInvalidRewardToken();
+    error CGRPInvalidRewardToken();
 
     /// @notice Thrown when attempting to use deposit token as reward token
-    error CSPCanNotUseDepositToken();
+    error CGRPCanNotUseDepositToken();
 
     /// @notice Thrown when caller is not the authorized router
-    error CSPOnlyRouter();
+    error CGRPOnlyRouter();
 
     /// @notice Thrown when attempting reclaim with no reclaimable amount
-    error CSPNoReclaimableAmount();
+    error CGRPNoReclaimableAmount();
 
     /// @notice Thrown when attempting to call a function that is not allowed
-    error CSPNotAllowedFunction();
+    error CGRPNotAllowedFunction();
 
     /// @notice Thrown when caller is not the owner of the pool
-    error CSPOnlyOwner();
+    error CGRPOnlyOwner();
 
     /// @notice Thrown when caller is not the reward root
-    error CSPOnlyRewardRoot();
+    error CGRPOnlyRewardRoot();
 
     /// @notice Thrown when attempting to deposit in an inactive or paused pool
-    error CSPCannotDepositInCurrentState();
+    error CGRPCannotDepositInCurrentState();
 
     /// @notice Thrown when attempting an operation not allowed in current pool state
-    error CSPOperationNotAllowedInCurrentState();
+    error CGRPNotAllowedInCurrentState();
 
     // ==================== Constants ====================
 
@@ -194,12 +194,12 @@ contract CrossGameRewardPool is
     }
 
     modifier onlyOwner() {
-        require(msg.sender == owner(), CSPOnlyOwner());
+        require(msg.sender == owner(), CGRPOnlyOwner());
         _;
     }
 
     modifier onlyRewardRoot() {
-        require(msg.sender == address(crossGameReward), CSPOnlyRewardRoot());
+        require(msg.sender == address(crossGameReward), CGRPOnlyRewardRoot());
         _;
     }
 
@@ -213,8 +213,8 @@ contract CrossGameRewardPool is
      * @param _minDepositAmount Minimum amount required for depositing
      */
     function initialize(IERC20 _depositToken, uint _minDepositAmount) external initializer {
-        require(address(_depositToken) != address(0), CSPCanNotZeroAddress());
-        require(_minDepositAmount > 0, CSPCanNotZeroValue());
+        require(address(_depositToken) != address(0), CGRPCanNotZeroAddress());
+        require(_minDepositAmount > 0, CGRPCanNotZeroValue());
 
         // msg.sender is always CrossGameReward contract
         crossGameReward = ICrossGameReward(msg.sender);
@@ -248,7 +248,7 @@ contract CrossGameRewardPool is
      * @param amount Amount of tokens to deposit
      */
     function deposit(uint amount) external nonReentrant whenNotPaused {
-        require(poolStatus == ICrossGameRewardPool.PoolStatus.Active, CSPCannotDepositInCurrentState());
+        require(poolStatus == ICrossGameRewardPool.PoolStatus.Active, CGRPCannotDepositInCurrentState());
         _deposit(msg.sender, msg.sender, amount);
     }
 
@@ -260,7 +260,7 @@ contract CrossGameRewardPool is
      * @param amount Amount of tokens to deposit
      */
     function depositFor(address account, uint amount) external nonReentrant whenNotPaused {
-        require(poolStatus == ICrossGameRewardPool.PoolStatus.Active, CSPCannotDepositInCurrentState());
+        require(poolStatus == ICrossGameRewardPool.PoolStatus.Active, CGRPCannotDepositInCurrentState());
         _checkDelegate(account);
         _deposit(msg.sender, account, amount);
     }
@@ -271,7 +271,7 @@ contract CrossGameRewardPool is
      *      Allowed in Active and Inactive states, blocked in Paused state
      */
     function withdraw() external nonReentrant whenNotPaused {
-        require(poolStatus != ICrossGameRewardPool.PoolStatus.Paused, CSPOperationNotAllowedInCurrentState());
+        require(poolStatus != ICrossGameRewardPool.PoolStatus.Paused, CGRPNotAllowedInCurrentState());
         _withdraw(msg.sender, msg.sender);
     }
 
@@ -282,7 +282,7 @@ contract CrossGameRewardPool is
      * @param account Address of the account to withdraw for
      */
     function withdrawFor(address account) external nonReentrant whenNotPaused {
-        require(poolStatus != ICrossGameRewardPool.PoolStatus.Paused, CSPOperationNotAllowedInCurrentState());
+        require(poolStatus != ICrossGameRewardPool.PoolStatus.Paused, CGRPNotAllowedInCurrentState());
         _checkDelegate(account);
         _withdraw(msg.sender, account);
     }
@@ -293,8 +293,8 @@ contract CrossGameRewardPool is
      *      Allowed in Active and Inactive states, blocked in Paused state
      */
     function claimRewards() external nonReentrant whenNotPaused {
-        require(poolStatus != ICrossGameRewardPool.PoolStatus.Paused, CSPOperationNotAllowedInCurrentState());
-        require(balances[msg.sender] > 0, CSPNoDepositFound());
+        require(poolStatus != ICrossGameRewardPool.PoolStatus.Paused, CGRPNotAllowedInCurrentState());
+        require(balances[msg.sender] > 0, CGRPNoDepositFound());
 
         _syncRewards();
         _updateRewards(msg.sender);
@@ -308,10 +308,10 @@ contract CrossGameRewardPool is
      * @param token Address of the reward token to claim
      */
     function claimReward(IERC20 token) external nonReentrant whenNotPaused {
-        require(poolStatus != ICrossGameRewardPool.PoolStatus.Paused, CSPOperationNotAllowedInCurrentState());
-        require(balances[msg.sender] > 0, CSPNoDepositFound());
+        require(poolStatus != ICrossGameRewardPool.PoolStatus.Paused, CGRPNotAllowedInCurrentState());
+        require(balances[msg.sender] > 0, CGRPNoDepositFound());
         // Allow claiming even for removed tokens by checking only _rewardTokenData existence
-        require(address(_rewardTokenData[token].token) != address(0), CSPInvalidRewardToken());
+        require(address(_rewardTokenData[token].token) != address(0), CGRPInvalidRewardToken());
 
         // Only sync for tokens that haven't been removed
         if (_rewardTokenAddresses.contains(address(token))) _syncReward(token);
@@ -363,7 +363,7 @@ contract CrossGameRewardPool is
      * @return Reward token data struct
      */
     function getRewardToken(IERC20 token) external view returns (RewardToken memory) {
-        require(_rewardTokenAddresses.contains(address(token)), CSPInvalidRewardToken());
+        require(_rewardTokenAddresses.contains(address(token)), CGRPInvalidRewardToken());
         return _rewardTokenData[token];
     }
 
@@ -459,10 +459,10 @@ contract CrossGameRewardPool is
      * @param token Address of the reward token to add
      */
     function addRewardToken(IERC20 token) external onlyRewardRoot {
-        require(address(token) != address(0), CSPCanNotZeroAddress());
-        require(address(token) != address(depositToken), CSPCanNotUseDepositToken());
-        require(!_removedRewardTokenAddresses.contains(address(token)), CSPInvalidRewardToken());
-        require(_rewardTokenAddresses.add(address(token)), CSPRewardTokenAlreadyAdded());
+        require(address(token) != address(0), CGRPCanNotZeroAddress());
+        require(address(token) != address(depositToken), CGRPCanNotUseDepositToken());
+        require(!_removedRewardTokenAddresses.contains(address(token)), CGRPInvalidRewardToken());
+        require(_rewardTokenAddresses.add(address(token)), CGRPRewardTokenAlreadyAdded());
 
         _rewardTokenData[token] = RewardToken({
             token: token,
@@ -484,7 +484,7 @@ contract CrossGameRewardPool is
      */
     function removeRewardToken(IERC20 token) external onlyRewardRoot {
         // Remove from EnumerableSet
-        require(_rewardTokenAddresses.remove(address(token)), CSPInvalidRewardToken());
+        require(_rewardTokenAddresses.remove(address(token)), CGRPInvalidRewardToken());
 
         // Perform final synchronization
         _syncReward(token);
@@ -545,8 +545,8 @@ contract CrossGameRewardPool is
      */
     function reclaimTokens(IERC20 token, address to) external onlyRewardRoot {
         uint amount = getReclaimableAmount(token);
-        require(amount > 0, CSPNoReclaimableAmount());
-        require(to != address(0), CSPCanNotZeroAddress());
+        require(amount > 0, CGRPNoReclaimableAmount());
+        require(to != address(0), CGRPCanNotZeroAddress());
 
         RewardToken storage rt = _rewardTokenData[token];
         uint currentBalance = token.balanceOf(address(this));
@@ -568,7 +568,7 @@ contract CrossGameRewardPool is
      * @param amount Minimum deposit amount
      */
     function updateMinDepositAmount(uint amount) external onlyRewardRoot {
-        require(amount > 0, CSPCanNotZeroValue());
+        require(amount > 0, CGRPCanNotZeroValue());
         emit MinDepositAmountUpdated(minDepositAmount, amount);
         minDepositAmount = amount;
     }
@@ -790,7 +790,7 @@ contract CrossGameRewardPool is
      * @param amount Amount to deposit
      */
     function _deposit(address payer, address account, uint amount) internal {
-        require(amount >= minDepositAmount, CSPBelowMinimumDepositAmount());
+        require(amount >= minDepositAmount, CGRPBelowMinimumDepositAmount());
 
         _syncRewards();
         _updateRewards(account);
@@ -810,7 +810,7 @@ contract CrossGameRewardPool is
      * @param account Address to withdraw for
      */
     function _withdraw(address caller, address account) internal {
-        require(balances[account] > 0, CSPNoDepositFound());
+        require(balances[account] > 0, CGRPNoDepositFound());
 
         uint amount = balances[account];
 
@@ -833,8 +833,8 @@ contract CrossGameRewardPool is
      * @param account Address of the account being acted upon
      */
     function _checkDelegate(address account) internal view {
-        require(account != address(0), CSPCanNotZeroAddress());
-        require(msg.sender == ICrossGameReward(crossGameReward).router(), CSPOnlyRouter());
+        require(account != address(0), CGRPCanNotZeroAddress());
+        require(msg.sender == ICrossGameReward(crossGameReward).router(), CGRPOnlyRouter());
     }
 
     // ==================== UUPS ====================

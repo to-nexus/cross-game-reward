@@ -15,7 +15,7 @@ Cross GameReward Protocol is a **multi-pool deposit system** designed for native
                │
                ▼
 ┌───────────────────────────────┐
-│ CrossGameRewardRouter (CSR)      │
+│ CrossGameRewardRouter (CGRR)      │
 │ • depositNative / withdrawNative │
 │ • depositERC20 / withdrawERC20   │
 │ • redeployable front-door     │
@@ -25,14 +25,14 @@ Cross GameReward Protocol is a **multi-pool deposit system** designed for native
        │
        ▼
 ┌───────────────────────────────┐
-│ CrossGameReward (CS)             │
+│ CrossGameReward (CGR)             │
 │ • UUPS upgradeable factory    │
 │ • createPool / setRouter      │
 └──────┬────────────────────────┘
        │ creates
        ▼
 ┌───────────────────────────────┐
-│ CrossGameRewardPool (CSP) × N    │
+│ CrossGameRewardPool (CGRP) × N    │
 │ • UUPS upgradeable pools      │
 │ • depositFor / withdrawFor       │
 │ • rewardPerToken accumulator  │

@@ -202,8 +202,8 @@ PAUSER_ROLE             // 긴급 정지 (CrossGameReward이 보유)
 ```solidity
 // CrossGameRewardPool
 function _checkDelegate(address account) internal view {
-    require(account != address(0), CSPCanNotZeroAddress());
-    require(msg.sender == ICrossGameReward(crossDeposit).router(), CSPOnlyRouter());
+    require(account != address(0), CGRPCanNotZeroAddress());
+    require(msg.sender == ICrossGameReward(crossDeposit).router(), CGRPOnlyRouter());
 }
 ```
 
@@ -266,7 +266,7 @@ function _syncReward(address tokenAddress) internal {
 **모든 함수에서 준수:**
 ```solidity
 // 1. Checks
-require(balances[msg.sender] > 0, CSPNoDepositFound());
+require(balances[msg.sender] > 0, CGRPNoDepositFound());
 
 // 2. Effects
 balances[msg.sender] = 0;

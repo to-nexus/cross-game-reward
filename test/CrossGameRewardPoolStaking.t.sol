@@ -28,7 +28,7 @@ contract CrossGameRewardPoolDepositTest is CrossGameRewardPoolBase {
         vm.startPrank(user1);
         crossToken.approve(address(pool), depositAmount);
 
-        vm.expectRevert(CrossGameRewardPool.CSPBelowMinimumDepositAmount.selector);
+        vm.expectRevert(CrossGameRewardPool.CGRPBelowMinimumDepositAmount.selector);
         pool.deposit(depositAmount);
         vm.stopPrank();
     }
@@ -183,13 +183,13 @@ contract CrossGameRewardPoolDepositTest is CrossGameRewardPoolBase {
 
     function testCannotWithdrawWithoutDeposit() public {
         vm.prank(user1);
-        vm.expectRevert(CrossGameRewardPool.CSPNoDepositFound.selector);
+        vm.expectRevert(CrossGameRewardPool.CGRPNoDepositFound.selector);
         pool.withdraw();
     }
 
     function testCannotClaimWithoutDeposit() public {
         vm.prank(user1);
-        vm.expectRevert(CrossGameRewardPool.CSPNoDepositFound.selector);
+        vm.expectRevert(CrossGameRewardPool.CGRPNoDepositFound.selector);
         pool.claimRewards();
     }
 
