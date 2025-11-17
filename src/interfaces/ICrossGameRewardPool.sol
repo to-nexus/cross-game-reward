@@ -81,8 +81,14 @@ interface ICrossGameRewardPool is IERC5313 {
     /// @notice Claims all pending rewards
     function claimRewards() external;
 
+    /// @notice Claims all pending rewards on behalf of another account
+    function claimRewardsFor(address account) external;
+
     /// @notice Claims pending rewards for a specific token
     function claimReward(IERC20 token) external;
+
+    /// @notice Claims pending reward for a specific token on behalf of another account
+    function claimRewardFor(address account, IERC20 token) external;
 
     /// @notice Returns pending rewards for a user across all active reward tokens
     function pendingRewards(address account) external view returns (address[] memory tokens, uint[] memory rewards);

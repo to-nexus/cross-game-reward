@@ -214,14 +214,22 @@ function _checkDelegate(address account) internal view {
 }
 ```
 
-**WCROSS:**
+**적용 함수:**
+- depositFor / withdrawFor
+- claimRewardsFor / claimRewardFor
+
+**WCROSS - WETH9 패턴:**
 ```solidity
-require(msg.sender == deposit.router(), WCROSSUnauthorized());
+function deposit() public payable {
+    if (msg.value != 0) _mint(msg.sender, msg.value);
+}
 ```
 
-**보호:**
-- depositFor/withdrawFor는 Router만 호출
-- 권한 없는 접근 차단
+**특징:**
+- Router 검사 제거 (누구나 사용 가능)
+- WETH9 표준 준수
+- ERC20 메커니즘으로 보호
+- DEX 통합 용이
 
 ---
 
@@ -231,17 +239,19 @@ require(msg.sender == deposit.router(), WCROSSUnauthorized());
 
 ```
 test/
-├── WCROSS.t.sol                 (10개)
-├── CrossGameReward.t.sol           (33개)
-├── CrossGameRewardRouter.t.sol     (15개)
-├── FullIntegration.t.sol        (9개)
-├── CrossGameRewardPoolDeposit.t.sol      (18개)
-├── CrossGameRewardPoolRewards.t.sol      (18개)
-├── CrossGameRewardPoolAdmin.t.sol        (24개)
-├── CrossGameRewardPoolIntegration.t.sol  (11개)
-└── CrossGameRewardPoolSecurity.t.sol     (21개)
+├── WCROSS.t.sol                           (10개)
+├── CrossGameReward.t.sol                     (33개)
+├── CrossGameRewardRouter.t.sol               (39개) ← claim 테스트 추가
+├── FullIntegration.t.sol                  (9개)
+├── CrossGameRewardPoolDeposit.t.sol            (18개)
+├── CrossGameRewardPoolRewards.t.sol            (18개)
+├── CrossGameRewardPoolAdmin.t.sol              (24개)
+├── CrossGameRewardPoolIntegration.t.sol        (11개)
+├── CrossGameRewardPoolSecurity.t.sol           (21개)
+├── CrossGameRewardPoolClaimRecovery.t.sol      (10개)
+└── CrossGameRewardPoolStressTest.t.sol         (40개)
 
-총 159개 테스트
+총 233개 테스트
 ```
 
 ### 테스트 카테고리
@@ -396,9 +406,9 @@ _warpDays(uint days_)
 ## 🏆 테스트 통계
 
 ```
-총 테스트: 222개
+총 테스트: 233개
 성공률: 100%
-실행 시간: ~0.15초
+실행 시간: ~0.11초
 커버리지: ~100%
 ```
 
@@ -406,7 +416,7 @@ _warpDays(uint days_)
 
 ```
 WCROSS (10개):
-  - Router deposit/withdraw
+  - 누구나 deposit/withdraw (WETH9 패턴)
   - Transfer 기능
   - Integration
 
@@ -416,9 +426,11 @@ CrossGameReward (33개):
   - View 함수
   - 업그레이드
 
-CrossGameRewardRouter (15개):
-  - Native 디파짓
-  - ERC20 디파짓
+CrossGameRewardRouter (39개):
+  - Native 디파짓/출금
+  - ERC20 디파짓/출금
+  - Claim 래퍼 함수 (신규 12개)
+  - EIP-2612 Permit
   - 에러 케이스
 
 FullIntegration (9개):
@@ -426,13 +438,14 @@ FullIntegration (9개):
   - 다중 풀
   - 보상 정확성
 
-CrossGameRewardPool (102개):
+CrossGameRewardPool (142개):
   - 디파짓 (18개)
   - 보상 (18개)
   - 관리자 (24개)
   - 통합 (11개)
   - 보안 (21개)
   - 청구 복구 (10개)
+  - 스트레스 테스트 (40개)
 ```
 
 ---
@@ -486,8 +499,11 @@ CrossGameRewardPool (102개):
 ## ✨ 결론
 
 **현재 상태 요약**
-- ✅ Foundry 기반 222개 테스트 통과 (2025-11-14)
+- ✅ Foundry 기반 233개 테스트 통과 (2025-11-17)
 - ✅ OZ 기반 방어 계층·재진입 보호 적용
+- ✅ Router claim 래퍼 함수 추가 (deposit 유지하면서 보상만 claim 가능)
+- ✅ WCROSS WETH9 패턴 적용 (DEX 통합 용이)
+- ✅ Pool claim 함수 리팩토링 (중복 코드 48% 감소)
 - ✅ 제거된 보상 토큰은 언디파짓 시 자동 정산되어 미지급 위험 제거
 - ✅ 보상 전송 실패 시 복구 메커니즘으로 원금 출금 및 재청구 보장
 

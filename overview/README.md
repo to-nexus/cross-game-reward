@@ -21,7 +21,7 @@
   userReward = userBalance × (rewardPerTokenStored - userCheckpoint) / 1e18
   ```
 - 4 core contracts: `CrossGameReward`, `CrossGameRewardPool`, `CrossGameRewardRouter`, `WCROSS`
-- Foundry test-suite: 9 files / 159 cases (`forge test`)
+- Foundry test-suite: 12 files / 233 cases (`forge test`) ← Updated 2025-11-17
 
 ---
 

@@ -315,24 +315,18 @@ contract CrossGameRewardPool is
      *      Can claim even with zero balance if stored rewards exist (for failed transfer recovery)
      */
     function claimRewards() external nonReentrant whenNotPaused {
-        require(poolStatus != ICrossGameRewardPool.PoolStatus.Paused, CGRPNotAllowedInCurrentState());
+        _claimAllRewards(msg.sender);
+    }
 
-        uint userBalance = balances[msg.sender];
-        bool hasRewards = _hasStoredRewards(msg.sender);
-
-        require(userBalance > 0 || hasRewards, CGRPNoDepositFound());
-
-        // Only sync and update if user has active balance
-        // (no point updating rewards when balance is 0)
-        if (userBalance > 0) {
-            _syncRewards();
-            _updateRewards(msg.sender);
-            _updateRemovedRewards(msg.sender);
-        }
-
-        // Claim all rewards (both active and removed)
-        _claimRewards(msg.sender);
-        _claimRemovedRewards(msg.sender);
+    /**
+     * @notice Claims all pending rewards on behalf of another account (Router only)
+     * @dev Verifies that msg.sender is the registered router
+     *      Allowed in Active and Inactive states, blocked in Paused state
+     * @param account Address of the account to claim rewards for
+     */
+    function claimRewardsFor(address account) external nonReentrant whenNotPaused {
+        _checkDelegate(account);
+        _claimAllRewards(account);
     }
 
     /**
@@ -343,21 +337,19 @@ contract CrossGameRewardPool is
      * @param token Address of the reward token to claim
      */
     function claimReward(IERC20 token) external nonReentrant whenNotPaused {
-        require(poolStatus != ICrossGameRewardPool.PoolStatus.Paused, CGRPNotAllowedInCurrentState());
+        _claimSingleReward(msg.sender, token);
+    }
 
-        uint userBalance = balances[msg.sender];
-        uint storedReward = userRewards[msg.sender][token].rewards;
-
-        require(userBalance > 0 || storedReward > 0, CGRPNoDepositFound());
-        require(address(_rewardTokenData[token].token) != address(0), CGRPInvalidRewardToken());
-
-        // Only sync and update if user has active balance
-        if (userBalance > 0) {
-            if (_rewardTokenAddresses.contains(address(token))) _syncReward(token);
-            _updateReward(token, msg.sender);
-        }
-
-        _claimReward(token, msg.sender);
+    /**
+     * @notice Claims pending reward for a specific token on behalf of another account (Router only)
+     * @dev Verifies that msg.sender is the registered router
+     *      Allowed in Active and Inactive states, blocked in Paused state
+     * @param account Address of the account to claim rewards for
+     * @param token Address of the reward token to claim
+     */
+    function claimRewardFor(address account, IERC20 token) external nonReentrant whenNotPaused {
+        _checkDelegate(account);
+        _claimSingleReward(account, token);
     }
 
     /**
@@ -765,6 +757,54 @@ contract CrossGameRewardPool is
     }
 
     // ==================== Internal Functions: Reward Claims ====================
+
+    /**
+     * @dev Claims all rewards for an account (both active and removed tokens)
+     * @param account Address of the account to claim for
+     */
+    function _claimAllRewards(address account) internal {
+        require(poolStatus != ICrossGameRewardPool.PoolStatus.Paused, CGRPNotAllowedInCurrentState());
+
+        uint userBalance = balances[account];
+        bool hasRewards = _hasStoredRewards(account);
+
+        require(userBalance > 0 || hasRewards, CGRPNoDepositFound());
+
+        // Only sync and update if user has active balance
+        // (no point updating rewards when balance is 0)
+        if (userBalance > 0) {
+            _syncRewards();
+            _updateRewards(account);
+            _updateRemovedRewards(account);
+        }
+
+        // Claim all rewards (both active and removed)
+        _claimRewards(account);
+        _claimRemovedRewards(account);
+    }
+
+    /**
+     * @dev Claims a specific reward token for an account
+     * @param account Address of the account to claim for
+     * @param token Address of the reward token to claim
+     */
+    function _claimSingleReward(address account, IERC20 token) internal {
+        require(poolStatus != ICrossGameRewardPool.PoolStatus.Paused, CGRPNotAllowedInCurrentState());
+
+        uint userBalance = balances[account];
+        uint storedReward = userRewards[account][token].rewards;
+
+        require(userBalance > 0 || storedReward > 0, CGRPNoDepositFound());
+        require(address(_rewardTokenData[token].token) != address(0), CGRPInvalidRewardToken());
+
+        // Only sync and update if user has active balance
+        if (userBalance > 0) {
+            if (_rewardTokenAddresses.contains(address(token))) _syncReward(token);
+            _updateReward(token, account);
+        }
+
+        _claimReward(token, account);
+    }
 
     /**
      * @dev Claims all reward tokens

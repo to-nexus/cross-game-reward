@@ -69,16 +69,21 @@ contract WCROSSTest is Test {
         assertEq(wcross.balanceOf(address(router)), 5 ether, "WCROSS minted via receive");
     }
 
-    function testCannotDepositByNonRouter() public {
+    function testDepositByAnyUser() public {
+        // Anyone can deposit now (router check removed)
         vm.prank(user1);
-        vm.expectRevert(WCROSS.WCROSSUnauthorized.selector);
         wcross.deposit{value: 10 ether}();
+
+        assertEq(wcross.balanceOf(user1), 10 ether, "WCROSS minted to user");
+        assertEq(address(wcross).balance, 10 ether, "Contract balance");
     }
 
-    function testCannotDepositZero() public {
-        vm.prank(address(router));
-        vm.expectRevert(WCROSS.WCROSSInsufficientBalance.selector);
+    function testDepositZeroIsIgnored() public {
+        // Zero deposit is silently ignored (WETH9 style)
+        vm.prank(user1);
         wcross.deposit{value: 0}();
+
+        assertEq(wcross.balanceOf(user1), 0, "No WCROSS minted for zero deposit");
     }
 
     // ==================== Withdraw (router only) ====================
@@ -98,19 +103,19 @@ contract WCROSSTest is Test {
         assertEq(user1.balance, balanceBefore + 10 ether, "Native CROSS sent to user");
     }
 
-    function testCannotWithdrawByNonRouter() public {
-        // Setup: transfer some WCROSS to user1
-        vm.deal(address(router), 10 ether);
-        vm.prank(address(router));
+    function testWithdrawByAnyUser() public {
+        // Anyone can withdraw now (router check removed)
+        // User1 deposits
+        vm.prank(user1);
         wcross.deposit{value: 10 ether}();
 
-        vm.prank(address(router));
-        wcross.transfer(user1, 5 ether);
-
-        // User1 tries to withdraw
+        // User1 withdraws
+        uint balanceBefore = user1.balance;
         vm.prank(user1);
-        vm.expectRevert(WCROSS.WCROSSUnauthorized.selector);
         wcross.withdraw(5 ether);
+
+        assertEq(wcross.balanceOf(user1), 5 ether, "WCROSS burned");
+        assertEq(user1.balance, balanceBefore + 5 ether, "Native CROSS returned");
     }
 
     function testCannotWithdrawMoreThanBalance() public {

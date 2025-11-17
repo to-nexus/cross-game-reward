@@ -18,22 +18,11 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 contract WCROSS is ERC20, IWCROSS {
     // ==================== Errors ====================
 
-    /// @notice Thrown when caller is not the authorized router
-    error WCROSSUnauthorized();
-
-    /// @notice Thrown when attempting to deposit/withdraw zero or insufficient amount
-    error WCROSSInsufficientBalance();
-
     /// @notice Thrown when native CROSS transfer fails
     error WCROSSTransferFailed();
 
     /// @notice Thrown when attempting to withdraw to an invalid address
     error WCROSSInvalidAddress();
-
-    // ==================== State Variables ====================
-
-    /// @notice CrossGameReward contract reference for router validation
-    CrossGameReward public immutable gameReward;
 
     // ==================== Constructor ====================
 
@@ -41,9 +30,7 @@ contract WCROSS is ERC20, IWCROSS {
      * @notice Initializes the WCROSS token
      * @dev Sets the deployer (CrossGameReward) as the game reward contract reference
      */
-    constructor() ERC20("Wrapped CROSS", "WCROSS") {
-        gameReward = CrossGameReward(msg.sender);
-    }
+    constructor() ERC20("Wrapped CROSS", "WCROSS") {}
 
     // ==================== Receive Function ====================
 
@@ -59,18 +46,14 @@ contract WCROSS is ERC20, IWCROSS {
 
     /**
      * @notice Wraps native CROSS to WCROSS
-     * @dev Only callable by the authorized router
      *      Mints WCROSS tokens equivalent to the native CROSS sent
      */
     function deposit() public payable {
-        require(msg.sender == gameReward.router(), WCROSSUnauthorized());
-        require(msg.value > 0, WCROSSInsufficientBalance());
-        _mint(msg.sender, msg.value);
+        if (msg.value != 0) _mint(msg.sender, msg.value);
     }
 
     /**
      * @notice Unwraps WCROSS to native CROSS (sends to msg.sender)
-     * @dev Only callable by the authorized router
      *      Burns WCROSS tokens and returns equivalent native CROSS
      * @param amount Amount of WCROSS to unwrap
      */
@@ -80,13 +63,11 @@ contract WCROSS is ERC20, IWCROSS {
 
     /**
      * @notice Unwraps WCROSS to native CROSS and sends to specified address
-     * @dev Only callable by the authorized router
      *      Burns WCROSS from msg.sender and sends native CROSS to recipient
      * @param to Address to receive the unwrapped native CROSS
      * @param amount Amount of WCROSS to unwrap
      */
     function withdrawTo(address to, uint amount) public {
-        require(msg.sender == gameReward.router(), WCROSSUnauthorized());
         require(to != address(0), WCROSSInvalidAddress());
         _burn(msg.sender, amount);
 

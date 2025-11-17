@@ -21,11 +21,12 @@ Cross GameReward Protocol은 Native CROSS와 ERC20 토큰을 위한 **확장 가
 │   CrossGameRewardRouter (CGRR)      │
 │   - depositNative/withdrawNative   │
 │   - depositERC20/withdrawERC20     │
+│   - claimRewards/claimReward       │
 │   - 재배포 가능                  │
 └──────┬──────────────────────────┘
        │
-       ├──► WCROSS (Router 전용)
-       │    - deposit/withdraw
+       ├──► WCROSS (WETH9 패턴)
+       │    - 누구나 deposit/withdraw
        │
        ▼
 ┌─────────────────────────────────┐
@@ -104,7 +105,10 @@ Cross GameReward Protocol은 Native CROSS와 ERC20 토큰을 위한 **확장 가
 // Native CROSS 디파짓
 router.depositNative{value: 100 ether}(poolId);
 
-// 언디파짓
+// 보상만 claim (deposit 유지)
+router.claimRewards(poolId);
+
+// 전체 언디파짓 (deposit + 보상)
 router.withdrawNative(poolId);
 ```
 
@@ -121,8 +125,8 @@ crossDeposit.addRewardToken(poolId, usdt);
 
 ## 📈 성능
 
-- **테스트**: 212개 100% 통과
-- **Gas**: 최적화 완료
+- **테스트**: 233개 100% 통과
+- **Gas**: 최적화 완료 (O(1) claim)
 - **크기**: 모두 24KB 이하
 - **보안**: 다층 방어 (reentrancy, access control, zero-deposit protection)
 

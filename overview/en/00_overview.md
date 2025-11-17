@@ -18,10 +18,12 @@ Cross GameReward Protocol is a **multi-pool deposit system** designed for native
 │ CrossGameRewardRouter (CGRR)      │
 │ • depositNative / withdrawNative │
 │ • depositERC20 / withdrawERC20   │
+│ • claimRewards / claimReward     │
 │ • redeployable front-door     │
 └──────┬────────────────────────┘
        │
-       ├──► WCROSS (router only wrapper)
+       ├──► WCROSS (WETH9 pattern)
+       │    • anyone can deposit/withdraw
        │
        ▼
 ┌───────────────────────────────┐
@@ -76,6 +78,9 @@ Cross GameReward Protocol is a **multi-pool deposit system** designed for native
 // Deposit native CROSS (no approval needed - Router auto-wraps)
 router.depositNative{value: 100 ether}(poolId);
 
+// Claim rewards only (keep deposit)
+router.claimRewards(poolId);
+
 // Withdraw + claim all rewards
 router.withdrawNative(poolId);
 ```
@@ -93,8 +98,8 @@ crossDeposit.addRewardToken(poolId, address(usdt));
 ---
 
 ## 📈 Current Metrics
-- Tests: **212 / 212 passing** (includes comprehensive edge case coverage)
-- Gas footprint: all contracts < 24 KB, deposit/withdraw ~140–280k gas
+- Tests: **233 / 233 passing** (includes comprehensive edge case coverage)
+- Gas footprint: all contracts < 24 KB, deposit/withdraw ~140–280k gas, claim O(1)
 - Reward distribution: O(1) per deposit, proportional to deposit share
 - Security: Multi-layered defense (reentrancy, access control, zero-deposit protection)
 
