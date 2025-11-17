@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.28;
 
 import {AccessControlDefaultAdminRulesUpgradeable as AccessControl} from
@@ -49,7 +49,8 @@ contract CrossGameReward is Initializable, AccessControl, UUPSUpgradeable, ICros
     /// @param poolId The ID of the newly created pool
     /// @param poolAddress The address of the newly created pool
     /// @param depositToken The token that can be deposited in this pool
-    event PoolCreated(uint indexed poolId, address indexed poolAddress, address indexed depositToken);
+    /// @param name The name of the pool
+    event PoolCreated(uint indexed poolId, address indexed poolAddress, address indexed depositToken, string name);
 
     /// @notice Emitted when the pool implementation is updated
     /// @param implementation The new implementation address
@@ -135,16 +136,18 @@ contract CrossGameReward is Initializable, AccessControl, UUPSUpgradeable, ICros
      * @dev Deploys a new UUPS proxy pointing to the pool implementation
      *      Pool's DEFAULT_ADMIN_ROLE references CrossGameReward's DEFAULT_ADMIN_ROLE
      *      CrossGameReward receives REWARD_ROOT_ROLE for pool management
+     * @param name Name of the pool
      * @param depositToken Address of the token to be deposited in the pool
      * @param minDepositAmount Minimum amount required for depositing (in wei)
      * @return poolId ID of the newly created pool
      * @return pool Address of the newly created pool
      */
-    function createPool(IERC20 depositToken, uint minDepositAmount)
+    function createPool(string calldata name, IERC20 depositToken, uint minDepositAmount)
         external
         onlyRole(MANAGER_ROLE)
         returns (uint poolId, ICrossGameRewardPool pool)
     {
+        require(bytes(name).length > 0, CGRCanNotZeroValue());
         require(address(depositToken) != address(0), CGRCanNotZeroAddress());
         require(minDepositAmount > 0, CGRCanNotZeroValue());
 
@@ -158,13 +161,14 @@ contract CrossGameReward is Initializable, AccessControl, UUPSUpgradeable, ICros
         pool = ICrossGameRewardPool(address(proxy));
 
         // Store pool information
-        pools[poolId] = PoolInfo({poolId: poolId, pool: pool, depositToken: depositToken, createdAt: block.timestamp});
+        pools[poolId] =
+            PoolInfo({poolId: poolId, pool: pool, name: name, depositToken: depositToken, createdAt: block.timestamp});
 
         poolIds[pool] = poolId;
         _allPoolIds.add(poolId);
         _poolsByDepositToken[depositToken].add(poolId);
 
-        emit PoolCreated(poolId, address(pool), address(depositToken));
+        emit PoolCreated(poolId, address(pool), address(depositToken), name);
     }
 
     /**

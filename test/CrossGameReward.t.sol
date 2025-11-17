@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.28;
 
 import "../src/CrossGameReward.sol";
@@ -65,7 +65,8 @@ contract CrossGameRewardTest is Test {
     // ==================== Pool creation ====================
 
     function testCreatePool() public {
-        (uint poolId, ICrossGameRewardPool pool) = crossGameReward.createPool(IERC20(address(wcross)), 1 ether);
+        (uint poolId, ICrossGameRewardPool pool) =
+            crossGameReward.createPool("Test Pool", IERC20(address(wcross)), 1 ether);
 
         assertEq(poolId, 1, "First pool ID should be 1");
         assertTrue(address(pool) != address(0), "Pool address should be set");
@@ -81,9 +82,12 @@ contract CrossGameRewardTest is Test {
     }
 
     function testCreateMultiplePools() public {
-        (uint poolId1, ICrossGameRewardPool pool1) = crossGameReward.createPool(IERC20(address(wcross)), 1 ether);
-        (uint poolId2, ICrossGameRewardPool pool2) = crossGameReward.createPool(IERC20(address(token1)), 1 ether);
-        (uint poolId3, ICrossGameRewardPool pool3) = crossGameReward.createPool(IERC20(address(token2)), 1 ether);
+        (uint poolId1, ICrossGameRewardPool pool1) =
+            crossGameReward.createPool("Pool 1", IERC20(address(wcross)), 1 ether);
+        (uint poolId2, ICrossGameRewardPool pool2) =
+            crossGameReward.createPool("Pool 2", IERC20(address(token1)), 1 ether);
+        (uint poolId3, ICrossGameRewardPool pool3) =
+            crossGameReward.createPool("Pool 3", IERC20(address(token2)), 1 ether);
 
         assertEq(poolId1, 1, "Pool 1 ID");
         assertEq(poolId2, 2, "Pool 2 ID");
@@ -96,18 +100,18 @@ contract CrossGameRewardTest is Test {
     function testOnlyPoolManagerCanCreatePool() public {
         vm.prank(user1);
         vm.expectRevert();
-        crossGameReward.createPool(IERC20(address(wcross)), 1 ether);
+        crossGameReward.createPool("Test", IERC20(address(wcross)), 1 ether);
     }
 
     function testCannotCreatePoolWithZeroAddress() public {
         vm.expectRevert(CrossGameReward.CGRCanNotZeroAddress.selector);
-        crossGameReward.createPool(IERC20(address(0)), 1 ether);
+        crossGameReward.createPool("Test", IERC20(address(0)), 1 ether);
     }
 
     function testMultiplePoolsWithSameDepositToken() public {
         // Multiple pools can use the same deposit token
-        (uint poolId1,) = crossGameReward.createPool(IERC20(address(wcross)), 1 ether);
-        (uint poolId2,) = crossGameReward.createPool(IERC20(address(wcross)), 1 ether);
+        (uint poolId1,) = crossGameReward.createPool("Pool 1", IERC20(address(wcross)), 1 ether);
+        (uint poolId2,) = crossGameReward.createPool("Pool 2", IERC20(address(wcross)), 1 ether);
 
         assertEq(poolId1, 1, "Pool 1");
         assertEq(poolId2, 2, "Pool 2");
@@ -119,7 +123,8 @@ contract CrossGameRewardTest is Test {
     // ==================== Reward token management ====================
 
     function testAddRewardToken() public {
-        (uint poolId, ICrossGameRewardPool poolInterface) = crossGameReward.createPool(IERC20(address(wcross)), 1 ether);
+        (uint poolId, ICrossGameRewardPool poolInterface) =
+            crossGameReward.createPool("Test Pool", IERC20(address(wcross)), 1 ether);
 
         MockERC20 rewardToken = new MockERC20("Reward", "RWD");
         crossGameReward.addRewardToken(poolId, IERC20(address(rewardToken)));
@@ -131,7 +136,7 @@ contract CrossGameRewardTest is Test {
     }
 
     function testOnlyPoolManagerCanAddRewardToken() public {
-        (uint poolId,) = crossGameReward.createPool(IERC20(address(wcross)), 1 ether);
+        (uint poolId,) = crossGameReward.createPool("Test Pool", IERC20(address(wcross)), 1 ether);
         MockERC20 rewardToken = new MockERC20("Reward", "RWD");
 
         vm.prank(user1);
@@ -149,7 +154,8 @@ contract CrossGameRewardTest is Test {
     // ==================== Pool status management ====================
 
     function testSetPoolStatus() public {
-        (uint poolId, ICrossGameRewardPool poolInterface) = crossGameReward.createPool(IERC20(address(wcross)), 1 ether);
+        (uint poolId, ICrossGameRewardPool poolInterface) =
+            crossGameReward.createPool("Test Pool", IERC20(address(wcross)), 1 ether);
 
         CrossGameRewardPool pool = CrossGameRewardPool(address(poolInterface));
         assertFalse(pool.paused(), "Initially not paused");
@@ -181,7 +187,7 @@ contract CrossGameRewardTest is Test {
     }
 
     function testOnlyPoolManagerCanSetPoolStatus() public {
-        (uint poolId,) = crossGameReward.createPool(IERC20(address(wcross)), 1 ether);
+        (uint poolId,) = crossGameReward.createPool("Test Pool", IERC20(address(wcross)), 1 ether);
 
         vm.prank(user1);
         vm.expectRevert();
@@ -196,7 +202,8 @@ contract CrossGameRewardTest is Test {
     // ==================== Pool queries ====================
 
     function testGetPoolInfo() public {
-        (uint poolId, ICrossGameRewardPool pool) = crossGameReward.createPool(IERC20(address(wcross)), 1 ether);
+        (uint poolId, ICrossGameRewardPool pool) =
+            crossGameReward.createPool("Test Pool", IERC20(address(wcross)), 1 ether);
 
         CrossGameReward.PoolInfo memory info = crossGameReward.getPoolInfo(poolId);
 
@@ -207,9 +214,9 @@ contract CrossGameRewardTest is Test {
     }
 
     function testPoolAt() public {
-        crossGameReward.createPool(IERC20(address(wcross)), 1 ether);
-        crossGameReward.createPool(IERC20(address(token1)), 1 ether);
-        crossGameReward.createPool(IERC20(address(token2)), 1 ether);
+        crossGameReward.createPool("Pool 1", IERC20(address(wcross)), 1 ether);
+        crossGameReward.createPool("Pool 2", IERC20(address(token1)), 1 ether);
+        crossGameReward.createPool("Pool 3", IERC20(address(token2)), 1 ether);
 
         assertEq(crossGameReward.poolAt(0), 1, "Pool at index 0");
         assertEq(crossGameReward.poolAt(1), 2, "Pool at index 1");
@@ -217,13 +224,15 @@ contract CrossGameRewardTest is Test {
     }
 
     function testGetPoolAddress() public {
-        (uint poolId, ICrossGameRewardPool poolAddress) = crossGameReward.createPool(IERC20(address(wcross)), 1 ether);
+        (uint poolId, ICrossGameRewardPool poolAddress) =
+            crossGameReward.createPool("Test Pool", IERC20(address(wcross)), 1 ether);
 
         assertEq(address(crossGameReward.getPoolAddress(poolId)), address(poolAddress), "Pool address lookup");
     }
 
     function testGetPoolId() public {
-        (uint poolId, ICrossGameRewardPool poolAddress) = crossGameReward.createPool(IERC20(address(wcross)), 1 ether);
+        (uint poolId, ICrossGameRewardPool poolAddress) =
+            crossGameReward.createPool("Test Pool", IERC20(address(wcross)), 1 ether);
 
         assertEq(crossGameReward.getPoolId(poolAddress), poolId, "Pool ID lookup");
     }
@@ -239,17 +248,17 @@ contract CrossGameRewardTest is Test {
     function testGetTotalPoolCount() public {
         assertEq(crossGameReward.getTotalPoolCount(), 0, "Initially 0");
 
-        crossGameReward.createPool(IERC20(address(wcross)), 1 ether);
+        crossGameReward.createPool("Pool 1", IERC20(address(wcross)), 1 ether);
         assertEq(crossGameReward.getTotalPoolCount(), 1, "After 1 pool");
 
-        crossGameReward.createPool(IERC20(address(token1)), 1 ether);
+        crossGameReward.createPool("Pool 2", IERC20(address(token1)), 1 ether);
         assertEq(crossGameReward.getTotalPoolCount(), 2, "After 2 pools");
     }
 
     function testGetAllPoolIds() public {
-        crossGameReward.createPool(IERC20(address(wcross)), 1 ether);
-        crossGameReward.createPool(IERC20(address(token1)), 1 ether);
-        crossGameReward.createPool(IERC20(address(token2)), 1 ether);
+        crossGameReward.createPool("Pool 1", IERC20(address(wcross)), 1 ether);
+        crossGameReward.createPool("Pool 2", IERC20(address(token1)), 1 ether);
+        crossGameReward.createPool("Pool 3", IERC20(address(token2)), 1 ether);
 
         uint[] memory allIds = crossGameReward.getAllPoolIds();
         assertEq(allIds.length, 3, "3 pools");
@@ -259,9 +268,9 @@ contract CrossGameRewardTest is Test {
     }
 
     function testGetPoolIdsByDepositToken() public {
-        crossGameReward.createPool(IERC20(address(wcross)), 1 ether);
-        crossGameReward.createPool(IERC20(address(token1)), 1 ether);
-        crossGameReward.createPool(IERC20(address(wcross)), 1 ether);
+        crossGameReward.createPool("Pool 1", IERC20(address(wcross)), 1 ether);
+        crossGameReward.createPool("Pool 2", IERC20(address(token1)), 1 ether);
+        crossGameReward.createPool("Pool 3", IERC20(address(wcross)), 1 ether);
 
         uint[] memory wcrossIds = crossGameReward.getPoolIdsByDepositToken(IERC20(address(wcross)));
         assertEq(wcrossIds.length, 2, "2 WCROSS pools");
@@ -274,17 +283,17 @@ contract CrossGameRewardTest is Test {
     }
 
     function testPoolByDepositTokenAt() public {
-        crossGameReward.createPool(IERC20(address(wcross)), 1 ether);
-        crossGameReward.createPool(IERC20(address(wcross)), 1 ether);
+        crossGameReward.createPool("Pool 1", IERC20(address(wcross)), 1 ether);
+        crossGameReward.createPool("Pool 2", IERC20(address(wcross)), 1 ether);
 
         assertEq(crossGameReward.poolByDepositTokenAt(IERC20(address(wcross)), 0), 1, "First WCROSS pool");
         assertEq(crossGameReward.poolByDepositTokenAt(IERC20(address(wcross)), 1), 2, "Second WCROSS pool");
     }
 
     function testGetActivePoolIds() public {
-        (uint pool1,) = crossGameReward.createPool(IERC20(address(wcross)), 1 ether);
-        (uint pool2,) = crossGameReward.createPool(IERC20(address(token1)), 1 ether);
-        (uint pool3,) = crossGameReward.createPool(IERC20(address(token2)), 1 ether);
+        (uint pool1,) = crossGameReward.createPool("Pool 1", IERC20(address(wcross)), 1 ether);
+        (uint pool2,) = crossGameReward.createPool("Pool 2", IERC20(address(token1)), 1 ether);
+        (uint pool3,) = crossGameReward.createPool("Pool 3", IERC20(address(token2)), 1 ether);
 
         // All active initially
         uint[] memory activeIds = crossGameReward.getActivePoolIds();
@@ -349,7 +358,7 @@ contract CrossGameRewardTest is Test {
 
         // User1 can create pool
         vm.prank(user1);
-        (, ICrossGameRewardPool poolAddress) = crossGameReward.createPool(IERC20(address(token1)), 1 ether);
+        (, ICrossGameRewardPool poolAddress) = crossGameReward.createPool("User Pool", IERC20(address(token1)), 1 ether);
         assertTrue(address(poolAddress) != address(0), "Pool created by user1");
     }
 
@@ -362,15 +371,15 @@ contract CrossGameRewardTest is Test {
 
         vm.prank(user1);
         vm.expectRevert();
-        crossGameReward.createPool(IERC20(address(token1)), 1 ether);
+        crossGameReward.createPool("Test", IERC20(address(token1)), 1 ether);
     }
 
     // ==================== Integration ====================
 
     function testPoolsAreIndependent() public {
         // Create 2 pools
-        (, ICrossGameRewardPool pool1Addr) = crossGameReward.createPool(IERC20(address(wcross)), 1 ether);
-        (, ICrossGameRewardPool pool2Addr) = crossGameReward.createPool(IERC20(address(token1)), 1 ether);
+        (, ICrossGameRewardPool pool1Addr) = crossGameReward.createPool("Pool 1", IERC20(address(wcross)), 1 ether);
+        (, ICrossGameRewardPool pool2Addr) = crossGameReward.createPool("Pool 2", IERC20(address(token1)), 1 ether);
 
         CrossGameRewardPool pool1 = CrossGameRewardPool(address(pool1Addr));
         CrossGameRewardPool pool2 = CrossGameRewardPool(address(pool2Addr));
@@ -391,7 +400,8 @@ contract CrossGameRewardTest is Test {
     }
 
     function testPoolStatusAffectsPause() public {
-        (uint poolId, ICrossGameRewardPool poolAddress) = crossGameReward.createPool(IERC20(address(wcross)), 1 ether);
+        (uint poolId, ICrossGameRewardPool poolAddress) =
+            crossGameReward.createPool("Test Pool", IERC20(address(wcross)), 1 ether);
         CrossGameRewardPool pool = CrossGameRewardPool(address(poolAddress));
 
         // Set to paused (2)

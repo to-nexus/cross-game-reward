@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.28;
 
 import "../src/CrossGameReward.sol";
@@ -73,9 +73,9 @@ contract CrossGameRewardRouterTest is Test {
         permitToken = new MockERC20Permit("Permit Token", "PTK");
 
         // Create pools
-        (nativePoolId, nativePool) = crossGameReward.createPool(IERC20(address(wcross)), 1 ether);
-        (erc20PoolId, erc20Pool) = crossGameReward.createPool(IERC20(address(depositToken)), 1 ether);
-        (permitPoolId, permitPool) = crossGameReward.createPool(IERC20(address(permitToken)), 1 ether);
+        (nativePoolId, nativePool) = crossGameReward.createPool("Native Pool", IERC20(address(wcross)), 1 ether);
+        (erc20PoolId, erc20Pool) = crossGameReward.createPool("ERC20 Pool", IERC20(address(depositToken)), 1 ether);
+        (permitPoolId, permitPool) = crossGameReward.createPool("Permit Pool", IERC20(address(permitToken)), 1 ether);
 
         // Add reward tokens
         crossGameReward.addRewardToken(nativePoolId, IERC20(address(rewardToken)));

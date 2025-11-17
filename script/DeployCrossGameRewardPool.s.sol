@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.28;
 
 import "../src/CrossGameReward.sol";
@@ -45,7 +45,7 @@ contract CreatePool is Script {
 
         // 1. Pool 생성
         (uint poolId, ICrossGameRewardPool pool) =
-            crossGameReward.createPool(IERC20(depositTokenAddress), minDepositAmount);
+            crossGameReward.createPool(poolName, IERC20(depositTokenAddress), minDepositAmount);
 
         console.log("\n=== Pool Created ===");
         console.log("Pool ID:", poolId);

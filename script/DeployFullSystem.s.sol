@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.28;
 
 import "../src/CrossGameReward.sol";
@@ -115,7 +115,7 @@ contract DeployWithPools is Script {
 
         // 6. Native CROSS 풀 생성
         (uint nativePoolId, ICrossGameRewardPool nativePool) =
-            crossGameReward.createPool(IERC20(address(wcross)), 1 ether);
+            crossGameReward.createPool("Native CROSS Pool", IERC20(address(wcross)), 1 ether);
 
         console.log("\n=== Full Deployment Summary ===");
         console.log("WCROSS:", address(wcross));

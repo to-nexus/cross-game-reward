@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.28;
 
 import {IERC5313} from "@openzeppelin/contracts/interfaces/IERC5313.sol";
@@ -18,12 +18,14 @@ interface ICrossGameReward is IERC5313 {
      * @notice Pool information structure
      * @param poolId Unique identifier for the pool
      * @param pool Address of the pool contract
+     * @param name Name of the pool
      * @param depositToken Address of the token that can be deposited
      * @param createdAt Timestamp when the pool was created
      */
     struct PoolInfo {
         uint poolId;
         ICrossGameRewardPool pool;
+        string name;
         IERC20 depositToken;
         uint createdAt;
     }
@@ -41,7 +43,7 @@ interface ICrossGameReward is IERC5313 {
     function nextPoolId() external view returns (uint);
 
     /// @notice Creates a new game reward pool
-    function createPool(IERC20 depositToken, uint minDepositAmount)
+    function createPool(string calldata name, IERC20 depositToken, uint minDepositAmount)
         external
         returns (uint poolId, ICrossGameRewardPool poolAddress);
 
