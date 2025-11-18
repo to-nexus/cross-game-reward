@@ -154,9 +154,10 @@ Removed reward tokens stay in `_removedRewardTokenAddresses` and are synchronise
 
 ## 📚 Documentation
 
-- [Architecture](overview/en/01_architecture.md)
-- [Reward Mechanism](overview/en/02_reward_mechanism.md)
-- [Security & Testing](overview/en/03_security_and_testing.md)
+- [Overview](overview/00_overview.md)
+- [Architecture](overview/01_architecture.md)
+- [Reward Mechanism](overview/02_reward_mechanism.md)
+- [Security & Testing](overview/03_security_and_testing.md)
 - [Test Guide](test/README.md)
 
 ## 🧪 Testing
@@ -167,7 +168,7 @@ forge test --match-contract CrossGameReward
 forge test --gas-report
 ```
 
-**Current coverage:** 233 tests across 12 suites:
+**Test coverage:** 233 tests across 12 suites:
 
 | Suite                          | Tests |
 |--------------------------------|-------|
@@ -210,7 +211,7 @@ crossDeposit.setRouter(address(newRouter));
 
 ## 📜 License
 
-MIT
+BUSL 1.1 (Business Source License 1.1) - See [LICENSE](LICENSE) file for details
 
 ## 🔗 References
 

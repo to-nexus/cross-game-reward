@@ -55,7 +55,7 @@ The protocol exposes a modular multi-pool deposit topology built around a `rewar
   ```
 - Features:
   - Follows WETH9 standard pattern
-  - No router restriction (improved accessibility)
+  - Open access (anyone can deposit/withdraw)
   - Easy DEX integration
   - 1:1 parity maintained
 

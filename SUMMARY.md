@@ -148,13 +148,6 @@ forge test --gas-report                    # gas report
 
 **Coverage:** ~100%, covering multi-pool deployment, reward removal, router flows, zero-deposit scenarios, stress cases, and invariant checks.
 
-### Recent Improvements
-1. ✅ Enhanced API: `pendingRewards()` returns token addresses
-2. ✅ Added `pendingReward()` for single-token queries
-3. ✅ Event optimization: removed duplicate emissions
-4. ✅ Added 6 new tests (PendingRewards suite)
-5. ✅ Complete documentation update
-
 ---
 
 ## 📊 Code Quality
@@ -167,72 +160,28 @@ forge test --gas-report                    # gas report
 - **Warnings**: 0
 - **Gas Optimizations**: Event deduplication, custom errors
 
-### Deployment Checklist
-- ✅ 212/212 tests passing  
-- ✅ Zero compilation warnings
-- ✅ Reentrancy protection and role checks verified  
-- ✅ Zero-deposit protection implemented
-- ✅ Removed reward token settlement validated  
-- ✅ UUPS upgrade paths tested (`upgradeToAndCall`)  
-- ✅ Documentation up-to-date
-- ✅ API improvements completed
-- ✅ Event optimization done
-- [ ] External third-party audit (recommended)
-
----
-
-## 🚀 Latest Changes
-
-### Breaking Changes
-⚠️ Frontend migration required:
-
-```solidity
-// Old way
-uint[] memory rewards = pool.pendingRewards(user);
-address[] memory tokens = pool.getRewardTokens();
-// Then match arrays manually
-
-// New way
-(address[] memory tokens, uint[] memory rewards) = pool.pendingRewards(user);
-// Already matched!
-
-// Or for specific token
-uint amount = pool.pendingReward(user, specificToken);
-```
-
-### New Features
-1. **Enhanced Reward Queries**: Token addresses and rewards in single call
-2. **Event Optimization**: Removed duplicate events for gas savings
-3. **Comprehensive Testing**: 212 tests covering all edge cases
+### Pre-deployment Checklist
+- All tests passing with zero warnings
+- Reentrancy protection and role checks in place
+- Zero-deposit protection implemented
+- Removed reward token settlement validated
+- UUPS upgrade paths tested
+- External third-party audit recommended
 
 ---
 
 ## 📚 Documentation & links
 
-- [README Korean](README_ko.md)
-- [README English](README.md)
-- [Architecture](overview/en/01_architecture.md)  
-- [Reward Mechanism](overview/en/02_reward_mechanism.md)  
-- [Security & Testing](overview/en/03_security_and_testing.md)  
-- [Test Guide](test/README.md)  
-- [OpenZeppelin Contracts](https://docs.openzeppelin.com/contracts/)  
+- [Overview](overview/00_overview.md)
+- [Architecture](overview/01_architecture.md)
+- [Reward Mechanism](overview/02_reward_mechanism.md)
+- [Security & Testing](overview/03_security_and_testing.md)
+- [Test Guide](test/README.md)
+- [OpenZeppelin Contracts](https://docs.openzeppelin.com/contracts/)
 - [Foundry Book](https://book.getfoundry.sh/)
 
 ---
 
 ## 📜 License
 
-MIT
-
----
-
-## ✨ Conclusion
-
-Cross GameReward Protocol is **fully tested and documented, production-ready**:
-- 212 tests passing (100%)
-- Enhanced API for better UX
-- Optimized event logging
-- Complete documentation
-- Zero compilation warnings
-
-Ready for deployment! 🎉
+BUSL 1.1 (Business Source License 1.1) - See [LICENSE](LICENSE) file for details
