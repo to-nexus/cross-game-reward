@@ -115,7 +115,8 @@ router.withdrawNative(poolId);
 ### 관리자
 ```solidity
 // 풀 생성
-crossDeposit.createPool(wcross, 2 days);
+(uint poolId, ICrossGameRewardPool pool) = 
+    crossDeposit.createPool("내 게임 풀", wcross, 1 ether);
 
 // 보상 토큰 추가
 crossDeposit.addRewardToken(poolId, usdt);

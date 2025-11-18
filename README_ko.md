@@ -45,7 +45,7 @@ forge install
 forge test
 ```
 
-**현재: 222/222 테스트 통과**
+**현재: 233/233 테스트 통과**
 
 ### 배포 예시
 
@@ -73,7 +73,7 @@ router.withdrawNative(poolId);
 ```solidity
 // Native CROSS 풀 생성
 (uint poolId, ICrossGameRewardPool pool) =
-    crossDeposit.createPool(IERC20(address(wcross)), 1 ether);
+    crossDeposit.createPool("내 게임 풀", IERC20(address(wcross)), 1 ether);
 
 // 보상 토큰 추가
 crossDeposit.addRewardToken(poolId, IERC20(address(usdt)));
@@ -186,8 +186,9 @@ usdt.transfer(address(pool), 1000 ether);
 | CrossGameRewardPoolPendingRewards| 9     |
 | CrossGameRewardPoolSecurity      | 21    |
 | CrossGameRewardPoolEdgeCases     | 12    |
+| CrossGameRewardPoolClaimRecovery | 21    |
 | FullIntegration               | 9     |
-| **Total**                     | **212**|
+| **Total**                     | **233**|
 
 ## 🔄 업그레이드
 

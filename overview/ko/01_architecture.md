@@ -91,13 +91,13 @@ mapping(uint => PoolInfo) public pools;   // 풀 정보
 
 **주요 함수:**
 ```solidity
-createPool(address depositToken, uint minDepositAmount)
-  returns (uint poolId, address poolAddress)
+createPool(string calldata name, IERC20 depositToken, uint minDepositAmount)
+  returns (uint poolId, ICrossGameRewardPool poolAddress)
 
-addRewardToken(uint poolId, address rewardToken)
-removeRewardToken(uint poolId, address rewardToken)
+addRewardToken(uint poolId, IERC20 rewardToken)
+removeRewardToken(uint poolId, IERC20 rewardToken)
 setPoolStatus(uint poolId, uint8 status)  // 0=Active, 1=Inactive, 2=Paused
-withdrawFromPool(uint poolId, address token, address to)
+withdrawFromPool(uint poolId, IERC20 token, address to)
 setRouter(address _router)
 ```
 

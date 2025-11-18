@@ -89,7 +89,7 @@ router.withdrawNative(poolId);
 ```solidity
 // Create native CROSS pool
 (uint256 poolId, address poolAddr) =
-    crossDeposit.createPool(address(wcross), 2 days);
+    crossDeposit.createPool("My Game Pool", address(wcross), 1 ether);
 
 // Add reward token
 crossDeposit.addRewardToken(poolId, address(usdt));
