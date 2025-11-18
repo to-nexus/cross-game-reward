@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.28;
 
 import "./base/CrossGameRewardPoolBase.t.sol";
@@ -35,17 +35,17 @@ contract CrossGameRewardPoolAdminTest is CrossGameRewardPoolBase {
     function testCannotAddSameRewardTokenTwice() public {
         crossGameReward.addRewardToken(1, rewardToken3);
 
-        vm.expectRevert(CrossGameRewardPool.CSPRewardTokenAlreadyAdded.selector);
+        vm.expectRevert(CrossGameRewardPool.CGRPRewardTokenAlreadyAdded.selector);
         crossGameReward.addRewardToken(1, rewardToken3);
     }
 
     function testCannotAddZeroAddressAsRewardToken() public {
-        vm.expectRevert(CrossGameRewardPool.CSPCanNotZeroAddress.selector);
+        vm.expectRevert(CrossGameRewardPool.CGRPCanNotZeroAddress.selector);
         crossGameReward.addRewardToken(1, IERC20(address(0)));
     }
 
     function testCannotAddDepositTokenAsReward() public {
-        vm.expectRevert(CrossGameRewardPool.CSPCanNotUseDepositToken.selector);
+        vm.expectRevert(CrossGameRewardPool.CGRPCanNotUseDepositToken.selector);
         crossGameReward.addRewardToken(1, crossToken);
     }
 
@@ -98,7 +98,7 @@ contract CrossGameRewardPoolAdminTest is CrossGameRewardPoolBase {
     }
 
     function testCannotRemoveNonExistentToken() public {
-        vm.expectRevert(CrossGameRewardPool.CSPInvalidRewardToken.selector);
+        vm.expectRevert(CrossGameRewardPool.CGRPInvalidRewardToken.selector);
         crossGameReward.removeRewardToken(1, rewardToken3);
     }
 
@@ -196,7 +196,7 @@ contract CrossGameRewardPoolAdminTest is CrossGameRewardPoolBase {
         crossGameReward.removeRewardToken(1, rewardToken1);
 
         // No extra deposits - cannot withdraw
-        vm.expectRevert(CrossGameRewardPool.CSPNoReclaimableAmount.selector);
+        vm.expectRevert(CrossGameRewardPool.CGRPNoReclaimableAmount.selector);
         crossGameReward.reclaimFromPool(1, rewardToken1, owner);
     }
 
@@ -261,7 +261,7 @@ contract CrossGameRewardPoolAdminTest is CrossGameRewardPoolBase {
 
         vm.startPrank(user1);
         crossToken.approve(address(pool), 10 ether);
-        vm.expectRevert(CrossGameRewardPool.CSPCannotDepositInCurrentState.selector);
+        vm.expectRevert(CrossGameRewardPool.CGRPCannotDepositInCurrentState.selector);
         pool.deposit(10 ether);
         vm.stopPrank();
     }

@@ -46,18 +46,43 @@ depositToken.safeTransfer(user, amount);
 ### Removed Reward Token Settlement
 - Removed tokens move to `_removedRewardTokenAddresses` while remaining claimable.
 - `_withdraw` triggers `_updateRemovedRewards` and `_claimRemovedRewards`, so every outstanding reward is paid when a user exits.
-- Active deposits still rely on `claimReward` / `claimRewards`; these routes operate on the active token set only.
+- Active deposits can use `claimReward` / `claimRewards` to claim rewards without withdrawing; these routes operate on the active token set only.
 - Regression tests `testRemovedRewardTokenClaimedOnUndeposit` and `testClaimRemovedRewardAfterUndepositDoesNotRevert` cover the flow (`src/CrossGameRewardPool.sol`).
+
+### Router Check
+- Router can call `depositFor`, `withdrawFor`, `claimRewardsFor`, and `claimRewardFor` on behalf of users.
+- `_checkDelegate` enforces that only the authorized router can call these `For` functions.
+
+### WCROSS - WETH9 Pattern
+- Follows the WETH9 standard: anyone can wrap/unwrap
+- **Key Change**: Removed router-only restriction
+  ```solidity
+  // Before: router-only
+  function deposit() external payable onlyRouter { ... }
+  
+  // After: open to everyone
+  function deposit() public payable { ... }
+  ```
+- Security maintained by ERC20 transfer rules - only token owner can transfer
+- Enables direct DEX integration and better composability
+- See `WCROSS_SECURITY_ANALYSIS.md` for detailed security review
 
 ---
 
 ## 🧪 Test Suite
-- Foundry-based: 9 files / 159 test cases (`forge test`, 2025-11-03).
+- Foundry-based: 9 test files / **233 test cases** (`forge test`, 2025-11-17).
+- Test Coverage by Contract:
+  - **CrossGameRewardRouter**: 39 tests (incl. 12 new claim tests)
+  - **CrossGameRewardPool**: 142 tests (incl. claim refactoring validation)
+  - **WCROSS**: 10 tests (updated for WETH9 pattern)
+  - **CrossGameReward**: 30 tests (factory and pool creation)
+  - **Integration Tests**: 12 tests (end-to-end scenarios)
 - Categories:
-  - **Functional**: deposit flows, reward accrual, view functions.
+  - **Functional**: deposit flows, reward accrual, view functions, claim operations.
   - **Integration**: end-to-end journeys, multi-pool coordination.
   - **Security**: reentrancy attempts, role enforcement, invariant checks.
-- Helpers: `_userDeposit`, `_depositReward`, `_warpDays` enable scenario coverage.
+  - **Refactoring Validation**: claim function optimization (48% code reduction, <0.01% gas increase).
+- Helpers: `_userDeposit`, `_depositReward`, `_warpDays` enable comprehensive scenario coverage.
 
 ---
 
@@ -69,8 +94,11 @@ depositToken.safeTransfer(user, amount);
 ---
 
 ## ✅ Summary
-- 159/159 tests passing as of 2025-11-03 (Foundry).
+- **233/233 tests passing** as of 2025-11-17 (Foundry).
 - Layered security controls built on well-audited OpenZeppelin modules.
 - Removed-reward locking risk is mitigated via automatic settlement on withdraw.
+- Router claim wrapper enables reward claiming without full withdrawal.
+- WCROSS WETH9 pattern improves composability while maintaining security.
+- Pool claim functions refactored for better maintainability (48% code reduction, 100% test coverage maintained).
 
 See also: [../test/README.md](../test/README.md)

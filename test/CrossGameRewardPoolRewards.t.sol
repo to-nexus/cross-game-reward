@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.28;
 
 import "./base/CrossGameRewardPoolBase.t.sol";
@@ -239,7 +239,7 @@ contract CrossGameRewardPoolRewardsTest is CrossGameRewardPoolBase {
         _userDeposit(user1, 10 ether);
 
         vm.prank(user1);
-        vm.expectRevert(CrossGameRewardPool.CSPInvalidRewardToken.selector);
+        vm.expectRevert(CrossGameRewardPool.CGRPInvalidRewardToken.selector);
         pool.claimReward(IERC20(address(uint160(0xdead))));
     }
 
@@ -593,7 +593,7 @@ contract CrossGameRewardPoolRewardsTest is CrossGameRewardPoolBase {
         assertEq(pool.getReclaimableAmount(rewardToken1), 0, "No withdrawable amount");
 
         // Cannot withdraw
-        vm.expectRevert(CrossGameRewardPool.CSPNoReclaimableAmount.selector);
+        vm.expectRevert(CrossGameRewardPool.CGRPNoReclaimableAmount.selector);
         crossGameReward.reclaimFromPool(1, rewardToken1, owner);
     }
 

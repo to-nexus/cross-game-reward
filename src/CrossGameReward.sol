@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.28;
 
 import {AccessControlDefaultAdminRulesUpgradeable as AccessControl} from
@@ -35,13 +35,13 @@ contract CrossGameReward is Initializable, AccessControl, UUPSUpgradeable, ICros
     // ==================== Errors ====================
 
     /// @notice Thrown when attempting to access a non-existent pool
-    error CSPoolNotFound();
+    error CGRPoolNotFound();
 
     /// @notice Thrown when a zero address is provided where it's not allowed
-    error CSCanNotZeroAddress();
+    error CGRCanNotZeroAddress();
 
     /// @notice Thrown when a zero value is provided where it's not allowed
-    error CSCanNotZeroValue();
+    error CGRCanNotZeroValue();
 
     // ==================== Events ====================
 
@@ -49,7 +49,8 @@ contract CrossGameReward is Initializable, AccessControl, UUPSUpgradeable, ICros
     /// @param poolId The ID of the newly created pool
     /// @param poolAddress The address of the newly created pool
     /// @param depositToken The token that can be deposited in this pool
-    event PoolCreated(uint indexed poolId, address indexed poolAddress, address indexed depositToken);
+    /// @param name The name of the pool
+    event PoolCreated(uint indexed poolId, address indexed poolAddress, address indexed depositToken, string name);
 
     /// @notice Emitted when the pool implementation is updated
     /// @param implementation The new implementation address
@@ -113,8 +114,8 @@ contract CrossGameReward is Initializable, AccessControl, UUPSUpgradeable, ICros
         external
         initializer
     {
-        require(address(_poolImplementation) != address(0), CSCanNotZeroAddress());
-        require(_admin != address(0), CSCanNotZeroAddress());
+        require(address(_poolImplementation) != address(0), CGRCanNotZeroAddress());
+        require(_admin != address(0), CGRCanNotZeroAddress());
 
         __AccessControlDefaultAdminRules_init(_initialDelay, _admin);
         __UUPSUpgradeable_init();
@@ -135,18 +136,20 @@ contract CrossGameReward is Initializable, AccessControl, UUPSUpgradeable, ICros
      * @dev Deploys a new UUPS proxy pointing to the pool implementation
      *      Pool's DEFAULT_ADMIN_ROLE references CrossGameReward's DEFAULT_ADMIN_ROLE
      *      CrossGameReward receives REWARD_ROOT_ROLE for pool management
+     * @param name Name of the pool
      * @param depositToken Address of the token to be deposited in the pool
      * @param minDepositAmount Minimum amount required for depositing (in wei)
      * @return poolId ID of the newly created pool
      * @return pool Address of the newly created pool
      */
-    function createPool(IERC20 depositToken, uint minDepositAmount)
+    function createPool(string calldata name, IERC20 depositToken, uint minDepositAmount)
         external
         onlyRole(MANAGER_ROLE)
         returns (uint poolId, ICrossGameRewardPool pool)
     {
-        require(address(depositToken) != address(0), CSCanNotZeroAddress());
-        require(minDepositAmount > 0, CSCanNotZeroValue());
+        require(bytes(name).length > 0, CGRCanNotZeroValue());
+        require(address(depositToken) != address(0), CGRCanNotZeroAddress());
+        require(minDepositAmount > 0, CGRCanNotZeroValue());
 
         poolId = nextPoolId++;
 
@@ -158,13 +161,14 @@ contract CrossGameReward is Initializable, AccessControl, UUPSUpgradeable, ICros
         pool = ICrossGameRewardPool(address(proxy));
 
         // Store pool information
-        pools[poolId] = PoolInfo({poolId: poolId, pool: pool, depositToken: depositToken, createdAt: block.timestamp});
+        pools[poolId] =
+            PoolInfo({poolId: poolId, pool: pool, name: name, depositToken: depositToken, createdAt: block.timestamp});
 
         poolIds[pool] = poolId;
         _allPoolIds.add(poolId);
         _poolsByDepositToken[depositToken].add(poolId);
 
-        emit PoolCreated(poolId, address(pool), address(depositToken));
+        emit PoolCreated(poolId, address(pool), address(depositToken), name);
     }
 
     /**
@@ -174,7 +178,7 @@ contract CrossGameReward is Initializable, AccessControl, UUPSUpgradeable, ICros
      * @param token Address of the reward token to add
      */
     function addRewardToken(uint poolId, IERC20 token) external onlyRole(MANAGER_ROLE) {
-        require(address(pools[poolId].pool) != address(0), CSPoolNotFound());
+        require(address(pools[poolId].pool) != address(0), CGRPoolNotFound());
 
         pools[poolId].pool.addRewardToken(token);
         // Event emitted by CrossGameRewardPool
@@ -187,7 +191,7 @@ contract CrossGameReward is Initializable, AccessControl, UUPSUpgradeable, ICros
      * @param token Address of the reward token to remove
      */
     function removeRewardToken(uint poolId, IERC20 token) external onlyRole(MANAGER_ROLE) {
-        require(address(pools[poolId].pool) != address(0), CSPoolNotFound());
+        require(address(pools[poolId].pool) != address(0), CGRPoolNotFound());
 
         pools[poolId].pool.removeRewardToken(token);
         // Event emitted by CrossGameRewardPool
@@ -200,7 +204,7 @@ contract CrossGameReward is Initializable, AccessControl, UUPSUpgradeable, ICros
      * @param amount Minimum deposit amount
      */
     function updateMinDepositAmount(uint poolId, uint amount) external onlyRole(MANAGER_ROLE) {
-        require(address(pools[poolId].pool) != address(0), CSPoolNotFound());
+        require(address(pools[poolId].pool) != address(0), CGRPoolNotFound());
         pools[poolId].pool.updateMinDepositAmount(amount);
         // Event emitted by CrossGameRewardPool
     }
@@ -214,7 +218,7 @@ contract CrossGameReward is Initializable, AccessControl, UUPSUpgradeable, ICros
      * @param to Address to receive the reclaimed tokens
      */
     function reclaimFromPool(uint poolId, IERC20 token, address to) external onlyRole(MANAGER_ROLE) {
-        require(address(pools[poolId].pool) != address(0), CSPoolNotFound());
+        require(address(pools[poolId].pool) != address(0), CGRPoolNotFound());
 
         uint amount = pools[poolId].pool.getReclaimableAmount(token);
         pools[poolId].pool.reclaimTokens(token, to);
@@ -231,7 +235,7 @@ contract CrossGameReward is Initializable, AccessControl, UUPSUpgradeable, ICros
      * @param status New pool status
      */
     function setPoolStatus(uint poolId, ICrossGameRewardPool.PoolStatus status) external onlyRole(MANAGER_ROLE) {
-        require(address(pools[poolId].pool) != address(0), CSPoolNotFound());
+        require(address(pools[poolId].pool) != address(0), CGRPoolNotFound());
 
         // Set pool status in the pool contract
         pools[poolId].pool.setPoolStatus(status);
@@ -244,7 +248,7 @@ contract CrossGameReward is Initializable, AccessControl, UUPSUpgradeable, ICros
      * @param newImplementation Address of the new implementation contract
      */
     function setPoolImplementation(ICrossGameRewardPool newImplementation) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(address(newImplementation) != address(0), CSCanNotZeroAddress());
+        require(address(newImplementation) != address(0), CGRCanNotZeroAddress());
         poolImplementation = newImplementation;
         emit PoolImplementationSet(newImplementation);
     }
@@ -254,7 +258,7 @@ contract CrossGameReward is Initializable, AccessControl, UUPSUpgradeable, ICros
      * @param _router Address of the router contract
      */
     function setRouter(address _router) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(_router != address(0), CSCanNotZeroAddress());
+        require(_router != address(0), CGRCanNotZeroAddress());
         router = _router;
         emit RouterSet(_router);
     }
@@ -267,7 +271,7 @@ contract CrossGameReward is Initializable, AccessControl, UUPSUpgradeable, ICros
      * @return Pool information struct
      */
     function getPoolInfo(uint poolId) external view returns (PoolInfo memory) {
-        require(address(pools[poolId].pool) != address(0), CSPoolNotFound());
+        require(address(pools[poolId].pool) != address(0), CGRPoolNotFound());
         return pools[poolId];
     }
 
@@ -330,7 +334,7 @@ contract CrossGameReward is Initializable, AccessControl, UUPSUpgradeable, ICros
      * @return Address of the pool contract
      */
     function getPoolAddress(uint poolId) external view returns (ICrossGameRewardPool) {
-        require(address(pools[poolId].pool) != address(0), CSPoolNotFound());
+        require(address(pools[poolId].pool) != address(0), CGRPoolNotFound());
         return pools[poolId].pool;
     }
 
@@ -341,7 +345,7 @@ contract CrossGameReward is Initializable, AccessControl, UUPSUpgradeable, ICros
      */
     function getPoolId(ICrossGameRewardPool pool) external view returns (uint) {
         uint poolId = poolIds[pool];
-        require(poolId != 0, CSPoolNotFound());
+        require(poolId != 0, CGRPoolNotFound());
         return poolId;
     }
 
@@ -384,5 +388,5 @@ contract CrossGameReward is Initializable, AccessControl, UUPSUpgradeable, ICros
     /**
      * @dev Storage gap for future upgrades
      */
-    uint[41] private __gap;
+    uint[40] private __gap;
 }

@@ -18,18 +18,19 @@ Cross GameReward Protocol은 Native CROSS와 ERC20 토큰을 위한 **확장 가
             │
             ▼
 ┌─────────────────────────────────┐
-│   CrossGameRewardRouter (CSR)      │
+│   CrossGameRewardRouter (CGRR)      │
 │   - depositNative/withdrawNative   │
 │   - depositERC20/withdrawERC20     │
+│   - claimRewards/claimReward       │
 │   - 재배포 가능                  │
 └──────┬──────────────────────────┘
        │
-       ├──► WCROSS (Router 전용)
-       │    - deposit/withdraw
+       ├──► WCROSS (WETH9 패턴)
+       │    - 누구나 deposit/withdraw
        │
        ▼
 ┌─────────────────────────────────┐
-│    CrossGameReward (CS)            │
+│    CrossGameReward (CGR)            │
 │    - UUPS 업그레이더블           │
 │    - createPool (POOL_MANAGER)  │
 │    - setRouter (ADMIN)          │
@@ -37,7 +38,7 @@ Cross GameReward Protocol은 Native CROSS와 ERC20 토큰을 위한 **확장 가
        │ creates
        ▼
 ┌─────────────────────────────────┐
-│  CrossGameRewardPool (CSP) × n     │
+│  CrossGameRewardPool (CGRP) × n     │
 │  - UUPS 업그레이더블             │
 │  - depositFor/withdrawFor          │
 │  - rewardPerToken 누적          │
@@ -104,14 +105,18 @@ Cross GameReward Protocol은 Native CROSS와 ERC20 토큰을 위한 **확장 가
 // Native CROSS 디파짓
 router.depositNative{value: 100 ether}(poolId);
 
-// 언디파짓
+// 보상만 claim (deposit 유지)
+router.claimRewards(poolId);
+
+// 전체 언디파짓 (deposit + 보상)
 router.withdrawNative(poolId);
 ```
 
 ### 관리자
 ```solidity
 // 풀 생성
-crossDeposit.createPool(wcross, 2 days);
+(uint poolId, ICrossGameRewardPool pool) = 
+    crossDeposit.createPool("내 게임 풀", wcross, 1 ether);
 
 // 보상 토큰 추가
 crossDeposit.addRewardToken(poolId, usdt);
@@ -121,8 +126,8 @@ crossDeposit.addRewardToken(poolId, usdt);
 
 ## 📈 성능
 
-- **테스트**: 212개 100% 통과
-- **Gas**: 최적화 완료
+- **테스트**: 233개 100% 통과
+- **Gas**: 최적화 완료 (O(1) claim)
 - **크기**: 모두 24KB 이하
 - **보안**: 다층 방어 (reentrancy, access control, zero-deposit protection)
 

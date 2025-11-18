@@ -30,11 +30,12 @@ Cross GameReward Protocol은 **rewardPerToken 누적 방식**을 사용하는 �
 │    CrossGameRewardRouter            │
 │  • depositNative/withdrawNative     │
 │  • depositERC20/withdrawERC20       │
+│  • claimRewards/claimReward         │
 │  • 재배포 가능                    │
 └──────┬───────────────────────────┘
        │
-       ├──► WCROSS
-       │    • Router 전용
+       ├──► WCROSS (WETH9 패턴)
+       │    • 누구나 deposit/withdraw
        │
        ▼
 ┌──────────────────────────────────┐
@@ -59,21 +60,20 @@ Cross GameReward Protocol은 **rewardPerToken 누적 방식**을 사용하는 �
 
 ### 1. WCROSS
 
-**역할:** Native CROSS를 ERC20으로 래핑
-
-**상태 변수:**
-```solidity
-CrossGameReward public deposit;  // CrossGameReward 참조
-```
+**역할:** Native CROSS를 ERC20으로 래핑 (WETH9 패턴)
 
 **주요 함수:**
 ```solidity
-deposit() public payable      // Router만 가능
-withdraw(uint amount)         // Router만 가능
+deposit() public payable              // 누구나 가능
+withdraw(uint amount) external        // 누구나 가능
+withdrawTo(address to, uint) public   // 누구나 가능
 ```
 
-**접근 제어:**
-- `msg.sender == deposit.router()` 검증
+**특징:**
+- WETH9 표준 패턴 준수
+- Router 검사 제거 (접근성 향상)
+- DEX 통합 용이
+- 1:1 parity 유지
 
 ---
 
@@ -91,13 +91,13 @@ mapping(uint => PoolInfo) public pools;   // 풀 정보
 
 **주요 함수:**
 ```solidity
-createPool(address depositToken, uint minDepositAmount)
-  returns (uint poolId, address poolAddress)
+createPool(string calldata name, IERC20 depositToken, uint minDepositAmount)
+  returns (uint poolId, ICrossGameRewardPool poolAddress)
 
-addRewardToken(uint poolId, address rewardToken)
-removeRewardToken(uint poolId, address rewardToken)
+addRewardToken(uint poolId, IERC20 rewardToken)
+removeRewardToken(uint poolId, IERC20 rewardToken)
 setPoolStatus(uint poolId, uint8 status)  // 0=Active, 1=Inactive, 2=Paused
-withdrawFromPool(uint poolId, address token, address to)
+withdrawFromPool(uint poolId, IERC20 token, address to)
 setRouter(address _router)
 ```
 
@@ -128,12 +128,19 @@ mapping(address => mapping(IERC20 => UserReward)) public userRewards; // 사용�
 
 **주요 함수:**
 ```solidity
+// Deposit/Withdraw
 deposit(uint amount)                        // Active 상태에서만 가능
 depositFor(address account, uint amount)    // Router 전용, Active 상태만
 withdraw()                                 // Active/Inactive 상태 가능
 withdrawFor(address account)               // Router 전용
-claimRewards()                            // Active/Inactive 상태 가능
-claimReward(IERC20 token)
+
+// Claim (리팩토링 완료)
+claimRewards()                            // 모든 보상 claim
+claimRewardsFor(address account)           // Router 전용
+claimReward(IERC20 token)                 // 특정 토큰만 claim
+claimRewardFor(address account, token)     // Router 전용
+
+// Admin
 addRewardToken(IERC20 token)              // CrossGameReward만 호출 가능
 removeRewardToken(IERC20 token)           // CrossGameReward만 호출 가능
 withdraw(IERC20 token, address to)        // CrossGameReward만 호출 가능
@@ -160,19 +167,31 @@ setPoolStatus(uint8 status)               // CrossGameReward만 호출 가능
 
 **상태 변수:**
 ```solidity
-CrossGameReward public immutable crossDeposit;
+CrossGameReward public immutable crossGameReward;
 IWCROSS public immutable wcross;
 ```
 
 **주요 함수:**
 ```solidity
+// Deposit/Withdraw
 depositNative(uint poolId) payable
 withdrawNative(uint poolId)
 depositERC20(uint poolId, uint amount)
+depositERC20WithPermit(uint poolId, uint amount, ...) // EIP-2612
 withdrawERC20(uint poolId)
+
+// Claim (신규 추가)
+claimRewards(uint poolId)                    // 모든 보상 claim
+claimReward(uint poolId, address token)       // 특정 토큰만 claim
+
+// View
+getUserDepositInfo(uint poolId, address user)
+getPendingRewards(uint poolId, address user)  // 모든 pending rewards
+getPendingReward(uint poolId, address user, token) // 특정 토큰 pending
+isNativePool(uint poolId)
 ```
 
-**Helper 함수:**
+**내부 함수:**
 ```solidity
 _getPool(uint poolId) internal view
 _getPoolAndValidateWCROSS(uint poolId) internal view
@@ -202,23 +221,38 @@ PAUSER_ROLE             // 긴급 정지 (CrossGameReward이 보유)
 ```solidity
 // CrossGameRewardPool
 function _checkDelegate(address account) internal view {
-    require(account != address(0), CSPCanNotZeroAddress());
-    require(msg.sender == ICrossGameReward(crossDeposit).router(), CSPOnlyRouter());
+    require(account != address(0), CGRPCanNotZeroAddress());
+    require(msg.sender == ICrossGameReward(crossDeposit).router(), CGRPOnlyRouter());
 }
 ```
 
 **적용:**
 - depositFor()
 - withdrawFor()
+- claimRewardsFor()
+- claimRewardFor()
 
-### WCROSS 권한 체크
+### WCROSS - WETH9 패턴
 
+**Router 검사 제거:**
 ```solidity
 function deposit() public payable {
-    require(msg.sender == deposit.router(), WCROSSUnauthorized());
-    // ...
+    if (msg.value != 0) _mint(msg.sender, msg.value);
+}
+
+function withdrawTo(address to, uint amount) public {
+    require(to != address(0), WCROSSInvalidAddress());
+    _burn(msg.sender, amount);
+    (bool success,) = to.call{value: amount}("");
+    require(success, WCROSSTransferFailed());
 }
 ```
+
+**특징:**
+- 누구나 deposit/withdraw 가능 (WETH9 표준)
+- ERC20 메커니즘으로 보호
+- DEX 통합 용이
+- 보안성 유지 (검증된 패턴)
 
 ---
 
@@ -266,7 +300,7 @@ function _syncReward(address tokenAddress) internal {
 **모든 함수에서 준수:**
 ```solidity
 // 1. Checks
-require(balances[msg.sender] > 0, CSPNoDepositFound());
+require(balances[msg.sender] > 0, CGRPNoDepositFound());
 
 // 2. Effects
 balances[msg.sender] = 0;

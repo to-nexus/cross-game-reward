@@ -68,7 +68,7 @@ router.withdrawNative(poolId);
 
 ```solidity
 (uint256 poolId, ICrossGameRewardPool pool) =
-    crossDeposit.createPool(IERC20(address(wcross)), 1 ether);
+    crossDeposit.createPool("My Game Pool", IERC20(address(wcross)), 1 ether);
 
 crossDeposit.addRewardToken(poolId, IERC20(address(usdt)));
 
@@ -167,7 +167,7 @@ forge test --match-contract CrossGameReward
 forge test --gas-report
 ```
 
-**Current coverage:** 212 tests across 11 suites:
+**Current coverage:** 233 tests across 12 suites:
 
 | Suite                          | Tests |
 |--------------------------------|-------|
@@ -181,8 +181,9 @@ forge test --gas-report
 | CrossGameRewardPoolPendingRewards | 9     |
 | CrossGameRewardPoolSecurity       | 21    |
 | CrossGameRewardPoolEdgeCases      | 12    |
+| CrossGameRewardPoolClaimRecovery  | 21    |
 | FullIntegration                | 9     |
-| **Total**                      | **212** |
+| **Total**                      | **233** |
 
 ## 🔄 Upgrades
 

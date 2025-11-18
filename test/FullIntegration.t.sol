@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.28;
 
 import "../src/CrossGameReward.sol";
@@ -49,8 +49,9 @@ contract FullIntegrationTest is Test {
 
         // Deploy CrossGameReward as a UUPS proxy (instantiates WCROSS internally)
         CrossGameReward implementation = new CrossGameReward();
-        bytes memory initData =
-            abi.encodeCall(CrossGameReward.initialize, (ICrossGameRewardPool(address(poolImplementation)), admin, 2 days));
+        bytes memory initData = abi.encodeCall(
+            CrossGameReward.initialize, (ICrossGameRewardPool(address(poolImplementation)), admin, 2 days)
+        );
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
         crossGameReward = CrossGameReward(address(proxy));
 
@@ -66,7 +67,7 @@ contract FullIntegrationTest is Test {
         dai = new MockERC20("Dai Stablecoin", "DAI");
 
         // Create native pool
-        (nativePoolId, nativePool) = crossGameReward.createPool(IERC20(address(wcross)), 1 ether);
+        (nativePoolId, nativePool) = crossGameReward.createPool("Native Pool", IERC20(address(wcross)), 1 ether);
 
         // Add reward tokens
         crossGameReward.addRewardToken(nativePoolId, IERC20(address(usdt)));
@@ -151,7 +152,7 @@ contract FullIntegrationTest is Test {
         // Create another pool for ERC20
         MockERC20 depositToken = new MockERC20("Deposit", "STK");
         (uint erc20PoolId, ICrossGameRewardPool erc20PoolAddress) =
-            crossGameReward.createPool(IERC20(address(depositToken)), 1 ether);
+            crossGameReward.createPool("ERC20 Pool", IERC20(address(depositToken)), 1 ether);
 
         crossGameReward.addRewardToken(erc20PoolId, IERC20(address(usdt)));
 

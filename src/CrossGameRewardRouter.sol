@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.28;
 
 import {IERC20Permit} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
@@ -29,9 +29,6 @@ contract CrossGameRewardRouter is ICrossGameRewardRouter {
 
     /// @notice Thrown when a zero address is provided where it's not allowed
     error CSRCanNotZeroAddress();
-
-    /// @notice Thrown when a transfer fails
-    error CSRTransferFailed();
 
     /// @notice Thrown when attempting native operations on a non-WCROSS pool
     error CSRNotWCROSSPool();
@@ -190,6 +187,35 @@ contract CrossGameRewardRouter is ICrossGameRewardRouter {
         emit WithdrawnERC20(msg.sender, poolId, address(depositToken), depositedAmount);
     }
 
+    // ==================== Claim Rewards ====================
+
+    /**
+     * @notice Claims all pending rewards from a pool
+     * @dev Claims all reward tokens and sends them directly to msg.sender
+     * @param poolId ID of the pool to claim rewards from
+     */
+    function claimRewards(uint poolId) external {
+        ICrossGameRewardPool pool = _getPool(poolId);
+
+        // Claim all rewards on behalf of msg.sender (rewards sent directly to msg.sender)
+        pool.claimRewardsFor(msg.sender);
+    }
+
+    /**
+     * @notice Claims a specific reward token from a pool
+     * @dev Claims only the specified reward token and sends it to msg.sender
+     * @param poolId ID of the pool to claim rewards from
+     * @param token Address of the reward token to claim
+     */
+    function claimReward(uint poolId, address token) external {
+        require(token != address(0), CSRCanNotZeroAddress());
+
+        ICrossGameRewardPool pool = _getPool(poolId);
+
+        // Claim specific reward token on behalf of msg.sender (reward sent directly to msg.sender)
+        pool.claimRewardFor(msg.sender, IERC20(token));
+    }
+
     // ==================== View Functions ====================
 
     /**
@@ -220,6 +246,66 @@ contract CrossGameRewardRouter is ICrossGameRewardRouter {
         return address(pool.depositToken()) == address(wcross);
     }
 
+    /**
+     * @notice Retrieves user's pending rewards from active reward tokens
+     * @param poolId ID of the pool
+     * @param user Address of the user
+     * @return rewardTokens Array of active reward token addresses
+     * @return pendingRewards Array of pending rewards for each active reward token
+     */
+    function getPendingRewards(uint poolId, address user)
+        external
+        view
+        returns (address[] memory rewardTokens, uint[] memory pendingRewards)
+    {
+        ICrossGameRewardPool pool = _getPool(poolId);
+        return pool.pendingRewards(user);
+    }
+
+    /**
+     * @notice Retrieves user's pending reward for a specific token
+     * @param poolId ID of the pool
+     * @param user Address of the user
+     * @param token Address of the reward token
+     * @return amount Pending reward amount
+     */
+    function getPendingReward(uint poolId, address user, address token) external view returns (uint amount) {
+        ICrossGameRewardPool pool = _getPool(poolId);
+        return pool.pendingReward(user, IERC20(token));
+    }
+
+    /**
+     * @notice Retrieves pending rewards for removed reward tokens
+     * @param poolId ID of the pool
+     * @param user Address of the user
+     * @return rewardTokens Array of removed reward token addresses
+     * @return pendingRewards Array of pending rewards for each removed reward token
+     */
+    function getRemovedTokenRewards(uint poolId, address user)
+        external
+        view
+        returns (address[] memory rewardTokens, uint[] memory pendingRewards)
+    {
+        ICrossGameRewardPool pool = _getPool(poolId);
+        return pool.getRemovedTokenRewards(user);
+    }
+
+    /**
+     * @notice Retrieves all pending rewards (active + removed tokens) filtered by amount > 0
+     * @param poolId ID of the pool
+     * @param user Address of the user
+     * @return rewardTokens Array of reward token addresses with positive pending amounts
+     * @return pendingRewards Array of pending rewards corresponding to rewardTokens
+     */
+    function getAllPendingRewards(uint poolId, address user)
+        external
+        view
+        returns (address[] memory rewardTokens, uint[] memory pendingRewards)
+    {
+        ICrossGameRewardPool pool = _getPool(poolId);
+        return _collectPendingRewards(pool, user);
+    }
+
     // ==================== Internal Functions ====================
 
     /**
@@ -241,13 +327,6 @@ contract CrossGameRewardRouter is ICrossGameRewardRouter {
         require(address(pool.depositToken()) == address(wcross), CSRNotWCROSSPool());
     }
 
-    /**
-     * @dev Deposits ERC20 tokens from user and deposits into the pool
-     * @param poolId ID of the pool to deposit into
-     * @param pool Pool contract instance
-     * @param token ERC20 token contract instance
-     * @param amount Amount of tokens to deposit
-     */
     function _depositERC20(uint poolId, ICrossGameRewardPool pool, IERC20 token, uint amount) internal {
         // Transfer tokens from user and deposit to pool
         token.safeTransferFrom(msg.sender, address(this), amount);
@@ -255,5 +334,40 @@ contract CrossGameRewardRouter is ICrossGameRewardRouter {
         pool.depositFor(msg.sender, amount);
 
         emit DepositedERC20(msg.sender, poolId, address(token), amount);
+    }
+
+    function _collectPendingRewards(ICrossGameRewardPool pool, address user)
+        internal
+        view
+        returns (address[] memory tokens, uint[] memory amounts)
+    {
+        (address[] memory activeTokens, uint[] memory activeAmounts) = pool.pendingRewards(user);
+        (address[] memory removedTokens, uint[] memory removedAmounts) = pool.getRemovedTokenRewards(user);
+
+        uint totalCount = _countPositive(activeAmounts) + _countPositive(removedAmounts);
+        tokens = new address[](totalCount);
+        amounts = new uint[](totalCount);
+
+        uint idx;
+        for (uint i = 0; i < activeTokens.length; i++) {
+            if (activeAmounts[i] == 0) continue;
+            tokens[idx] = activeTokens[i];
+            amounts[idx] = activeAmounts[i];
+            idx++;
+        }
+        for (uint i = 0; i < removedTokens.length; i++) {
+            if (removedAmounts[i] == 0) continue;
+            tokens[idx] = removedTokens[i];
+            amounts[idx] = removedAmounts[i];
+            idx++;
+        }
+
+        return (tokens, amounts);
+    }
+
+    function _countPositive(uint[] memory values) private pure returns (uint count) {
+        for (uint i = 0; i < values.length; i++) {
+            if (values[i] > 0) count++;
+        }
     }
 }

@@ -18,10 +18,12 @@ The protocol exposes a modular multi-pool deposit topology built around a `rewar
 │ CrossGameRewardRouter            │
 │ • depositNative / withdrawNative │
 │ • depositERC20 / withdrawERC20   │
+│ • claimRewards / claimReward     │
 │ • stateless, redeployable     │
 └──────┬────────────────────────┘
        │
-       ├──► WCROSS (router-only)
+       ├──► WCROSS (WETH9 pattern)
+       │    • anyone can deposit/withdraw
        │
        ▼
 ┌───────────────────────────────┐
@@ -44,9 +46,18 @@ The protocol exposes a modular multi-pool deposit topology built around a `rewar
 ## 🔧 Contract Details
 
 ### 1. WCROSS
-- Purpose: wrap native CROSS into an ERC-20 for deposit.
-- Storage: `CrossGameReward public deposit`.
-- Router-only operations enforced through `require(msg.sender == deposit.router())`.
+- Purpose: wrap native CROSS into an ERC-20 for deposit (WETH9 pattern).
+- Key functions:
+  ```solidity
+  deposit() public payable              // anyone can call
+  withdraw(uint amount) external        // anyone can call
+  withdrawTo(address to, uint) public   // anyone can call
+  ```
+- Features:
+  - Follows WETH9 standard pattern
+  - No router restriction (improved accessibility)
+  - Easy DEX integration
+  - 1:1 parity maintained
 
 ### 2. CrossGameReward (factory)
 - Storage highlights:
@@ -81,15 +92,50 @@ The protocol exposes a modular multi-pool deposit topology built around a `rewar
   - `REWARD_ROOT_ROLE` → CrossGameReward contract.
   - `REWARD_MANAGER_ROLE`, `PAUSER_ROLE` delegated as needed.
 - Key functions:
-  - `deposit` / `depositFor` (router enforced via `_checkDelegate`).
-  - `withdraw` / `withdrawFor` – full withdrawal plus reward claim.
-  - `addRewardToken`, `removeRewardToken` (auto-claims removed tokens on withdraw), `withdraw`.
+  ```solidity
+  // Deposit/Withdraw
+  deposit(uint amount)                        // Active state only
+  depositFor(address account, uint amount)    // Router only, Active state
+  withdraw()                                 // Active/Inactive state
+  withdrawFor(address account)               // Router only
+
+  // Claim (refactored)
+  claimRewards()                            // claim all rewards
+  claimRewardsFor(address account)           // Router only
+  claimReward(IERC20 token)                 // claim specific token
+  claimRewardFor(address account, token)     // Router only
+
+  // Admin
+  addRewardToken(IERC20 token)              // CrossGameReward only
+  removeRewardToken(IERC20 token)           // CrossGameReward only (auto-claims removed tokens on withdraw)
+  withdraw(IERC20 token, address to)        // CrossGameReward only
+  setPoolStatus(uint8 status)               // CrossGameReward only
+  ```
 
 ### 4. CrossGameRewardRouter
 - Immutable references:
   ```solidity
-  CrossGameReward public immutable crossDeposit;
+  CrossGameReward public immutable crossGameReward;
   IWCROSS public immutable wcross;
+  ```
+- Key functions:
+  ```solidity
+  // Deposit/Withdraw
+  depositNative(uint poolId) payable
+  withdrawNative(uint poolId)
+  depositERC20(uint poolId, uint amount)
+  depositERC20WithPermit(uint poolId, uint amount, ...) // EIP-2612
+  withdrawERC20(uint poolId)
+
+  // Claim (newly added)
+  claimRewards(uint poolId)                    // claim all rewards
+  claimReward(uint poolId, address token)       // claim specific token
+
+  // View
+  getUserDepositInfo(uint poolId, address user)
+  getPendingRewards(uint poolId, address user)  // all pending rewards
+  getPendingReward(uint poolId, address user, token) // specific token pending
+  isNativePool(uint poolId)
   ```
 - Wraps native deposits, forwards ERC-20 deposits via `depositFor`, handles `withdraw` flows and reward delivery.
 

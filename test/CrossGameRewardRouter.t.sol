@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.28;
 
 import "../src/CrossGameReward.sol";
@@ -55,8 +55,9 @@ contract CrossGameRewardRouterTest is Test {
 
         // Deploy CrossGameReward as a UUPS proxy (instantiates WCROSS)
         CrossGameReward implementation = new CrossGameReward();
-        bytes memory initData =
-            abi.encodeCall(CrossGameReward.initialize, (ICrossGameRewardPool(address(poolImplementation)), owner, 2 days));
+        bytes memory initData = abi.encodeCall(
+            CrossGameReward.initialize, (ICrossGameRewardPool(address(poolImplementation)), owner, 2 days)
+        );
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
         crossGameReward = CrossGameReward(address(proxy));
 
@@ -72,9 +73,9 @@ contract CrossGameRewardRouterTest is Test {
         permitToken = new MockERC20Permit("Permit Token", "PTK");
 
         // Create pools
-        (nativePoolId, nativePool) = crossGameReward.createPool(IERC20(address(wcross)), 1 ether);
-        (erc20PoolId, erc20Pool) = crossGameReward.createPool(IERC20(address(depositToken)), 1 ether);
-        (permitPoolId, permitPool) = crossGameReward.createPool(IERC20(address(permitToken)), 1 ether);
+        (nativePoolId, nativePool) = crossGameReward.createPool("Native Pool", IERC20(address(wcross)), 1 ether);
+        (erc20PoolId, erc20Pool) = crossGameReward.createPool("ERC20 Pool", IERC20(address(depositToken)), 1 ether);
+        (permitPoolId, permitPool) = crossGameReward.createPool("Permit Pool", IERC20(address(permitToken)), 1 ether);
 
         // Add reward tokens
         crossGameReward.addRewardToken(nativePoolId, IERC20(address(rewardToken)));
@@ -552,5 +553,267 @@ contract CrossGameRewardRouterTest is Test {
 
         CrossGameRewardPool pool = CrossGameRewardPool(address(permitPool));
         assertEq(pool.balances(user1), amount, "Deposited with short deadline");
+    }
+
+    // ==================== Claim Rewards ====================
+
+    function testClaimRewardsNativePool() public {
+        // Deposit
+        vm.startPrank(user1);
+        router.depositNative{value: 10 ether}(nativePoolId);
+        vm.stopPrank();
+
+        // Add rewards
+        rewardToken.mint(owner, 100 ether);
+        rewardToken.transfer(address(nativePool), 100 ether);
+
+        // Claim rewards (without withdrawing deposit)
+        vm.prank(user1);
+        router.claimRewards(nativePoolId);
+
+        // Verify rewards claimed but deposit remains
+        CrossGameRewardPool pool = CrossGameRewardPool(address(nativePool));
+        assertEq(pool.balances(user1), 10 ether, "Deposit still in pool");
+        assertApproxEqAbs(rewardToken.balanceOf(user1), 100 ether, 10, "Rewards claimed");
+    }
+
+    function testClaimRewardsERC20Pool() public {
+        // Deposit
+        vm.startPrank(user1);
+        depositToken.approve(address(router), 50 ether);
+        router.depositERC20(erc20PoolId, 50 ether);
+        vm.stopPrank();
+
+        // Add rewards
+        rewardToken.mint(owner, 200 ether);
+        rewardToken.transfer(address(erc20Pool), 200 ether);
+
+        // Claim rewards
+        vm.prank(user1);
+        router.claimRewards(erc20PoolId);
+
+        // Verify
+        CrossGameRewardPool pool = CrossGameRewardPool(address(erc20Pool));
+        assertEq(pool.balances(user1), 50 ether, "Deposit still in pool");
+        assertApproxEqAbs(rewardToken.balanceOf(user1), 200 ether, 10, "Rewards claimed");
+    }
+
+    function testClaimSpecificRewardToken() public {
+        // Create second reward token
+        MockERC20 rewardToken2 = new MockERC20("Reward2", "RWD2");
+        crossGameReward.addRewardToken(nativePoolId, IERC20(address(rewardToken2)));
+
+        // Deposit
+        vm.startPrank(user1);
+        router.depositNative{value: 10 ether}(nativePoolId);
+        vm.stopPrank();
+
+        // Add both reward tokens
+        rewardToken.mint(owner, 100 ether);
+        rewardToken.transfer(address(nativePool), 100 ether);
+
+        rewardToken2.mint(owner, 50 ether);
+        rewardToken2.transfer(address(nativePool), 50 ether);
+
+        // Claim only first reward token
+        vm.prank(user1);
+        router.claimReward(nativePoolId, address(rewardToken));
+
+        // Verify only first reward claimed
+        assertApproxEqAbs(rewardToken.balanceOf(user1), 100 ether, 10, "First reward claimed");
+        assertEq(rewardToken2.balanceOf(user1), 0, "Second reward not claimed yet");
+
+        // Claim second reward token
+        vm.prank(user1);
+        router.claimReward(nativePoolId, address(rewardToken2));
+
+        assertApproxEqAbs(rewardToken2.balanceOf(user1), 50 ether, 10, "Second reward claimed");
+    }
+
+    function testMultipleClaimsSamePool() public {
+        // Deposit
+        vm.startPrank(user1);
+        router.depositNative{value: 10 ether}(nativePoolId);
+        vm.stopPrank();
+
+        // Add first batch of rewards
+        rewardToken.mint(owner, 50 ether);
+        rewardToken.transfer(address(nativePool), 50 ether);
+
+        // First claim
+        vm.prank(user1);
+        router.claimRewards(nativePoolId);
+        assertApproxEqAbs(rewardToken.balanceOf(user1), 50 ether, 10, "First claim");
+
+        // Add second batch of rewards
+        rewardToken.mint(owner, 30 ether);
+        rewardToken.transfer(address(nativePool), 30 ether);
+
+        // Second claim
+        vm.prank(user1);
+        router.claimRewards(nativePoolId);
+        assertApproxEqAbs(rewardToken.balanceOf(user1), 80 ether, 10, "Total after second claim");
+    }
+
+    function testClaimRewardsMultipleUsers() public {
+        // User1 deposits 30 ether
+        vm.startPrank(user1);
+        router.depositNative{value: 30 ether}(nativePoolId);
+        vm.stopPrank();
+
+        // User2 deposits 70 ether
+        vm.startPrank(user2);
+        router.depositNative{value: 70 ether}(nativePoolId);
+        vm.stopPrank();
+
+        // Add rewards (should be distributed 30:70)
+        rewardToken.mint(owner, 100 ether);
+        rewardToken.transfer(address(nativePool), 100 ether);
+
+        // User1 claims
+        vm.prank(user1);
+        router.claimRewards(nativePoolId);
+        assertApproxEqAbs(rewardToken.balanceOf(user1), 30 ether, 10, "User1 rewards (30%)");
+
+        // User2 claims
+        vm.prank(user2);
+        router.claimRewards(nativePoolId);
+        assertApproxEqAbs(rewardToken.balanceOf(user2), 70 ether, 10, "User2 rewards (70%)");
+
+        // Verify deposits unchanged
+        CrossGameRewardPool pool = CrossGameRewardPool(address(nativePool));
+        assertEq(pool.balances(user1), 30 ether, "User1 deposit unchanged");
+        assertEq(pool.balances(user2), 70 ether, "User2 deposit unchanged");
+    }
+
+    function testClaimWithoutDeposit() public {
+        // User has no deposit
+        vm.prank(user1);
+        vm.expectRevert(); // Should revert - no deposit or stored rewards
+        router.claimRewards(nativePoolId);
+    }
+
+    function testClaimAfterPartialWithdraw() public {
+        // User1 deposits
+        vm.startPrank(user1);
+        router.depositNative{value: 20 ether}(nativePoolId);
+        vm.stopPrank();
+
+        // User2 deposits
+        vm.startPrank(user2);
+        router.depositNative{value: 80 ether}(nativePoolId);
+        vm.stopPrank();
+
+        // Add rewards
+        rewardToken.mint(owner, 100 ether);
+        rewardToken.transfer(address(nativePool), 100 ether);
+
+        // User2 withdraws (gets rewards + deposit back)
+        vm.prank(user2);
+        router.withdrawNative(nativePoolId);
+        assertApproxEqAbs(rewardToken.balanceOf(user2), 80 ether, 10, "User2 rewards from withdraw");
+
+        // Add more rewards (all should go to user1 now)
+        rewardToken.mint(owner, 50 ether);
+        rewardToken.transfer(address(nativePool), 50 ether);
+
+        // User1 claims
+        vm.prank(user1);
+        router.claimRewards(nativePoolId);
+
+        // User1 should have: 20 ether from first batch + 50 ether from second batch
+        assertApproxEqAbs(rewardToken.balanceOf(user1), 70 ether, 10, "User1 total rewards");
+    }
+
+    function testGetPendingRewards() public {
+        // Deposit
+        vm.startPrank(user1);
+        router.depositNative{value: 10 ether}(nativePoolId);
+        vm.stopPrank();
+
+        // Add rewards
+        rewardToken.mint(owner, 100 ether);
+        rewardToken.transfer(address(nativePool), 100 ether);
+
+        // Check pending rewards via router
+        (address[] memory tokens, uint[] memory amounts) = router.getPendingRewards(nativePoolId, user1);
+
+        assertEq(tokens.length, 1, "One reward token");
+        assertEq(tokens[0], address(rewardToken), "Correct reward token");
+        assertApproxEqAbs(amounts[0], 100 ether, 10, "Correct pending amount");
+    }
+
+    function testGetPendingReward() public {
+        // Deposit
+        vm.startPrank(user1);
+        router.depositNative{value: 10 ether}(nativePoolId);
+        vm.stopPrank();
+
+        // Add rewards
+        rewardToken.mint(owner, 100 ether);
+        rewardToken.transfer(address(nativePool), 100 ether);
+
+        // Check pending reward for specific token
+        uint amount = router.getPendingReward(nativePoolId, user1, address(rewardToken));
+
+        assertApproxEqAbs(amount, 100 ether, 10, "Correct pending amount");
+    }
+
+    function testGetRemovedTokenRewardsViaRouter() public {
+        // Setup deposit
+        vm.startPrank(user1);
+        router.depositNative{value: 10 ether}(nativePoolId);
+        vm.stopPrank();
+
+        // Add and remove reward token with pending rewards
+        MockERC20 removedToken = new MockERC20("Removed", "REM");
+        crossGameReward.addRewardToken(nativePoolId, IERC20(address(removedToken)));
+
+        uint rewardAmount = 25 ether;
+        removedToken.mint(owner, rewardAmount);
+        removedToken.transfer(address(nativePool), rewardAmount);
+
+        crossGameReward.removeRewardToken(nativePoolId, IERC20(address(removedToken)));
+
+        (address[] memory tokens, uint[] memory amounts) = router.getRemovedTokenRewards(nativePoolId, user1);
+
+        assertEq(tokens.length, 1, "One removed token");
+        assertEq(tokens[0], address(removedToken), "Removed token address");
+        assertApproxEqAbs(amounts[0], rewardAmount, 10, "Pending amount for removed token");
+    }
+
+    function testGetAllPendingRewardsIncludesRemovedTokens() public {
+        // Deposit
+        vm.startPrank(user1);
+        router.depositNative{value: 10 ether}(nativePoolId);
+        vm.stopPrank();
+
+        // Active reward
+        rewardToken.mint(owner, 40 ether);
+        rewardToken.transfer(address(nativePool), 40 ether);
+
+        // Removed reward
+        MockERC20 removedToken = new MockERC20("Removed", "REM");
+        crossGameReward.addRewardToken(nativePoolId, IERC20(address(removedToken)));
+        uint removedRewardAmount = 60 ether;
+        removedToken.mint(owner, removedRewardAmount);
+        removedToken.transfer(address(nativePool), removedRewardAmount);
+        crossGameReward.removeRewardToken(nativePoolId, IERC20(address(removedToken)));
+
+        (address[] memory tokens, uint[] memory amounts) = router.getAllPendingRewards(nativePoolId, user1);
+
+        assertEq(tokens.length, 2, "Active + removed tokens reported");
+
+        // Active token should be first, removed second (order defined by helper)
+        assertEq(tokens[0], address(rewardToken), "Active token first");
+        assertApproxEqAbs(amounts[0], 40 ether, 10, "Active reward amount");
+        assertEq(tokens[1], address(removedToken), "Removed token second");
+        assertApproxEqAbs(amounts[1], removedRewardAmount, 10, "Removed reward amount");
+
+        vm.prank(user1);
+        router.claimRewards(nativePoolId);
+
+        assertApproxEqAbs(rewardToken.balanceOf(user1), 40 ether, 10, "Active token claimed");
+        assertApproxEqAbs(removedToken.balanceOf(user1), removedRewardAmount, 10, "Removed token claimed");
     }
 }
