@@ -76,7 +76,7 @@ function _syncReward(IERC20 token) internal {
 }
 ```
 
-**Behavior (current version):**
+**Behavior:**
 1. Rewards deposited when `totalDeposited=0` are classified as `withdrawableAmount`
 2. First depositr does **not** receive these rewards
 3. Owner can recover via `CrossGameReward.withdrawFromPool()`

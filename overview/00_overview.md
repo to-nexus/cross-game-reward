@@ -1,4 +1,4 @@
-# Cross GameReward Protocol v2.0 – Overview
+# Cross GameReward Protocol – Overview
 
 ## 🎯 Introduction
 Cross GameReward Protocol is a **multi-pool deposit system** designed for native CROSS and ERC-20 tokens. It wraps native assets automatically and distributes rewards through an efficient `rewardPerToken` accumulator.
@@ -97,8 +97,8 @@ crossDeposit.addRewardToken(poolId, address(usdt));
 
 ---
 
-## 📈 Current Metrics
-- Tests: **233 / 233 passing** (includes comprehensive edge case coverage)
+## 📈 Metrics
+- Tests: **233 / 233 passing** (comprehensive edge case coverage)
 - Gas footprint: all contracts < 24 KB, deposit/withdraw ~140–280k gas, claim O(1)
 - Reward distribution: O(1) per deposit, proportional to deposit share
 - Security: Multi-layered defense (reentrancy, access control, zero-deposit protection)

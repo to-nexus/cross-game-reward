@@ -55,33 +55,28 @@ depositToken.safeTransfer(user, amount);
 
 ### WCROSS - WETH9 Pattern
 - Follows the WETH9 standard: anyone can wrap/unwrap
-- **Key Change**: Removed router-only restriction
+- Open deposit/withdraw pattern
   ```solidity
-  // Before: router-only
-  function deposit() external payable onlyRouter { ... }
-  
-  // After: open to everyone
   function deposit() public payable { ... }
+  function withdraw(uint amount) public { ... }
   ```
 - Security maintained by ERC20 transfer rules - only token owner can transfer
 - Enables direct DEX integration and better composability
-- See `WCROSS_SECURITY_ANALYSIS.md` for detailed security review
 
 ---
 
 ## 🧪 Test Suite
-- Foundry-based: 9 test files / **233 test cases** (`forge test`, 2025-11-17).
+- Foundry-based: 9 test files / **233 test cases**.
 - Test Coverage by Contract:
-  - **CrossGameRewardRouter**: 39 tests (incl. 12 new claim tests)
-  - **CrossGameRewardPool**: 142 tests (incl. claim refactoring validation)
-  - **WCROSS**: 10 tests (updated for WETH9 pattern)
-  - **CrossGameReward**: 30 tests (factory and pool creation)
-  - **Integration Tests**: 12 tests (end-to-end scenarios)
+  - **CrossGameRewardRouter**: 39 tests
+  - **CrossGameRewardPool**: 142 tests
+  - **WCROSS**: 10 tests
+  - **CrossGameReward**: 30 tests
+  - **Integration Tests**: 12 tests
 - Categories:
   - **Functional**: deposit flows, reward accrual, view functions, claim operations.
   - **Integration**: end-to-end journeys, multi-pool coordination.
   - **Security**: reentrancy attempts, role enforcement, invariant checks.
-  - **Refactoring Validation**: claim function optimization (48% code reduction, <0.01% gas increase).
 - Helpers: `_userDeposit`, `_depositReward`, `_warpDays` enable comprehensive scenario coverage.
 
 ---
@@ -94,11 +89,10 @@ depositToken.safeTransfer(user, amount);
 ---
 
 ## ✅ Summary
-- **233/233 tests passing** as of 2025-11-17 (Foundry).
+- **233/233 tests passing** (Foundry).
 - Layered security controls built on well-audited OpenZeppelin modules.
 - Removed-reward locking risk is mitigated via automatic settlement on withdraw.
 - Router claim wrapper enables reward claiming without full withdrawal.
 - WCROSS WETH9 pattern improves composability while maintaining security.
-- Pool claim functions refactored for better maintainability (48% code reduction, 100% test coverage maintained).
 
 See also: [../test/README.md](../test/README.md)

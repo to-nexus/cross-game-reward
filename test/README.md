@@ -303,9 +303,10 @@ assertEq(userNativeBalance, expectedNativeBalance);
 - [Gas Snapshots](https://book.getfoundry.sh/forge/gas-snapshots)
 
 ### 프로젝트 문서
-- [Architecture (ko)](../overview/ko/01_architecture.md) · [Architecture (en)](../overview/en/01_architecture.md)
-- [Reward Mechanism (ko)](../overview/ko/02_reward_mechanism.md) · [Reward Mechanics (en)](../overview/en/02_reward_mechanism.md)
-- [Security & Testing (ko)](../overview/ko/03_security_and_testing.md) · [Security & Testing (en)](../overview/en/03_security_and_testing.md)
+- [Overview](../overview/00_overview.md)
+- [Architecture](../overview/01_architecture.md)
+- [Reward Mechanism](../overview/02_reward_mechanism.md)
+- [Security & Testing](../overview/03_security_and_testing.md)
 
 ---
 
@@ -313,12 +314,11 @@ assertEq(userNativeBalance, expectedNativeBalance);
 
 배포 전 확인:
 
-- [x] 212/212 테스트 통과
-- [x] Gas 최적화 확인
-- [x] 커버리지 ~100%
-- [x] 보안 검증 완료
-- [x] M-01 문제 수정 완료
-- [ ] 외부 감사 (권장)
+- 212/212 테스트 통과
+- Gas 최적화 확인
+- 커버리지 ~100%
+- 보안 검증 완료
+- 외부 감사 권장
 
 ---
 
@@ -355,7 +355,3 @@ assertEq(userNativeBalance, expectedNativeBalance);
 - **커버리지:** ~100%
 - **실행 시간:** ~2초
 - **평균 Gas:** 최적화됨
-
----
-
-**최종 업데이트:** 2025-11-05
