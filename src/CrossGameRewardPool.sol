@@ -930,5 +930,5 @@ contract CrossGameRewardPool is
     /**
      * @dev Storage gap for future upgrades
      */
-    uint[38] private __gap;
+    uint[37] private __gap;
 }
