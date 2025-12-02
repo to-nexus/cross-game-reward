@@ -96,8 +96,8 @@ The protocol exposes a modular multi-pool deposit topology built around a `rewar
   // Deposit/Withdraw
   deposit(uint amount)                        // Active state only
   depositFor(address account, uint amount)    // Router only, Active state
-  withdraw()                                 // Active/Inactive state
-  withdrawFor(address account)               // Router only
+  withdraw(uint amount)                      // Active/Inactive state (0 = withdraw all)
+  withdrawFor(address account, uint amount)  // Router only (0 = withdraw all)
 
   // Claim (refactored)
   claimRewards()                            // claim all rewards
@@ -122,10 +122,10 @@ The protocol exposes a modular multi-pool deposit topology built around a `rewar
   ```solidity
   // Deposit/Withdraw
   depositNative(uint poolId) payable
-  withdrawNative(uint poolId)
+  withdrawNative(uint poolId, uint amount)      // 0 = withdraw all
   depositERC20(uint poolId, uint amount)
   depositERC20WithPermit(uint poolId, uint amount, ...) // EIP-2612
-  withdrawERC20(uint poolId)
+  withdrawERC20(uint poolId, uint amount)       // 0 = withdraw all
 
   // Claim (newly added)
   claimRewards(uint poolId)                    // claim all rewards

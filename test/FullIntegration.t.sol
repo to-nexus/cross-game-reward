@@ -138,7 +138,7 @@ contract FullIntegrationTest is Test {
         // Alice withdraws
         uint aliceBalanceBefore = alice.balance;
         vm.prank(alice);
-        router.withdrawNative(nativePoolId);
+        router.withdrawNative(nativePoolId, 0);
 
         assertEq(alice.balance, aliceBalanceBefore + 100 ether, "Alice got native CROSS");
         assertApproxEqAbs(usdt.balanceOf(alice), 1000 ether, 100, "Alice got USDT");
@@ -241,13 +241,13 @@ contract FullIntegrationTest is Test {
 
         // All withdraw
         vm.prank(alice);
-        router.withdrawNative(nativePoolId);
+        router.withdrawNative(nativePoolId, 0);
 
         vm.prank(bob);
-        router.withdrawNative(nativePoolId);
+        router.withdrawNative(nativePoolId, 0);
 
         vm.prank(carol);
-        router.withdrawNative(nativePoolId);
+        router.withdrawNative(nativePoolId, 0);
 
         // Verify pool is empty
         assertEq(pool.totalDeposited(), 0, "Pool empty");
@@ -304,7 +304,7 @@ contract FullIntegrationTest is Test {
 
         // Alice withdraws
         vm.prank(alice);
-        router.withdrawNative(nativePoolId);
+        router.withdrawNative(nativePoolId, 0);
 
         assertApproxEqAbs(usdt.balanceOf(alice), 100 ether, 100, "Alice got first rewards");
 
@@ -322,7 +322,7 @@ contract FullIntegrationTest is Test {
         // Alice withdraws again
         uint usdtBefore = usdt.balanceOf(alice);
         vm.prank(alice);
-        router.withdrawNative(nativePoolId);
+        router.withdrawNative(nativePoolId, 0);
 
         // Alice should receive only Reward 3 (Reward 2 was deposited when pool was empty)
         assertApproxEqAbs(usdt.balanceOf(alice) - usdtBefore, 100 ether, 1 ether, "Alice got only Reward 3");
@@ -361,8 +361,8 @@ contract FullIntegrationTest is Test {
 
         // Bob tries to withdraw Alice's deposit
         vm.prank(bob);
-        vm.expectRevert(CrossGameRewardRouter.CSRNoDepositFound.selector);
-        router.withdrawNative(nativePoolId);
+        vm.expectRevert(abi.encodeWithSelector(CrossGameRewardPool.CGRPNoDepositFound.selector, bob));
+        router.withdrawNative(nativePoolId, 0);
     }
 
     function testReentrancyProtection() public {

@@ -35,7 +35,9 @@ contract CrossGameRewardPoolAdminTest is CrossGameRewardPoolBase {
     function testCannotAddSameRewardTokenTwice() public {
         crossGameReward.addRewardToken(1, rewardToken3);
 
-        vm.expectRevert(CrossGameRewardPool.CGRPRewardTokenAlreadyAdded.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(CrossGameRewardPool.CGRPRewardTokenAlreadyAdded.selector, address(rewardToken3))
+        );
         crossGameReward.addRewardToken(1, rewardToken3);
     }
 
@@ -98,7 +100,9 @@ contract CrossGameRewardPoolAdminTest is CrossGameRewardPoolBase {
     }
 
     function testCannotRemoveNonExistentToken() public {
-        vm.expectRevert(CrossGameRewardPool.CGRPInvalidRewardToken.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(CrossGameRewardPool.CGRPInvalidRewardToken.selector, address(rewardToken3))
+        );
         crossGameReward.removeRewardToken(1, rewardToken3);
     }
 
@@ -196,7 +200,9 @@ contract CrossGameRewardPoolAdminTest is CrossGameRewardPoolBase {
         crossGameReward.removeRewardToken(1, rewardToken1);
 
         // No extra deposits - cannot withdraw
-        vm.expectRevert(CrossGameRewardPool.CGRPNoReclaimableAmount.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(CrossGameRewardPool.CGRPNoReclaimableAmount.selector, address(rewardToken1))
+        );
         crossGameReward.reclaimFromPool(1, rewardToken1, owner);
     }
 
@@ -261,7 +267,11 @@ contract CrossGameRewardPoolAdminTest is CrossGameRewardPoolBase {
 
         vm.startPrank(user1);
         crossToken.approve(address(pool), 10 ether);
-        vm.expectRevert(CrossGameRewardPool.CGRPCannotDepositInCurrentState.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                CrossGameRewardPool.CGRPCannotDepositInCurrentState.selector, ICrossGameRewardPool.PoolStatus.Inactive
+            )
+        );
         pool.deposit(10 ether);
         vm.stopPrank();
     }
@@ -272,7 +282,7 @@ contract CrossGameRewardPoolAdminTest is CrossGameRewardPoolBase {
         crossGameReward.setPoolStatus(1, ICrossGameRewardPool.PoolStatus.Inactive); // Inactive
 
         vm.prank(user1);
-        pool.withdraw();
+        pool.withdraw(0);
         assertEq(pool.balances(user1), 0, "Should be able to withdraw when inactive");
     }
 
@@ -284,7 +294,7 @@ contract CrossGameRewardPoolAdminTest is CrossGameRewardPoolBase {
         vm.prank(user1);
         // When paused, PausableUpgradeable.EnforcedPause is thrown first (from whenNotPaused modifier)
         vm.expectRevert();
-        pool.withdraw();
+        pool.withdraw(0);
     }
 
     function testCanClaimWhenInactive() public {

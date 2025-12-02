@@ -14,6 +14,7 @@ Cross GameReward Protocol is a multi-pool deposit system for native CROSS and ER
 - ✅ Fair reward distribution with zero-deposit protection
 - ✅ Enhanced reward query APIs with token addresses
 - ✅ Hardened security stack with upgrade gates and role separation
+- ✅ Partial withdrawal support for flexible liquidity management
 
 ---
 
@@ -46,12 +47,16 @@ CrossGameRewardPool × N (UUPS pools)
 ### Native deposit
 1. User approves WCROSS to the router  
 2. `depositNative` wraps native CROSS into WCROSS and deposits via `depositFor`  
-3. `withdrawNative` claims rewards, unwraps WCROSS, and returns native CROSS
+3. `withdrawNative(poolId, amount)` claims all rewards, unwraps WCROSS, and returns native CROSS
+   - `amount > 0`: Partial withdrawal of specified amount
+   - `amount = 0`: Full withdrawal of all deposited tokens
 
 ### ERC-20 deposit
 1. User approves the router for the deposit token  
 2. Router transfers tokens, calls `depositFor`, and records the position  
-3. `withdrawERC20` returns the principal to the user and rewards directly from the pool
+3. `withdrawERC20(poolId, amount)` returns the principal to the user and all rewards directly from the pool
+   - `amount > 0`: Partial withdrawal of specified amount
+   - `amount = 0`: Full withdrawal of all deposited tokens
 
 ### Reward funding & queries
 - Any address can transfer reward tokens to the pool  
@@ -89,6 +94,8 @@ Control: `CrossGameReward.setPoolStatus(poolId, status)`
 - **Zero-deposit protection**: Prevents unfair rewards to first depositor
 - **Removed tokens**: `distributedAmount` (user-claimable) vs `withdrawableAmount` (owner-recoverable)
 - **Accuracy**: Mathematically guaranteed proportional distribution
+- **Partial withdrawal**: Withdraw specific amounts (`withdraw(amount)`) while remaining balance continues earning
+- **Automatic claim**: All accumulated rewards claimed during any withdrawal (partial or full)
 
 ### 3. Access Control
 **CrossGameReward:**
@@ -135,18 +142,19 @@ forge test --gas-report                    # gas report
 |--------------------------------|--------------|
 | WCROSS                         | 10           |
 | CrossGameReward                   | 33           |
-| CrossGameRewardRouter             | 28           |
-| CrossGameRewardPoolDeposit        | 18           |
+| CrossGameRewardRouter             | 44           |
+| CrossGameRewardPoolDeposit        | 24           |
 | CrossGameRewardPoolRewards        | 27           |
 | CrossGameRewardPoolAdmin          | 34           |
 | CrossGameRewardPoolIntegration    | 11           |
 | CrossGameRewardPoolPendingRewards | 9            |
 | CrossGameRewardPoolSecurity       | 21           |
 | CrossGameRewardPoolEdgeCases      | 12           |
+| CrossGameRewardPoolClaimRecovery  | 10           |
 | FullIntegration                | 9            |
-| **Total**                      | **212**      |
+| **Total**                      | **244**      |
 
-**Coverage:** ~100%, covering multi-pool deployment, reward removal, router flows, zero-deposit scenarios, stress cases, and invariant checks.
+**Coverage:** ~100%, covering multi-pool deployment, reward removal, router flows, zero-deposit scenarios, partial withdrawals, stress cases, and invariant checks.
 
 ---
 
@@ -154,9 +162,9 @@ forge test --gas-report                    # gas report
 
 ### Statistics
 - **Contracts**: 4 main + 4 interfaces
-- **Test Suites**: 11
-- **Total Tests**: 212 (100% passing)
-- **Lines of Code**: ~3,500 (including tests)
+- **Test Suites**: 12
+- **Total Tests**: 244 (100% passing)
+- **Lines of Code**: ~4,000 (including tests)
 - **Warnings**: 0
 - **Gas Optimizations**: Event deduplication, custom errors
 

@@ -25,16 +25,16 @@ contract CrossGameRewardRouter is ICrossGameRewardRouter {
     // ==================== Errors ====================
 
     /// @notice Thrown when an invalid amount is provided
-    error CSRInvalidAmount();
+    /// @param provided The amount provided
+    error CSRInvalidAmount(uint provided);
 
     /// @notice Thrown when a zero address is provided where it's not allowed
     error CSRCanNotZeroAddress();
 
     /// @notice Thrown when attempting native operations on a non-WCROSS pool
-    error CSRNotWCROSSPool();
-
-    /// @notice Thrown when attempting to withdraw with no active deposit
-    error CSRNoDepositFound();
+    /// @param poolId The pool ID
+    /// @param actualToken The actual deposit token of the pool
+    error CSRNotWCROSSPool(uint poolId, address actualToken);
 
     // ==================== Events ====================
 
@@ -93,7 +93,7 @@ contract CrossGameRewardRouter is ICrossGameRewardRouter {
      * @param poolId ID of the pool to deposit into
      */
     function depositNative(uint poolId) external payable {
-        require(msg.value > 0, CSRInvalidAmount());
+        require(msg.value > 0, CSRInvalidAmount(msg.value));
 
         ICrossGameRewardPool pool = _getPoolAndValidateWCROSS(poolId);
 
@@ -107,24 +107,33 @@ contract CrossGameRewardRouter is ICrossGameRewardRouter {
         emit DepositedNative(msg.sender, poolId, msg.value);
     }
 
+    function withdrawNative(uint poolId) external {
+        withdrawNative(poolId, 0);
+    }
+
     /**
      * @notice Withdraws and returns native CROSS tokens
      * @dev Withdraws WCROSS from pool and unwraps to native CROSS
      * @param poolId ID of the pool to withdraw from
+     * @param amount Amount to withdraw (0 = withdraw all)
      */
-    function withdrawNative(uint poolId) external {
+    function withdrawNative(uint poolId, uint amount) public {
         ICrossGameRewardPool pool = _getPoolAndValidateWCROSS(poolId);
 
-        uint depositedAmount = pool.balances(msg.sender);
-        require(depositedAmount > 0, CSRNoDepositFound());
+        // Get Router's WCROSS balance before withdrawal
+        uint balanceBefore = IERC20(wcross).balanceOf(address(this));
 
         // Withdraw from pool (WCROSS sent to Router, rewards sent to msg.sender)
-        pool.withdrawFor(msg.sender);
+        pool.withdrawFor(msg.sender, amount);
+
+        // Calculate actual withdrawn amount
+        uint balanceAfter = IERC20(wcross).balanceOf(address(this));
+        uint withdrawnAmount = balanceAfter - balanceBefore;
 
         // Router unwraps and sends native CROSS directly to user
-        wcross.withdrawTo(msg.sender, depositedAmount);
+        wcross.withdrawTo(msg.sender, withdrawnAmount);
 
-        emit WithdrawnNative(msg.sender, poolId, depositedAmount);
+        emit WithdrawnNative(msg.sender, poolId, withdrawnAmount);
     }
 
     // ==================== ERC20 Deposit (General Tokens) ====================
@@ -136,7 +145,7 @@ contract CrossGameRewardRouter is ICrossGameRewardRouter {
      * @param amount Amount of tokens to deposit
      */
     function depositERC20(uint poolId, uint amount) external {
-        require(amount > 0, CSRInvalidAmount());
+        require(amount > 0, CSRInvalidAmount(amount));
 
         ICrossGameRewardPool pool = _getPool(poolId);
         IERC20 depositToken = pool.depositToken();
@@ -155,7 +164,7 @@ contract CrossGameRewardRouter is ICrossGameRewardRouter {
      * @param s Permit signature s
      */
     function depositERC20WithPermit(uint poolId, uint amount, uint deadline, uint8 v, bytes32 r, bytes32 s) external {
-        require(amount > 0, CSRInvalidAmount());
+        require(amount > 0, CSRInvalidAmount(amount));
 
         ICrossGameRewardPool pool = _getPool(poolId);
         IERC20 depositToken = pool.depositToken();
@@ -166,25 +175,34 @@ contract CrossGameRewardRouter is ICrossGameRewardRouter {
         _depositERC20(poolId, pool, depositToken, amount);
     }
 
+    function withdrawERC20(uint poolId) external {
+        withdrawERC20(poolId, 0);
+    }
+
     /**
      * @notice Withdraws ERC20 tokens
-     * @dev Withdraws all deposited tokens and claims rewards
+     * @dev Withdraws deposited tokens and claims rewards
      * @param poolId ID of the pool to withdraw from
+     * @param amount Amount to withdraw (0 = withdraw all)
      */
-    function withdrawERC20(uint poolId) external {
+    function withdrawERC20(uint poolId, uint amount) public {
         ICrossGameRewardPool pool = _getPool(poolId);
         IERC20 depositToken = pool.depositToken();
 
-        uint depositedAmount = pool.balances(msg.sender);
-        require(depositedAmount > 0, CSRNoDepositFound());
+        // Get Router's deposit token balance before withdrawal
+        uint balanceBefore = depositToken.balanceOf(address(this));
 
         // Withdraw (deposit tokens sent to Router, rewards to msg.sender)
-        pool.withdrawFor(msg.sender);
+        pool.withdrawFor(msg.sender, amount);
+
+        // Calculate actual withdrawn amount
+        uint balanceAfter = depositToken.balanceOf(address(this));
+        uint withdrawnAmount = balanceAfter - balanceBefore;
 
         // Transfer deposit tokens from Router to user
-        depositToken.safeTransfer(msg.sender, depositedAmount);
+        depositToken.safeTransfer(msg.sender, withdrawnAmount);
 
-        emit WithdrawnERC20(msg.sender, poolId, address(depositToken), depositedAmount);
+        emit WithdrawnERC20(msg.sender, poolId, address(depositToken), withdrawnAmount);
     }
 
     // ==================== Claim Rewards ====================
@@ -324,7 +342,7 @@ contract CrossGameRewardRouter is ICrossGameRewardRouter {
      */
     function _getPoolAndValidateWCROSS(uint poolId) internal view returns (ICrossGameRewardPool pool) {
         pool = _getPool(poolId);
-        require(address(pool.depositToken()) == address(wcross), CSRNotWCROSSPool());
+        require(address(pool.depositToken()) == address(wcross), CSRNotWCROSSPool(poolId, address(pool.depositToken())));
     }
 
     function _depositERC20(uint poolId, ICrossGameRewardPool pool, IERC20 token, uint amount) internal {

@@ -182,7 +182,7 @@ contract WCROSSTest is Test {
         // Withdraw
         uint balanceBefore = user1.balance;
         vm.prank(user1);
-        router.withdrawNative(poolId);
+        router.withdrawNative(poolId, 0);
 
         // Verify native CROSS returned
         assertEq(user1.balance, balanceBefore + 10 ether, "Native CROSS returned");

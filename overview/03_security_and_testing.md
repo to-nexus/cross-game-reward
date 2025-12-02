@@ -66,17 +66,17 @@ depositToken.safeTransfer(user, amount);
 ---
 
 ## 🧪 Test Suite
-- Foundry-based: 9 test files / **233 test cases**.
+- Foundry-based: 12 test files / **244 test cases**.
 - Test Coverage by Contract:
-  - **CrossGameRewardRouter**: 39 tests
-  - **CrossGameRewardPool**: 142 tests
+  - **CrossGameRewardRouter**: 44 tests (including partial withdrawal scenarios)
+  - **CrossGameRewardPool**: 147 tests (including partial withdrawal edge cases)
   - **WCROSS**: 10 tests
-  - **CrossGameReward**: 30 tests
-  - **Integration Tests**: 12 tests
+  - **CrossGameReward**: 33 tests
+  - **Integration Tests**: 10 tests
 - Categories:
-  - **Functional**: deposit flows, reward accrual, view functions, claim operations.
-  - **Integration**: end-to-end journeys, multi-pool coordination.
-  - **Security**: reentrancy attempts, role enforcement, invariant checks.
+  - **Functional**: deposit flows, reward accrual, view functions, claim operations, partial withdrawals.
+  - **Integration**: end-to-end journeys, multi-pool coordination, partial withdrawal with rewards.
+  - **Security**: reentrancy attempts, role enforcement, invariant checks, withdrawal boundary tests.
 - Helpers: `_userDeposit`, `_depositReward`, `_warpDays` enable comprehensive scenario coverage.
 
 ---
@@ -89,10 +89,11 @@ depositToken.safeTransfer(user, amount);
 ---
 
 ## ✅ Summary
-- **233/233 tests passing** (Foundry).
+- **244/244 tests passing** (Foundry), including comprehensive partial withdrawal coverage.
 - Layered security controls built on well-audited OpenZeppelin modules.
 - Removed-reward locking risk is mitigated via automatic settlement on withdraw.
 - Router claim wrapper enables reward claiming without full withdrawal.
+- Partial withdrawal support with automatic reward claiming for flexible liquidity management.
 - WCROSS WETH9 pattern improves composability while maintaining security.
 
 See also: [../test/README.md](../test/README.md)

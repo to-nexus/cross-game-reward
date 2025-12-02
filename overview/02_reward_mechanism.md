@@ -64,6 +64,36 @@ Example:
 
 ## 💡 Special Cases
 
+### Partial Withdrawals
+Users can withdraw a portion of their deposited tokens while keeping the rest earning rewards:
+
+```solidity
+// Partial withdrawal
+pool.withdraw(30 ether);  // Withdraw 30 ether, remaining balance continues earning
+
+// Full withdrawal
+pool.withdraw(0);  // 0 = withdraw all deposited tokens
+```
+
+**Behavior:**
+1. All accumulated rewards are automatically claimed during any withdrawal (partial or full)
+2. Remaining balance continues earning rewards proportionally
+3. Users can perform multiple partial withdrawals
+4. No minimum remaining balance requirement
+
+**Example:**
+```
+1. Alice deposits 100 CROSS
+2. 100 reward tokens deposited → Alice pending rewards = 100
+3. Alice partially withdraws 30 CROSS
+   - Receives: 30 CROSS + 100 reward tokens (all accumulated)
+   - Remaining: 70 CROSS continues earning
+4. 70 more rewards deposited → Alice pending = 70
+   (distributed to remaining 70 CROSS balance)
+5. Alice withdraws remaining (0 = all)
+   - Receives: 70 CROSS + 70 reward tokens
+```
+
 ### No depositors present (Zero-Deposit Protection)
 ```solidity
 function _syncReward(IERC20 token) internal {
@@ -117,6 +147,9 @@ function _syncReward(IERC20 token) internal {
 ---
 
 ## ⚠️ Operational Notes
+- **Partial withdrawals**: `withdraw(amount)` for specific amount, `withdraw(0)` for full withdrawal
+- **Automatic reward claim**: All withdrawals (partial or full) automatically claim all accumulated rewards
+- **Flexible liquidity**: Withdraw portions while keeping the rest earning rewards
 - Removed reward tokens remain claimable via `claimReward(removedToken)`
 - Zero-deposit deposits are owner-recoverable via `withdrawFromPool`
 - Reward queries support both bulk (`pendingRewards`) and single-token (`pendingReward`) lookups

@@ -72,11 +72,11 @@ interface ICrossGameRewardPool is IERC5313 {
     /// @notice Deposits tokens on behalf of another account
     function depositFor(address account, uint amount) external;
 
-    /// @notice Withdraws all deposited tokens and claims rewards
-    function withdraw() external;
+    /// @notice Withdraws deposited tokens and claims rewards
+    function withdraw(uint amount) external;
 
     /// @notice Withdraws tokens on behalf of another account
-    function withdrawFor(address account) external;
+    function withdrawFor(address account, uint amount) external;
 
     /// @notice Claims all pending rewards
     function claimRewards() external;
