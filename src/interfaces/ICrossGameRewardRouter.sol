@@ -11,13 +11,13 @@ interface ICrossGameRewardRouter {
     function depositNative(uint poolId) external payable;
 
     /// @notice Withdraws and returns native CROSS tokens
-    function withdrawNative(uint poolId) external;
+    function withdrawNative(uint poolId, uint amount) external;
 
     /// @notice Deposits ERC20 tokens
     function depositERC20(uint poolId, uint amount) external;
 
     /// @notice Withdraws ERC20 tokens
-    function withdrawERC20(uint poolId) external;
+    function withdrawERC20(uint poolId, uint amount) external;
 
     /// @notice Claims all pending rewards from a pool
     function claimRewards(uint poolId) external;

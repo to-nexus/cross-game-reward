@@ -32,6 +32,7 @@ CrossGameRewardPool × N (UUPS)
 - ✅ **3-state pool management** – Active/Inactive/Paused for granular control
 - ✅ **Fair reward distribution** – Pre-deposit rewards automatically marked as withdrawable
 - ✅ **Removed reward settlement** – rewards for removed tokens are auto-claimed during withdraw
+- ✅ **Partial withdrawal** – withdraw specific amounts while keeping rewards earning
 
 ## 🚀 Quick start
 
@@ -60,8 +61,11 @@ wcross.approve(address(router), type(uint256).max);
 // Deposit
 router.depositNative{value: 100 ether}(poolId);
 
-// Withdraw + collect rewards
-router.withdrawNative(poolId);
+// Partial withdraw (30 ether) + collect all rewards
+router.withdrawNative(poolId, 30 ether);
+
+// Withdraw all remaining + collect rewards
+router.withdrawNative(poolId, 0);  // 0 = withdraw all
 ```
 
 ### Admin – create pool & configure rewards
@@ -125,11 +129,18 @@ Removed reward tokens stay in `_removedRewardTokenAddresses` and are synchronise
 ### Core principles
 - Uses `rewardPerToken` accumulation (`PRECISION = 1e18`) keeping gas cost constant
 - Anyone can fund rewards by transferring tokens to the pool
-- During deposit, use `claimReward(token)` / `claimRewards()` to collect active token rewards
+- During withdraw or claim, use `claimReward(token)` / `claimRewards()` to collect active token rewards
+- Partial withdrawals automatically claim all accumulated rewards
 
 ### Reward queries
 - `pendingRewards(user)`: Returns all active reward tokens and pending amounts `(address[] tokens, uint[] rewards)`
 - `pendingReward(user, token)`: Query pending reward for a specific token `uint amount`
+
+### Partial withdrawal
+- `withdraw(amount)`: Withdraw specific amount while keeping remaining balance earning rewards
+- `withdraw(0)`: Withdraw all deposited tokens (default behavior)
+- All accumulated rewards are automatically claimed during any withdrawal
+- Remaining balance continues to earn rewards proportionally
 
 ### Zero-deposit protection
 - Rewards deposited when `totalDeposited=0` are classified as `withdrawableAmount`
@@ -168,23 +179,23 @@ forge test --match-contract CrossGameReward
 forge test --gas-report
 ```
 
-**Test coverage:** 233 tests across 12 suites:
+**Test coverage:** 244 tests across 12 suites:
 
 | Suite                          | Tests |
 |--------------------------------|-------|
 | WCROSS                         | 10    |
 | CrossGameReward                   | 33    |
-| CrossGameRewardRouter             | 28    |
-| CrossGameRewardPoolDeposit        | 18    |
+| CrossGameRewardRouter             | 44    |
+| CrossGameRewardPoolDeposit        | 24    |
 | CrossGameRewardPoolRewards        | 27    |
 | CrossGameRewardPoolAdmin          | 34    |
 | CrossGameRewardPoolIntegration    | 11    |
 | CrossGameRewardPoolPendingRewards | 9     |
 | CrossGameRewardPoolSecurity       | 21    |
 | CrossGameRewardPoolEdgeCases      | 12    |
-| CrossGameRewardPoolClaimRecovery  | 21    |
+| CrossGameRewardPoolClaimRecovery  | 10    |
 | FullIntegration                | 9     |
-| **Total**                      | **233** |
+| **Total**                      | **244** |
 
 ## 🔄 Upgrades
 
@@ -208,6 +219,8 @@ crossDeposit.setRouter(address(newRouter));
 - `setPoolStatus(poolId, status)`: 0=Active, 1=Inactive (claim/withdraw only), 2=Paused (all operations stopped)
 - Removed reward tokens can be claimed individually via `claimReward(removedToken)`
 - Zero-deposit deposits can be recovered via `withdrawFromPool`
+- Partial withdrawals: `withdraw(amount)` for specific amount, `withdraw(0)` for full withdrawal
+- All withdrawals automatically claim accumulated rewards regardless of withdrawal amount
 
 ## 📜 License
 

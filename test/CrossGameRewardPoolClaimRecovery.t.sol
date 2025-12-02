@@ -88,7 +88,7 @@ contract CrossGameRewardPoolClaimRecoveryTest is CrossGameRewardPoolBase {
 
         // User withdraws principal
         vm.prank(user1);
-        pool.withdraw();
+        pool.withdraw(0);
 
         // Verify balance is now 0
         assertEq(pool.balances(user1), 0, "Balance should be 0 after withdraw");
@@ -137,7 +137,7 @@ contract CrossGameRewardPoolClaimRecoveryTest is CrossGameRewardPoolBase {
 
         // User withdraws
         vm.prank(user1);
-        pool.withdraw();
+        pool.withdraw(0);
 
         // Fix the token
         failingToken.setTransferShouldFail(false);
@@ -156,11 +156,11 @@ contract CrossGameRewardPoolClaimRecoveryTest is CrossGameRewardPoolBase {
     function testCannotClaimWithZeroBalanceAndNoRewards() public {
         // User has no deposit and no stored rewards
         vm.prank(user1);
-        vm.expectRevert(CrossGameRewardPool.CGRPNoDepositFound.selector);
+        vm.expectRevert(abi.encodeWithSelector(CrossGameRewardPool.CGRPNoDepositFound.selector, user1));
         pool.claimRewards();
 
         vm.prank(user1);
-        vm.expectRevert(CrossGameRewardPool.CGRPNoDepositFound.selector);
+        vm.expectRevert(abi.encodeWithSelector(CrossGameRewardPool.CGRPNoDepositFound.selector, user1));
         pool.claimReward(IERC20(address(failingToken)));
     }
 
@@ -185,7 +185,7 @@ contract CrossGameRewardPoolClaimRecoveryTest is CrossGameRewardPoolBase {
 
         // Withdraw principal
         vm.prank(user1);
-        pool.withdraw();
+        pool.withdraw(0);
 
         // Fix token
         failingToken.setTransferShouldFail(false);
@@ -226,9 +226,9 @@ contract CrossGameRewardPoolClaimRecoveryTest is CrossGameRewardPoolBase {
 
         // Both withdraw
         vm.prank(user1);
-        pool.withdraw();
+        pool.withdraw(0);
         vm.prank(user2);
-        pool.withdraw();
+        pool.withdraw(0);
 
         // Fix token
         failingToken.setTransferShouldFail(false);
@@ -304,7 +304,7 @@ contract CrossGameRewardPoolClaimRecoveryTest is CrossGameRewardPoolBase {
 
         // Withdraw
         vm.prank(user1);
-        pool.withdraw();
+        pool.withdraw(0);
 
         // Try multiple times with 0 balance
         for (uint i = 0; i < 2; i++) {
@@ -349,7 +349,7 @@ contract CrossGameRewardPoolClaimRecoveryTest is CrossGameRewardPoolBase {
 
         // Withdraw
         vm.prank(user1);
-        pool.withdraw();
+        pool.withdraw(0);
 
         // Fix and claim
         failingToken.setTransferShouldFail(false);
@@ -380,7 +380,7 @@ contract CrossGameRewardPoolClaimRecoveryTest is CrossGameRewardPoolBase {
         // Withdraw - this will try to claim but fail, keeping stored rewards
         // Note: withdraw calls _claimRewards which will fail for failingToken
         vm.prank(user1);
-        pool.withdraw();
+        pool.withdraw(0);
 
         // User deposits again (new cycle)
         _userDeposit(user1, 20 ether);
@@ -421,7 +421,7 @@ contract CrossGameRewardPoolClaimRecoveryTest is CrossGameRewardPoolBase {
         pool.claimReward(IERC20(address(failingToken)));
 
         vm.prank(user1);
-        pool.withdraw();
+        pool.withdraw(0);
 
         failingToken.setTransferShouldFail(false);
 

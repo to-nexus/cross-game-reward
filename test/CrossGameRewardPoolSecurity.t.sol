@@ -22,7 +22,7 @@ contract CrossGameRewardPoolSecurityTest is CrossGameRewardPoolBase {
 
         // Should remain in sync after an withdraw
         vm.prank(user1);
-        pool.withdraw();
+        pool.withdraw(0);
 
         assertEq(pool.totalDeposited(), 500 ether, "TotalDeposited after withdraw");
         assertEq(crossToken.balanceOf(address(pool)), 500 ether, "Actual balance after withdraw");
@@ -50,18 +50,18 @@ contract CrossGameRewardPoolSecurityTest is CrossGameRewardPoolBase {
         _depositReward(address(rewardToken1), 200 ether);
 
         vm.prank(user1);
-        pool.withdraw();
+        pool.withdraw(0);
         uint user1Claimed = rewardToken1.balanceOf(user1);
 
         _userDeposit(user3, 100 ether);
         _depositReward(address(rewardToken1), 150 ether);
 
         vm.prank(user2);
-        pool.withdraw();
+        pool.withdraw(0);
         uint user2Claimed = rewardToken1.balanceOf(user2);
 
         vm.prank(user3);
-        pool.withdraw();
+        pool.withdraw(0);
         uint user3Claimed = rewardToken1.balanceOf(user3);
 
         // Total claimed rewards should equal total deposits
@@ -74,7 +74,7 @@ contract CrossGameRewardPoolSecurityTest is CrossGameRewardPoolBase {
     function testCannotDepositZeroAmount() public {
         vm.startPrank(user1);
         crossToken.approve(address(pool), 0);
-        vm.expectRevert(CrossGameRewardPool.CGRPBelowMinimumDepositAmount.selector);
+        vm.expectRevert(abi.encodeWithSelector(CrossGameRewardPool.CGRPBelowMinimumDepositAmount.selector, 0, 1 ether));
         pool.deposit(0);
         vm.stopPrank();
     }
@@ -86,7 +86,7 @@ contract CrossGameRewardPoolSecurityTest is CrossGameRewardPoolBase {
 
         // Baseline behaviour should succeed
         vm.prank(user1);
-        pool.withdraw();
+        pool.withdraw(0);
 
         assertEq(pool.balances(user1), 0, "Should complete without reentrancy");
     }
@@ -157,7 +157,7 @@ contract CrossGameRewardPoolSecurityTest is CrossGameRewardPoolBase {
         // 3. Claim rewards (updates lastBalance)
         // 4. Return deposit tokens (reduces CROSS balance)
         vm.prank(user1);
-        pool.withdraw();
+        pool.withdraw(0);
 
         // Ensure CROSS tokens were returned
         assertEq(crossToken.balanceOf(user1), 1000 ether, "Should receive CROSS back");
@@ -234,15 +234,15 @@ contract CrossGameRewardPoolSecurityTest is CrossGameRewardPoolBase {
 
         // Withdraw in order
         vm.prank(user1);
-        pool.withdraw();
+        pool.withdraw(0);
         uint claimed1 = rewardToken1.balanceOf(user1);
 
         vm.prank(user2);
-        pool.withdraw();
+        pool.withdraw(0);
         uint claimed2 = rewardToken1.balanceOf(user2);
 
         vm.prank(user3);
-        pool.withdraw();
+        pool.withdraw(0);
         uint claimed3 = rewardToken1.balanceOf(user3);
 
         // All users should receive the same amount regardless of order
@@ -310,7 +310,7 @@ contract CrossGameRewardPoolSecurityTest is CrossGameRewardPoolBase {
         _userDeposit(user1, 100 ether);
         _depositReward(address(rewardToken1), 100 ether);
         vm.prank(user1);
-        pool.withdraw();
+        pool.withdraw(0);
         uint user1Reward = rewardToken1.balanceOf(user1);
 
         // Scenario 2: reward after one year under the same conditions
@@ -318,7 +318,7 @@ contract CrossGameRewardPoolSecurityTest is CrossGameRewardPoolBase {
         _userDeposit(user2, 100 ether);
         _depositReward(address(rewardToken1), 100 ether);
         vm.prank(user2);
-        pool.withdraw();
+        pool.withdraw(0);
         uint user2Reward = rewardToken1.balanceOf(user2);
 
         // Rewards should be identical regardless of elapsed time
@@ -353,7 +353,7 @@ contract CrossGameRewardPoolSecurityTest is CrossGameRewardPoolBase {
         // Below minimum should fail
         vm.startPrank(user1);
         crossToken.approve(address(pool), belowMin);
-        vm.expectRevert(CrossGameRewardPool.CGRPBelowMinimumDepositAmount.selector);
+        vm.expectRevert(abi.encodeWithSelector(CrossGameRewardPool.CGRPBelowMinimumDepositAmount.selector, belowMin, MIN_DEPOSIT_AMOUNT));
         pool.deposit(belowMin);
 
         // Exact minimum should succeed
@@ -403,7 +403,7 @@ contract CrossGameRewardPoolSecurityTest is CrossGameRewardPoolBase {
         assertEq(crossToken.balanceOf(user1), initialBalance - 100 ether, "CROSS unchanged after claim");
 
         vm.prank(user1);
-        pool.withdraw();
+        pool.withdraw(0);
 
         // Restore original CROSS balances
         assertEq(crossToken.balanceOf(user1), initialBalance, "CROSS restored after withdraw");

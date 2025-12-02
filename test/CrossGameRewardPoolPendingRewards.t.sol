@@ -275,7 +275,7 @@ contract CrossGameRewardPoolPendingRewardsTest is CrossGameRewardPoolBase {
 
         // 5. User withdraws (balance becomes 0)
         vm.prank(user1);
-        pool.withdraw();
+        pool.withdraw(0);
 
         // 6. getRemovedTokenRewards should return 0 since user has no deposit and already claimed
         (, uint[] memory rewards) = pool.getRemovedTokenRewards(user1);

@@ -94,7 +94,7 @@ contract CrossGameRewardPoolEdgeCasesTest is CrossGameRewardPoolBase {
 
         // 4. User1 withdraws (claims 50 ether)
         vm.prank(user1);
-        pool.withdraw();
+        pool.withdraw(0);
         assertEq(rewardToken1.balanceOf(user1), 50 ether, "User1 got 50 ether");
 
         // 5. Pool is empty again, deposit more
@@ -253,7 +253,7 @@ contract CrossGameRewardPoolEdgeCasesTest is CrossGameRewardPoolBase {
 
         _depositReward(address(rewardToken1), 20 ether);
         vm.prank(user1);
-        pool.withdraw(); // Claims 20 ether
+        pool.withdraw(0); // Claims 20 ether
 
         // Cycle 3: empty deposit again
         _depositReward(address(rewardToken1), 15 ether);

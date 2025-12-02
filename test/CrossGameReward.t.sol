@@ -147,7 +147,7 @@ contract CrossGameRewardTest is Test {
     function testCannotAddRewardTokenToNonExistentPool() public {
         MockERC20 rewardToken = new MockERC20("Reward", "RWD");
 
-        vm.expectRevert(CrossGameReward.CGRPoolNotFound.selector);
+        vm.expectRevert(abi.encodeWithSelector(CrossGameReward.CGRPoolNotFound.selector, 999));
         crossGameReward.addRewardToken(999, IERC20(address(rewardToken)));
     }
 
@@ -195,7 +195,7 @@ contract CrossGameRewardTest is Test {
     }
 
     function testCannotSetStatusOnNonExistentPool() public {
-        vm.expectRevert(CrossGameReward.CGRPoolNotFound.selector);
+        vm.expectRevert(abi.encodeWithSelector(CrossGameReward.CGRPoolNotFound.selector, 999));
         crossGameReward.setPoolStatus(999, ICrossGameRewardPool.PoolStatus.Inactive);
     }
 
@@ -238,10 +238,10 @@ contract CrossGameRewardTest is Test {
     }
 
     function testCannotGetNonExistentPool() public {
-        vm.expectRevert(CrossGameReward.CGRPoolNotFound.selector);
+        vm.expectRevert(abi.encodeWithSelector(CrossGameReward.CGRPoolNotFound.selector, 999));
         crossGameReward.getPoolInfo(999);
 
-        vm.expectRevert(CrossGameReward.CGRPoolNotFound.selector);
+        vm.expectRevert(abi.encodeWithSelector(CrossGameReward.CGRPoolNotFound.selector, 999));
         crossGameReward.getPoolAddress(999);
     }
 

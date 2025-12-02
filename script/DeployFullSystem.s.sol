@@ -33,11 +33,10 @@ import "forge-std/Script.sol";
  * 사용법:
  * forge script script/DeployFullSystem.s.sol:DeployFullSystem \
  *   --rpc-url <RPC_URL> \
- *   --private-key <PRIVATE_KEY> \
  *   --broadcast
  */
 contract DeployFullSystem is Script {
-    uint48 public constant DEFAULT_INITIAL_DELAY = 2 days;
+    uint48 public constant DEFAULT_INITIAL_DELAY = 1 days;
     address public constant NATIVE_TOKEN_ADDRESS = address(0x1);
 
     function run() external {

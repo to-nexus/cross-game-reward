@@ -28,7 +28,9 @@ contract CrossGameRewardPoolDepositTest is CrossGameRewardPoolBase {
         vm.startPrank(user1);
         crossToken.approve(address(pool), depositAmount);
 
-        vm.expectRevert(CrossGameRewardPool.CGRPBelowMinimumDepositAmount.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(CrossGameRewardPool.CGRPBelowMinimumDepositAmount.selector, depositAmount, 1 ether)
+        );
         pool.deposit(depositAmount);
         vm.stopPrank();
     }
@@ -119,7 +121,7 @@ contract CrossGameRewardPoolDepositTest is CrossGameRewardPoolBase {
 
         vm.startPrank(user1);
         uint balanceBefore = crossToken.balanceOf(user1);
-        pool.withdraw();
+        pool.withdraw(0);
         uint balanceAfter = crossToken.balanceOf(user1);
         vm.stopPrank();
 
@@ -137,7 +139,7 @@ contract CrossGameRewardPoolDepositTest is CrossGameRewardPoolBase {
         uint rewardBalance1Before = rewardToken1.balanceOf(user1);
         uint crossBalanceBefore = crossToken.balanceOf(user1);
 
-        pool.withdraw();
+        pool.withdraw(0);
 
         uint rewardBalance1After = rewardToken1.balanceOf(user1);
         uint crossBalanceAfter = crossToken.balanceOf(user1);
@@ -156,7 +158,7 @@ contract CrossGameRewardPoolDepositTest is CrossGameRewardPoolBase {
 
         // Withdraw immediately with no time passing
         uint balanceBefore = crossToken.balanceOf(user1);
-        pool.withdraw();
+        pool.withdraw(0);
         uint balanceAfter = crossToken.balanceOf(user1);
         vm.stopPrank();
 
@@ -170,7 +172,7 @@ contract CrossGameRewardPoolDepositTest is CrossGameRewardPoolBase {
         // First cycle
         pool.deposit(10 ether);
         _warpSeconds(50);
-        pool.withdraw();
+        pool.withdraw(0);
 
         // Second cycle
         pool.deposit(20 ether);
@@ -183,13 +185,13 @@ contract CrossGameRewardPoolDepositTest is CrossGameRewardPoolBase {
 
     function testCannotWithdrawWithoutDeposit() public {
         vm.prank(user1);
-        vm.expectRevert(CrossGameRewardPool.CGRPNoDepositFound.selector);
-        pool.withdraw();
+        vm.expectRevert(abi.encodeWithSelector(CrossGameRewardPool.CGRPNoDepositFound.selector, user1));
+        pool.withdraw(0);
     }
 
     function testCannotClaimWithoutDeposit() public {
         vm.prank(user1);
-        vm.expectRevert(CrossGameRewardPool.CGRPNoDepositFound.selector);
+        vm.expectRevert(abi.encodeWithSelector(CrossGameRewardPool.CGRPNoDepositFound.selector, user1));
         pool.claimRewards();
     }
 
@@ -213,7 +215,7 @@ contract CrossGameRewardPoolDepositTest is CrossGameRewardPoolBase {
         assertEq(pool.totalDeposited(), 30 ether, "Total depositd should be 30");
 
         vm.prank(user1);
-        pool.withdraw();
+        pool.withdraw(0);
         assertEq(pool.totalDeposited(), 20 ether, "Total depositd should decrease to 20");
     }
 
@@ -237,5 +239,141 @@ contract CrossGameRewardPoolDepositTest is CrossGameRewardPoolBase {
 
     function testRewardTokenCount() public view {
         assertEq(pool.rewardTokenCount(), 2, "Should have 2 reward tokens");
+    }
+
+    // ==================== Partial withdrawal tests ====================
+
+    function testPartialWithdraw() public {
+        uint depositAmount = 100 ether;
+        uint withdrawAmount = 30 ether;
+
+        _userDeposit(user1, depositAmount);
+        _warpSeconds(100);
+
+        vm.startPrank(user1);
+        uint balanceBefore = crossToken.balanceOf(user1);
+        pool.withdraw(withdrawAmount);
+        uint balanceAfter = crossToken.balanceOf(user1);
+        vm.stopPrank();
+
+        assertEq(balanceAfter - balanceBefore, withdrawAmount, "Should receive partial withdraw amount");
+        assertEq(pool.balances(user1), depositAmount - withdrawAmount, "Remaining balance should be correct");
+        assertEq(
+            pool.totalDeposited(), depositAmount - withdrawAmount, "Total deposited should decrease by withdraw amount"
+        );
+    }
+
+    function testPartialWithdrawMultipleTimes() public {
+        uint depositAmount = 100 ether;
+
+        _userDeposit(user1, depositAmount);
+        _warpSeconds(100);
+
+        vm.startPrank(user1);
+
+        // First partial withdraw
+        pool.withdraw(20 ether);
+        assertEq(pool.balances(user1), 80 ether, "Balance after first withdraw");
+
+        // Second partial withdraw
+        pool.withdraw(30 ether);
+        assertEq(pool.balances(user1), 50 ether, "Balance after second withdraw");
+
+        // Third partial withdraw
+        pool.withdraw(50 ether);
+        assertEq(pool.balances(user1), 0, "Balance after final withdraw");
+
+        vm.stopPrank();
+    }
+
+    function testPartialWithdrawWithRewards() public {
+        uint depositAmount = 100 ether;
+        uint withdrawAmount = 40 ether;
+
+        _userDeposit(user1, depositAmount);
+        _warpSeconds(100);
+
+        _depositReward(address(rewardToken1), 200 ether);
+
+        vm.startPrank(user1);
+        uint crossBalanceBefore = crossToken.balanceOf(user1);
+        uint rewardBalanceBefore = rewardToken1.balanceOf(user1);
+
+        pool.withdraw(withdrawAmount);
+
+        uint crossBalanceAfter = crossToken.balanceOf(user1);
+        uint rewardBalanceAfter = rewardToken1.balanceOf(user1);
+        vm.stopPrank();
+
+        // Check deposit token
+        assertEq(crossBalanceAfter - crossBalanceBefore, withdrawAmount, "Should receive partial deposit");
+        assertEq(pool.balances(user1), depositAmount - withdrawAmount, "Remaining deposit balance");
+
+        // Check rewards (all rewards should be claimed on partial withdraw)
+        assertApproxEqAbs(
+            rewardBalanceAfter - rewardBalanceBefore,
+            200 ether,
+            1 ether,
+            "Should receive all rewards on partial withdraw"
+        );
+    }
+
+    function testCannotPartialWithdrawMoreThanBalance() public {
+        uint depositAmount = 100 ether;
+        uint withdrawAmount = 150 ether; // More than deposited
+
+        _userDeposit(user1, depositAmount);
+        _warpSeconds(100);
+
+        vm.prank(user1);
+        vm.expectRevert(
+            abi.encodeWithSelector(CrossGameRewardPool.CGRPInsufficientBalance.selector, depositAmount, withdrawAmount)
+        );
+        pool.withdraw(withdrawAmount);
+    }
+
+    function testZeroAmountWithdrawsAll() public {
+        uint depositAmount = 100 ether;
+
+        _userDeposit(user1, depositAmount);
+        _warpSeconds(100);
+
+        vm.startPrank(user1);
+        uint balanceBefore = crossToken.balanceOf(user1);
+        pool.withdraw(0); // 0 = withdraw all
+        uint balanceAfter = crossToken.balanceOf(user1);
+        vm.stopPrank();
+
+        assertEq(balanceAfter - balanceBefore, depositAmount, "Should withdraw full amount with 0");
+        assertEq(pool.balances(user1), 0, "Balance should be zero");
+    }
+
+    function testPartialWithdrawAndContinueEarning() public {
+        // User1 deposits 100 ether
+        _userDeposit(user1, 100 ether);
+        _warpSeconds(100);
+
+        // Add first reward batch
+        _depositReward(address(rewardToken1), 100 ether);
+
+        // User1 partially withdraws 50 ether
+        vm.prank(user1);
+        pool.withdraw(50 ether);
+
+        assertEq(pool.balances(user1), 50 ether, "Should have 50 ether left");
+
+        // Add second reward batch (should only be distributed to remaining 50 ether)
+        _depositReward(address(rewardToken1), 50 ether);
+
+        // Check pending rewards
+        (, uint[] memory rewards) = pool.pendingRewards(user1);
+        assertApproxEqAbs(rewards[0], 50 ether, 1 ether, "Should have pending rewards from second batch");
+
+        // Final withdraw
+        vm.prank(user1);
+        pool.withdraw(0);
+
+        // Total rewards should be: 100 (first batch) + 50 (second batch) = 150 ether
+        assertApproxEqAbs(rewardToken1.balanceOf(user1), 150 ether, 2 ether, "Total rewards collected");
     }
 }
