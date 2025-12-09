@@ -85,6 +85,25 @@ contract CrossGameRewardRouter is ICrossGameRewardRouter {
         wcross = crossGameReward.wcross();
     }
 
+    // ==================== Withdraw All ====================
+
+    /**
+     * @notice Withdraws all deposits from all pools
+     * @dev Iterates through all pools and withdraws user's deposits
+     *      Native pools return CROSS, ERC20 pools return their deposit tokens
+     */
+    function withdrawAll() external {
+        uint[] memory poolIds = crossGameReward.getAllPoolIds();
+        for (uint i = 0; i < poolIds.length; i++) {
+            uint poolId = poolIds[i];
+            ICrossGameRewardPool pool = _getPool(poolId);
+            if (pool.balances(msg.sender) > 0) {
+                if (address(pool.depositToken()) == address(wcross)) withdrawNative(poolId);
+                else withdrawERC20(poolId);
+            }
+        }
+    }
+
     // ==================== Native CROSS Deposit ====================
 
     /**
@@ -107,7 +126,7 @@ contract CrossGameRewardRouter is ICrossGameRewardRouter {
         emit DepositedNative(msg.sender, poolId, msg.value);
     }
 
-    function withdrawNative(uint poolId) external {
+    function withdrawNative(uint poolId) public {
         withdrawNative(poolId, 0);
     }
 
@@ -175,7 +194,7 @@ contract CrossGameRewardRouter is ICrossGameRewardRouter {
         _depositERC20(poolId, pool, depositToken, amount);
     }
 
-    function withdrawERC20(uint poolId) external {
+    function withdrawERC20(uint poolId) public {
         withdrawERC20(poolId, 0);
     }
 
@@ -322,6 +341,17 @@ contract CrossGameRewardRouter is ICrossGameRewardRouter {
     {
         ICrossGameRewardPool pool = _getPool(poolId);
         return _collectPendingRewards(pool, user);
+    }
+
+    /**
+     * @notice Retrieves total deposited amount across all pools
+     * @return totalDeposited Total amount deposited across all pools
+     */
+    function getTotalDeposited() external view returns (uint totalDeposited) {
+        uint[] memory poolIds = crossGameReward.getAllPoolIds();
+        for (uint i = 0; i < poolIds.length; i++) {
+            totalDeposited += _getPool(poolIds[i]).totalDeposited();
+        }
     }
 
     // ==================== Internal Functions ====================

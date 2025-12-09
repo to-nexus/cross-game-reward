@@ -7,6 +7,9 @@ pragma solidity 0.8.28;
  * @dev Defines functions for depositing, withdrawing, claiming and querying rewards
  */
 interface ICrossGameRewardRouter {
+    /// @notice Withdraws all deposits from all pools
+    function withdrawAll() external;
+
     /// @notice Deposits native CROSS tokens
     function depositNative(uint poolId) external payable;
 
@@ -54,4 +57,7 @@ interface ICrossGameRewardRouter {
         external
         view
         returns (address[] memory rewardTokens, uint[] memory pendingRewards);
+
+    /// @notice Retrieves total deposited amount across all pools
+    function getTotalDeposited() external view returns (uint totalDeposited);
 }
