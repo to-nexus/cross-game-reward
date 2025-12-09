@@ -88,9 +88,6 @@ contract CrossGameRewardPool is
     /// @param token The token with no reclaimable amount
     error CGRPNoReclaimableAmount(address token);
 
-    /// @notice Thrown when attempting to call a function that is not allowed
-    error CGRPNotAllowedFunction();
-
     /// @notice Thrown when caller is not the owner of the pool
     error CGRPOnlyOwner();
 
