@@ -66,6 +66,9 @@ contract CrossGameRewardRouter is ICrossGameRewardRouter {
 
     // ==================== State Variables ====================
 
+    /// @notice Native token placeholder address (use this to represent native CROSS)
+    address public constant NATIVE_TOKEN = address(0x1);
+
     /// @notice CrossGameReward contract reference
     ICrossGameReward public immutable crossGameReward;
 
@@ -344,13 +347,66 @@ contract CrossGameRewardRouter is ICrossGameRewardRouter {
     }
 
     /**
-     * @notice Retrieves total deposited amount across all pools
-     * @return totalDeposited Total amount deposited across all pools
+     * @notice Retrieves total deposited amount across all pools grouped by deposit token
+     * @dev Aggregates totalDeposited from all pools, grouped by their deposit token
+     * @return depositTokens Array of unique deposit token addresses
+     * @return totalDeposited Array of total deposited amounts for each token
      */
-    function getTotalDeposited() external view returns (uint totalDeposited) {
+    function getTotalDeposited() external view returns (address[] memory depositTokens, uint[] memory totalDeposited) {
+        uint[] memory poolIds = crossGameReward.getAllPoolIds();
+
+        // First pass: collect unique deposit tokens
+        address[] memory tempTokens = new address[](poolIds.length);
+        uint[] memory tempAmounts = new uint[](poolIds.length);
+        uint uniqueCount = 0;
+
+        for (uint i = 0; i < poolIds.length; i++) {
+            ICrossGameRewardPool pool = _getPool(poolIds[i]);
+            address depositToken = address(pool.depositToken());
+            uint poolDeposited = pool.totalDeposited();
+
+            // Find if this token already exists in our temp arrays
+            bool found = false;
+            for (uint j = 0; j < uniqueCount; j++) {
+                if (tempTokens[j] == depositToken) {
+                    tempAmounts[j] += poolDeposited;
+                    found = true;
+                    break;
+                }
+            }
+
+            // If not found, add as new unique token
+            if (!found) {
+                tempTokens[uniqueCount] = depositToken;
+                tempAmounts[uniqueCount] = poolDeposited;
+                uniqueCount++;
+            }
+        }
+
+        // Second pass: create properly sized result arrays
+        depositTokens = new address[](uniqueCount);
+        totalDeposited = new uint[](uniqueCount);
+        for (uint i = 0; i < uniqueCount; i++) {
+            depositTokens[i] = tempTokens[i];
+            totalDeposited[i] = tempAmounts[i];
+        }
+    }
+
+    /**
+     * @notice Retrieves total deposited amount for a specific token across all pools
+     * @dev Sums totalDeposited from all pools that use the specified deposit token
+     *      Special case: NATIVE_TOKEN (0x1) returns native CROSS (WCROSS) pool deposits
+     * @param token Address of the deposit token to filter by (use NATIVE_TOKEN for native CROSS)
+     * @return totalDeposited Total amount deposited across all pools using this token
+     */
+    function getTotalDeposited(address token) external view returns (uint totalDeposited) {
+        // NATIVE_TOKEN (0x1) means native CROSS (WCROSS)
+        address targetToken = token == NATIVE_TOKEN ? address(wcross) : token;
+
         uint[] memory poolIds = crossGameReward.getAllPoolIds();
         for (uint i = 0; i < poolIds.length; i++) {
-            totalDeposited += _getPool(poolIds[i]).totalDeposited();
+            ICrossGameRewardPool pool = _getPool(poolIds[i]);
+            if (address(pool.depositToken()) == targetToken) totalDeposited += pool.totalDeposited();
         }
     }
 

@@ -58,6 +58,12 @@ interface ICrossGameRewardRouter {
         view
         returns (address[] memory rewardTokens, uint[] memory pendingRewards);
 
-    /// @notice Retrieves total deposited amount across all pools
-    function getTotalDeposited() external view returns (uint totalDeposited);
+    /// @notice Retrieves total deposited amount across all pools grouped by deposit token
+    function getTotalDeposited()
+        external
+        view
+        returns (address[] memory depositTokens, uint[] memory totalDeposited);
+
+    /// @notice Retrieves total deposited amount for a specific token across all pools
+    function getTotalDeposited(address token) external view returns (uint totalDeposited);
 }

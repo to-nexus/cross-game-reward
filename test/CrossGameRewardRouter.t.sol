@@ -1062,8 +1062,38 @@ contract CrossGameRewardRouterTest is Test {
         router.depositERC20(erc20PoolId, 30 ether);
         vm.stopPrank();
 
-        // Get total deposited (10 + 20 + 50 + 30 = 110 ether)
-        uint totalDeposited = router.getTotalDeposited();
-        assertEq(totalDeposited, 110 ether, "Total deposited across all pools");
+        // Get total deposited grouped by deposit token
+        // Native pool (WCROSS): 10 + 20 = 30 ether
+        // ERC20 pool (depositToken): 50 + 30 = 80 ether
+        // Permit pool (permitToken): 0 ether
+        (address[] memory depositTokens, uint[] memory totalDeposited) = router.getTotalDeposited();
+
+        assertEq(depositTokens.length, 3, "Should have 3 unique deposit tokens");
+        assertEq(totalDeposited.length, 3, "Should have 3 total deposit amounts");
+
+        // Find WCROSS, depositToken, and permitToken in results
+        uint wcrossTotal;
+        uint erc20Total;
+        uint permitTotal;
+        for (uint i = 0; i < depositTokens.length; i++) {
+            if (depositTokens[i] == address(wcross)) wcrossTotal = totalDeposited[i];
+            else if (depositTokens[i] == address(depositToken)) erc20Total = totalDeposited[i];
+            else if (depositTokens[i] == address(permitToken)) permitTotal = totalDeposited[i];
+        }
+
+        assertEq(wcrossTotal, 30 ether, "WCROSS pool total deposited");
+        assertEq(erc20Total, 80 ether, "ERC20 pool total deposited");
+        assertEq(permitTotal, 0, "Permit pool total deposited (empty)");
+
+        // Test getTotalDeposited for specific token
+        uint wcrossOnlyTotal = router.getTotalDeposited(address(wcross));
+        assertEq(wcrossOnlyTotal, 30 ether, "WCROSS specific total deposited");
+
+        uint erc20OnlyTotal = router.getTotalDeposited(address(depositToken));
+        assertEq(erc20OnlyTotal, 80 ether, "ERC20 specific total deposited");
+
+        // Test getTotalDeposited with NATIVE_TOKEN (0x1) for native CROSS
+        uint nativeTotal = router.getTotalDeposited(router.NATIVE_TOKEN());
+        assertEq(nativeTotal, 30 ether, "Native CROSS (NATIVE_TOKEN) total deposited");
     }
 }
