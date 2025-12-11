@@ -906,7 +906,6 @@ contract CrossGameRewardPool is
 
         // If amount is 0, withdraw all
         uint withdrawAmount = amount == 0 ? balances[account] : amount;
-        require(withdrawAmount > 0, CGRPCanNotZeroValue());
         require(withdrawAmount <= balances[account], CGRPInsufficientBalance(balances[account], withdrawAmount));
 
         _syncRewards();
