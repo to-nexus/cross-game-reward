@@ -119,7 +119,7 @@ contract CrossGameRewardRouterTest is Test {
 
     function testCannotDepositNativeZero() public {
         vm.prank(user1);
-        vm.expectRevert(abi.encodeWithSelector(CrossGameRewardRouter.CSRInvalidAmount.selector, 0));
+        vm.expectRevert(abi.encodeWithSelector(CrossGameRewardRouter.CSRInvalidAmount.selector));
         router.depositNative{value: 0}(nativePoolId);
     }
 
@@ -217,7 +217,7 @@ contract CrossGameRewardRouterTest is Test {
 
     function testCannotDepositERC20Zero() public {
         vm.prank(user1);
-        vm.expectRevert(abi.encodeWithSelector(CrossGameRewardRouter.CSRInvalidAmount.selector, 0));
+        vm.expectRevert(abi.encodeWithSelector(CrossGameRewardRouter.CSRInvalidAmount.selector));
         router.depositERC20(erc20PoolId, 0);
     }
 
@@ -369,7 +369,7 @@ contract CrossGameRewardRouterTest is Test {
             _getPermitSignature(address(permitToken), user1, address(router), 0, deadline, user1PrivateKey);
 
         vm.prank(user1);
-        vm.expectRevert(abi.encodeWithSelector(CrossGameRewardRouter.CSRInvalidAmount.selector, 0));
+        vm.expectRevert(abi.encodeWithSelector(CrossGameRewardRouter.CSRInvalidAmount.selector));
         router.depositERC20WithPermit(permitPoolId, 0, deadline, v, r, s);
     }
 

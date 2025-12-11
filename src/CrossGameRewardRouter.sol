@@ -25,8 +25,7 @@ contract CrossGameRewardRouter is ICrossGameRewardRouter {
     // ==================== Errors ====================
 
     /// @notice Thrown when an invalid amount is provided
-    /// @param provided The amount provided
-    error CSRInvalidAmount(uint provided);
+    error CSRInvalidAmount();
 
     /// @notice Thrown when a zero address is provided where it's not allowed
     error CSRCanNotZeroAddress();
@@ -115,7 +114,7 @@ contract CrossGameRewardRouter is ICrossGameRewardRouter {
      * @param poolId ID of the pool to deposit into
      */
     function depositNative(uint poolId) external payable {
-        require(msg.value > 0, CSRInvalidAmount(msg.value));
+        require(msg.value > 0, CSRInvalidAmount());
 
         ICrossGameRewardPool pool = _getPoolAndValidateWCROSS(poolId);
 
@@ -167,7 +166,7 @@ contract CrossGameRewardRouter is ICrossGameRewardRouter {
      * @param amount Amount of tokens to deposit
      */
     function depositERC20(uint poolId, uint amount) external {
-        require(amount > 0, CSRInvalidAmount(amount));
+        require(amount > 0, CSRInvalidAmount());
 
         ICrossGameRewardPool pool = _getPool(poolId);
         IERC20 depositToken = pool.depositToken();
@@ -186,7 +185,7 @@ contract CrossGameRewardRouter is ICrossGameRewardRouter {
      * @param s Permit signature s
      */
     function depositERC20WithPermit(uint poolId, uint amount, uint deadline, uint8 v, bytes32 r, bytes32 s) external {
-        require(amount > 0, CSRInvalidAmount(amount));
+        require(amount > 0, CSRInvalidAmount());
 
         ICrossGameRewardPool pool = _getPool(poolId);
         IERC20 depositToken = pool.depositToken();
