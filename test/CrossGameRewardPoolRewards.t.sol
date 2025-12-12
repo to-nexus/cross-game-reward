@@ -239,7 +239,7 @@ contract CrossGameRewardPoolRewardsTest is CrossGameRewardPoolBase {
         _userDeposit(user1, 10 ether);
 
         vm.prank(user1);
-        vm.expectRevert(CrossGameRewardPool.CGRPInvalidRewardToken.selector);
+        vm.expectRevert(abi.encodeWithSelector(CrossGameRewardPool.CGRPInvalidRewardToken.selector, address(uint160(0xdead))));
         pool.claimReward(IERC20(address(uint160(0xdead))));
     }
 
@@ -425,7 +425,7 @@ contract CrossGameRewardPoolRewardsTest is CrossGameRewardPoolBase {
 
         // User1 withdraws (leaves only User2)
         vm.prank(user1);
-        pool.withdraw();
+        pool.withdraw(0);
 
         // Now add one more reward with only User2 depositing
         _depositReward(address(rewardToken1), 100 ether);
@@ -593,7 +593,7 @@ contract CrossGameRewardPoolRewardsTest is CrossGameRewardPoolBase {
         assertEq(pool.getReclaimableAmount(rewardToken1), 0, "No withdrawable amount");
 
         // Cannot withdraw
-        vm.expectRevert(CrossGameRewardPool.CGRPNoReclaimableAmount.selector);
+        vm.expectRevert(abi.encodeWithSelector(CrossGameRewardPool.CGRPNoReclaimableAmount.selector, address(rewardToken1)));
         crossGameReward.reclaimFromPool(1, rewardToken1, owner);
     }
 

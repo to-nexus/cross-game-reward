@@ -11,24 +11,23 @@ import "forge-std/Script.sol";
  * @dev 사용법:
  * forge script script/DeployCrossGameRewardPool.s.sol:CreatePool \
  *   --rpc-url <RPC_URL> \
- *   --private-key <PRIVATE_KEY> \
  *   --broadcast
  *
  * 필수 환경변수:
- * - CROSS_GAME_REWARD_ADDRESS: CrossGameReward 컨트랙트 주소
+ * - CROSS_GAME_REWARD: CrossGameReward 컨트랙트 주소
  * - POOL_NAME: 생성할 풀 이름
- * - DEPOSIT_TOKEN_ADDRESS: 예치 토큰 주소
+ * - DEPOSIT_TOKEN: 예치 토큰 주소
  * - MIN_DEPOSIT_AMOUNT: 최소 예치 금액 (wei 단위)
  *
  * 선택 환경변수:
- * - REWARD_TOKEN_ADDRESS: 보상 토큰 주소 (없으면 보상 토큰을 등록하지 않음)
+ * - REWARD_TOKEN: 보상 토큰 주소 (없으면 보상 토큰을 등록하지 않음)
  */
 contract CreatePool is Script {
     function run() external {
         // 환경변수에서 설정 읽기
-        address crossGameRewardAddress = vm.envAddress("CROSS_GAME_REWARD_ADDRESS");
+        address crossGameRewardAddress = vm.envAddress("CROSS_GAME_REWARD");
         string memory poolName = vm.envString("POOL_NAME");
-        address depositTokenAddress = vm.envAddress("DEPOSIT_TOKEN_ADDRESS");
+        address depositTokenAddress = vm.envAddress("DEPOSIT_TOKEN");
         uint minDepositAmount = vm.envUint("MIN_DEPOSIT_AMOUNT");
 
         // CrossGameReward 컨트랙트 인스턴스 생성
@@ -52,7 +51,7 @@ contract CreatePool is Script {
         console.log("Pool Address:", address(pool));
 
         // 2. 보상 토큰 추가 (환경변수가 있는 경우에만)
-        try vm.envAddress("REWARD_TOKEN_ADDRESS") returns (address rewardTokenAddress) {
+        try vm.envAddress("REWARD_TOKEN") returns (address rewardTokenAddress) {
             console.log("\n=== Adding Reward Token ===");
             console.log("Reward Token Address:", rewardTokenAddress);
 
@@ -61,7 +60,7 @@ contract CreatePool is Script {
             console.log("Reward token added successfully");
         } catch {
             console.log("\n=== No Reward Token ===");
-            console.log("REWARD_TOKEN_ADDRESS not set, skipping reward token registration");
+            console.log("REWARD_TOKEN not set, skipping reward token registration");
         }
 
         vm.stopBroadcast();

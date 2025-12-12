@@ -67,7 +67,7 @@ contract CrossGameRewardPoolIntegrationTest is CrossGameRewardPoolBase {
         uint user1RewardBefore = rewardToken1.balanceOf(user1);
         uint user1CrossBefore = crossToken.balanceOf(user1);
         vm.prank(user1);
-        pool.withdraw();
+        pool.withdraw(0);
 
         assertEq(crossToken.balanceOf(user1), user1CrossBefore + 50 ether, "User1 gets 50 CROSS back");
         assertEq(crossToken.balanceOf(user1), user1InitialCross, "User1 CROSS fully restored");
@@ -77,7 +77,7 @@ contract CrossGameRewardPoolIntegrationTest is CrossGameRewardPoolBase {
         // User2 withdraw
         uint user2CrossBefore = crossToken.balanceOf(user2);
         vm.prank(user2);
-        pool.withdraw();
+        pool.withdraw(0);
 
         assertEq(crossToken.balanceOf(user2), user2CrossBefore + 100 ether, "User2 gets 100 CROSS back");
         assertEq(crossToken.balanceOf(user2), user2InitialCross, "User2 CROSS fully restored");
@@ -87,7 +87,7 @@ contract CrossGameRewardPoolIntegrationTest is CrossGameRewardPoolBase {
         // User3 withdraw
         uint user3CrossBefore = crossToken.balanceOf(user3);
         vm.prank(user3);
-        pool.withdraw();
+        pool.withdraw(0);
 
         assertEq(crossToken.balanceOf(user3), user3CrossBefore + 150 ether, "User3 gets 150 CROSS back");
         assertEq(crossToken.balanceOf(user3), user3InitialCross, "User3 CROSS fully restored");
@@ -152,7 +152,7 @@ contract CrossGameRewardPoolIntegrationTest is CrossGameRewardPoolBase {
 
         // User1 withdraws
         vm.prank(user1);
-        pool.withdraw();
+        pool.withdraw(0);
         uint user1Rewards = rewardToken1.balanceOf(user1);
 
         // User3 deposits
@@ -211,7 +211,7 @@ contract CrossGameRewardPoolIntegrationTest is CrossGameRewardPoolBase {
 
         // Withdraw after 1 year
         vm.prank(user1);
-        pool.withdraw();
+        pool.withdraw(0);
 
         assertEq(crossToken.balanceOf(user1), 1000 ether, "Should get all CROSS back");
         assertApproxEqAbs(rewardToken1.balanceOf(user1), 5200 ether, 0.01 ether, "Should get all rewards");
@@ -258,7 +258,7 @@ contract CrossGameRewardPoolIntegrationTest is CrossGameRewardPoolBase {
 
         vm.startPrank(user1);
         pool.claimRewards();
-        pool.withdraw();
+        pool.withdraw(0);
         vm.stopPrank();
 
         assertEq(pool.balances(user1), 0, "Balance should be zero");
@@ -324,7 +324,7 @@ contract CrossGameRewardPoolIntegrationTest is CrossGameRewardPoolBase {
 
         // Week 5: User2 partially withdraws
         vm.prank(user2);
-        pool.withdraw();
+        pool.withdraw(0);
 
         // Final state check
         assertTrue(pool.totalDeposited() > 0, "Pool should still have depositrs");

@@ -31,10 +31,9 @@ contract CrossGameRewardRouter is ICrossGameRewardRouter {
     error CSRCanNotZeroAddress();
 
     /// @notice Thrown when attempting native operations on a non-WCROSS pool
-    error CSRNotWCROSSPool();
-
-    /// @notice Thrown when attempting to withdraw with no active deposit
-    error CSRNoDepositFound();
+    /// @param poolId The pool ID
+    /// @param actualToken The actual deposit token of the pool
+    error CSRNotWCROSSPool(uint poolId, address actualToken);
 
     // ==================== Events ====================
 
@@ -66,6 +65,9 @@ contract CrossGameRewardRouter is ICrossGameRewardRouter {
 
     // ==================== State Variables ====================
 
+    /// @notice Native token placeholder address (use this to represent native CROSS)
+    address public constant NATIVE_TOKEN = address(0x1);
+
     /// @notice CrossGameReward contract reference
     ICrossGameReward public immutable crossGameReward;
 
@@ -83,6 +85,25 @@ contract CrossGameRewardRouter is ICrossGameRewardRouter {
 
         crossGameReward = ICrossGameReward(_crossGameReward);
         wcross = crossGameReward.wcross();
+    }
+
+    // ==================== Withdraw All ====================
+
+    /**
+     * @notice Withdraws all deposits from all pools
+     * @dev Iterates through all pools and withdraws user's deposits
+     *      Native pools return CROSS, ERC20 pools return their deposit tokens
+     */
+    function withdrawAll() external {
+        uint[] memory poolIds = crossGameReward.getAllPoolIds();
+        for (uint i = 0; i < poolIds.length; i++) {
+            uint poolId = poolIds[i];
+            ICrossGameRewardPool pool = _getPool(poolId);
+            if (pool.balances(msg.sender) > 0) {
+                if (address(pool.depositToken()) == address(wcross)) withdrawNative(poolId);
+                else withdrawERC20(poolId);
+            }
+        }
     }
 
     // ==================== Native CROSS Deposit ====================
@@ -107,24 +128,33 @@ contract CrossGameRewardRouter is ICrossGameRewardRouter {
         emit DepositedNative(msg.sender, poolId, msg.value);
     }
 
+    function withdrawNative(uint poolId) public {
+        withdrawNative(poolId, 0);
+    }
+
     /**
      * @notice Withdraws and returns native CROSS tokens
      * @dev Withdraws WCROSS from pool and unwraps to native CROSS
      * @param poolId ID of the pool to withdraw from
+     * @param amount Amount to withdraw (0 = withdraw all)
      */
-    function withdrawNative(uint poolId) external {
+    function withdrawNative(uint poolId, uint amount) public {
         ICrossGameRewardPool pool = _getPoolAndValidateWCROSS(poolId);
 
-        uint depositedAmount = pool.balances(msg.sender);
-        require(depositedAmount > 0, CSRNoDepositFound());
+        // Get Router's WCROSS balance before withdrawal
+        uint balanceBefore = IERC20(wcross).balanceOf(address(this));
 
         // Withdraw from pool (WCROSS sent to Router, rewards sent to msg.sender)
-        pool.withdrawFor(msg.sender);
+        pool.withdrawFor(msg.sender, amount);
+
+        // Calculate actual withdrawn amount
+        uint balanceAfter = IERC20(wcross).balanceOf(address(this));
+        uint withdrawnAmount = balanceAfter - balanceBefore;
 
         // Router unwraps and sends native CROSS directly to user
-        wcross.withdrawTo(msg.sender, depositedAmount);
+        wcross.withdrawTo(msg.sender, withdrawnAmount);
 
-        emit WithdrawnNative(msg.sender, poolId, depositedAmount);
+        emit WithdrawnNative(msg.sender, poolId, withdrawnAmount);
     }
 
     // ==================== ERC20 Deposit (General Tokens) ====================
@@ -166,25 +196,34 @@ contract CrossGameRewardRouter is ICrossGameRewardRouter {
         _depositERC20(poolId, pool, depositToken, amount);
     }
 
+    function withdrawERC20(uint poolId) public {
+        withdrawERC20(poolId, 0);
+    }
+
     /**
      * @notice Withdraws ERC20 tokens
-     * @dev Withdraws all deposited tokens and claims rewards
+     * @dev Withdraws deposited tokens and claims rewards
      * @param poolId ID of the pool to withdraw from
+     * @param amount Amount to withdraw (0 = withdraw all)
      */
-    function withdrawERC20(uint poolId) external {
+    function withdrawERC20(uint poolId, uint amount) public {
         ICrossGameRewardPool pool = _getPool(poolId);
         IERC20 depositToken = pool.depositToken();
 
-        uint depositedAmount = pool.balances(msg.sender);
-        require(depositedAmount > 0, CSRNoDepositFound());
+        // Get Router's deposit token balance before withdrawal
+        uint balanceBefore = depositToken.balanceOf(address(this));
 
         // Withdraw (deposit tokens sent to Router, rewards to msg.sender)
-        pool.withdrawFor(msg.sender);
+        pool.withdrawFor(msg.sender, amount);
+
+        // Calculate actual withdrawn amount
+        uint balanceAfter = depositToken.balanceOf(address(this));
+        uint withdrawnAmount = balanceAfter - balanceBefore;
 
         // Transfer deposit tokens from Router to user
-        depositToken.safeTransfer(msg.sender, depositedAmount);
+        depositToken.safeTransfer(msg.sender, withdrawnAmount);
 
-        emit WithdrawnERC20(msg.sender, poolId, address(depositToken), depositedAmount);
+        emit WithdrawnERC20(msg.sender, poolId, address(depositToken), withdrawnAmount);
     }
 
     // ==================== Claim Rewards ====================
@@ -306,6 +345,70 @@ contract CrossGameRewardRouter is ICrossGameRewardRouter {
         return _collectPendingRewards(pool, user);
     }
 
+    /**
+     * @notice Retrieves total deposited amount across all pools grouped by deposit token
+     * @dev Aggregates totalDeposited from all pools, grouped by their deposit token
+     * @return depositTokens Array of unique deposit token addresses
+     * @return totalDeposited Array of total deposited amounts for each token
+     */
+    function getTotalDeposited() external view returns (address[] memory depositTokens, uint[] memory totalDeposited) {
+        uint[] memory poolIds = crossGameReward.getAllPoolIds();
+
+        // First pass: collect unique deposit tokens
+        address[] memory tempTokens = new address[](poolIds.length);
+        uint[] memory tempAmounts = new uint[](poolIds.length);
+        uint uniqueCount = 0;
+
+        for (uint i = 0; i < poolIds.length; i++) {
+            ICrossGameRewardPool pool = _getPool(poolIds[i]);
+            address depositToken = address(pool.depositToken());
+            uint poolDeposited = pool.totalDeposited();
+
+            // Find if this token already exists in our temp arrays
+            bool found = false;
+            for (uint j = 0; j < uniqueCount; j++) {
+                if (tempTokens[j] == depositToken) {
+                    tempAmounts[j] += poolDeposited;
+                    found = true;
+                    break;
+                }
+            }
+
+            // If not found, add as new unique token
+            if (!found) {
+                tempTokens[uniqueCount] = depositToken;
+                tempAmounts[uniqueCount] = poolDeposited;
+                uniqueCount++;
+            }
+        }
+
+        // Second pass: create properly sized result arrays
+        depositTokens = new address[](uniqueCount);
+        totalDeposited = new uint[](uniqueCount);
+        for (uint i = 0; i < uniqueCount; i++) {
+            depositTokens[i] = tempTokens[i];
+            totalDeposited[i] = tempAmounts[i];
+        }
+    }
+
+    /**
+     * @notice Retrieves total deposited amount for a specific token across all pools
+     * @dev Sums totalDeposited from all pools that use the specified deposit token
+     *      Special case: NATIVE_TOKEN (0x1) returns native CROSS (WCROSS) pool deposits
+     * @param token Address of the deposit token to filter by (use NATIVE_TOKEN for native CROSS)
+     * @return totalDeposited Total amount deposited across all pools using this token
+     */
+    function getTotalDeposited(address token) external view returns (uint totalDeposited) {
+        // NATIVE_TOKEN (0x1) means native CROSS (WCROSS)
+        address targetToken = token == NATIVE_TOKEN ? address(wcross) : token;
+
+        uint[] memory poolIds = crossGameReward.getAllPoolIds();
+        for (uint i = 0; i < poolIds.length; i++) {
+            ICrossGameRewardPool pool = _getPool(poolIds[i]);
+            if (address(pool.depositToken()) == targetToken) totalDeposited += pool.totalDeposited();
+        }
+    }
+
     // ==================== Internal Functions ====================
 
     /**
@@ -324,7 +427,7 @@ contract CrossGameRewardRouter is ICrossGameRewardRouter {
      */
     function _getPoolAndValidateWCROSS(uint poolId) internal view returns (ICrossGameRewardPool pool) {
         pool = _getPool(poolId);
-        require(address(pool.depositToken()) == address(wcross), CSRNotWCROSSPool());
+        require(address(pool.depositToken()) == address(wcross), CSRNotWCROSSPool(poolId, address(pool.depositToken())));
     }
 
     function _depositERC20(uint poolId, ICrossGameRewardPool pool, IERC20 token, uint amount) internal {

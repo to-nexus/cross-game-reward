@@ -119,13 +119,15 @@ contract CrossGameRewardRouterTest is Test {
 
     function testCannotDepositNativeZero() public {
         vm.prank(user1);
-        vm.expectRevert(CrossGameRewardRouter.CSRInvalidAmount.selector);
+        vm.expectRevert(abi.encodeWithSelector(CrossGameRewardRouter.CSRInvalidAmount.selector));
         router.depositNative{value: 0}(nativePoolId);
     }
 
     function testCannotDepositNativeOnERC20Pool() public {
         vm.prank(user1);
-        vm.expectRevert(CrossGameRewardRouter.CSRNotWCROSSPool.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(CrossGameRewardRouter.CSRNotWCROSSPool.selector, erc20PoolId, address(depositToken))
+        );
         router.depositNative{value: 10 ether}(erc20PoolId);
     }
 
@@ -142,7 +144,7 @@ contract CrossGameRewardRouterTest is Test {
         // Withdraw
         uint balanceBefore = user1.balance;
         vm.startPrank(user1);
-        router.withdrawNative(nativePoolId);
+        router.withdrawNative(nativePoolId, 0);
         vm.stopPrank();
 
         // Verify
@@ -154,8 +156,8 @@ contract CrossGameRewardRouterTest is Test {
 
     function testCannotUndepositNativeWithoutDeposit() public {
         vm.prank(user1);
-        vm.expectRevert(CrossGameRewardRouter.CSRNoDepositFound.selector);
-        router.withdrawNative(nativePoolId);
+        vm.expectRevert(abi.encodeWithSelector(CrossGameRewardPool.CGRPNoDepositFound.selector, user1));
+        router.withdrawNative(nativePoolId, 0);
     }
 
     // ==================== ERC20 deposit ====================
@@ -199,7 +201,7 @@ contract CrossGameRewardRouterTest is Test {
         // Withdraw
         uint balanceBefore = depositToken.balanceOf(user1);
         vm.prank(user1);
-        router.withdrawERC20(erc20PoolId);
+        router.withdrawERC20(erc20PoolId, 0);
 
         CrossGameRewardPool pool = CrossGameRewardPool(address(erc20Pool));
         assertEq(pool.balances(user1), 0, "Withdrawn");
@@ -209,13 +211,13 @@ contract CrossGameRewardRouterTest is Test {
 
     function testCannotUndepositERC20WithoutDeposit() public {
         vm.prank(user1);
-        vm.expectRevert(CrossGameRewardRouter.CSRNoDepositFound.selector);
-        router.withdrawERC20(erc20PoolId);
+        vm.expectRevert(abi.encodeWithSelector(CrossGameRewardPool.CGRPNoDepositFound.selector, user1));
+        router.withdrawERC20(erc20PoolId, 0);
     }
 
     function testCannotDepositERC20Zero() public {
         vm.prank(user1);
-        vm.expectRevert(CrossGameRewardRouter.CSRInvalidAmount.selector);
+        vm.expectRevert(abi.encodeWithSelector(CrossGameRewardRouter.CSRInvalidAmount.selector));
         router.depositERC20(erc20PoolId, 0);
     }
 
@@ -263,7 +265,7 @@ contract CrossGameRewardRouterTest is Test {
         // User1 withdraws
         uint user1BalanceBefore = user1.balance;
         vm.prank(user1);
-        router.withdrawNative(nativePoolId);
+        router.withdrawNative(nativePoolId, 0);
 
         assertEq(user1.balance, user1BalanceBefore + 10 ether, "User1 got native CROSS");
         assertApproxEqAbs(rewardToken.balanceOf(user1), 30 ether, 10, "User1 rewards (1/3)");
@@ -271,7 +273,7 @@ contract CrossGameRewardRouterTest is Test {
         // User2 withdraws
         uint user2BalanceBefore = user2.balance;
         vm.prank(user2);
-        router.withdrawNative(nativePoolId);
+        router.withdrawNative(nativePoolId, 0);
 
         assertEq(user2.balance, user2BalanceBefore + 20 ether, "User2 got native CROSS");
         assertApproxEqAbs(rewardToken.balanceOf(user2), 60 ether, 10, "User2 rewards (2/3)");
@@ -367,7 +369,7 @@ contract CrossGameRewardRouterTest is Test {
             _getPermitSignature(address(permitToken), user1, address(router), 0, deadline, user1PrivateKey);
 
         vm.prank(user1);
-        vm.expectRevert(CrossGameRewardRouter.CSRInvalidAmount.selector);
+        vm.expectRevert(abi.encodeWithSelector(CrossGameRewardRouter.CSRInvalidAmount.selector));
         router.depositERC20WithPermit(permitPoolId, 0, deadline, v, r, s);
     }
 
@@ -414,7 +416,7 @@ contract CrossGameRewardRouterTest is Test {
         // Withdraw
         uint balanceBefore = permitToken.balanceOf(user1);
         vm.prank(user1);
-        router.withdrawERC20(permitPoolId);
+        router.withdrawERC20(permitPoolId, 0);
 
         // Verify
         CrossGameRewardPool pool = CrossGameRewardPool(address(permitPool));
@@ -444,10 +446,10 @@ contract CrossGameRewardRouterTest is Test {
 
         // Both users withdraw
         vm.prank(user1);
-        router.withdrawERC20(permitPoolId);
+        router.withdrawERC20(permitPoolId, 0);
 
         vm.prank(user2);
-        router.withdrawERC20(permitPoolId);
+        router.withdrawERC20(permitPoolId, 0);
 
         // Verify rewards distribution (30:70 ratio)
         assertApproxEqAbs(rewardToken.balanceOf(user1), 30 ether, 10, "User1 rewards (30%)");
@@ -630,6 +632,115 @@ contract CrossGameRewardRouterTest is Test {
         assertApproxEqAbs(rewardToken2.balanceOf(user1), 50 ether, 10, "Second reward claimed");
     }
 
+    // ==================== Partial withdraw tests ====================
+
+    function testPartialWithdrawNative() public {
+        uint depositAmount = 50 ether;
+        uint withdrawAmount = 20 ether;
+
+        // Deposit
+        vm.startPrank(user1);
+        router.depositNative{value: depositAmount}(nativePoolId);
+        vm.stopPrank();
+
+        // Partial withdraw
+        uint balanceBefore = user1.balance;
+        vm.startPrank(user1);
+        router.withdrawNative(nativePoolId, withdrawAmount);
+        vm.stopPrank();
+
+        // Verify
+        CrossGameRewardPool pool = CrossGameRewardPool(address(nativePool));
+        assertEq(pool.balances(user1), depositAmount - withdrawAmount, "Remaining balance in pool");
+        assertEq(user1.balance, balanceBefore + withdrawAmount, "Partial native CROSS returned");
+    }
+
+    function testPartialWithdrawERC20() public {
+        uint depositAmount = 100 ether;
+        uint withdrawAmount = 35 ether;
+
+        // Deposit
+        vm.startPrank(user1);
+        depositToken.approve(address(router), depositAmount);
+        router.depositERC20(erc20PoolId, depositAmount);
+        vm.stopPrank();
+
+        // Partial withdraw
+        uint balanceBefore = depositToken.balanceOf(user1);
+        vm.prank(user1);
+        router.withdrawERC20(erc20PoolId, withdrawAmount);
+
+        CrossGameRewardPool pool = CrossGameRewardPool(address(erc20Pool));
+        assertEq(pool.balances(user1), depositAmount - withdrawAmount, "Remaining balance in pool");
+        assertEq(depositToken.balanceOf(user1), balanceBefore + withdrawAmount, "Partial tokens returned");
+    }
+
+    function testZeroAmountWithdrawsAllNative() public {
+        uint depositAmount = 30 ether;
+
+        // Deposit
+        vm.startPrank(user1);
+        router.depositNative{value: depositAmount}(nativePoolId);
+        vm.stopPrank();
+
+        // Withdraw with 0 (should withdraw all)
+        uint balanceBefore = user1.balance;
+        vm.startPrank(user1);
+        router.withdrawNative(nativePoolId, 0);
+        vm.stopPrank();
+
+        // Verify
+        CrossGameRewardPool pool = CrossGameRewardPool(address(nativePool));
+        assertEq(pool.balances(user1), 0, "All withdrawn");
+        assertEq(user1.balance, balanceBefore + depositAmount, "Full native CROSS returned");
+    }
+
+    function testZeroAmountWithdrawsAllERC20() public {
+        uint depositAmount = 80 ether;
+
+        // Deposit
+        vm.startPrank(user1);
+        depositToken.approve(address(router), depositAmount);
+        router.depositERC20(erc20PoolId, depositAmount);
+        vm.stopPrank();
+
+        // Withdraw with 0 (should withdraw all)
+        uint balanceBefore = depositToken.balanceOf(user1);
+        vm.prank(user1);
+        router.withdrawERC20(erc20PoolId, 0);
+
+        CrossGameRewardPool pool = CrossGameRewardPool(address(erc20Pool));
+        assertEq(pool.balances(user1), 0, "All withdrawn");
+        assertEq(depositToken.balanceOf(user1), balanceBefore + depositAmount, "Full tokens returned");
+    }
+
+    function testPartialWithdrawNativeWithRewards() public {
+        uint depositAmount = 50 ether;
+        uint withdrawAmount = 20 ether;
+
+        // Deposit
+        vm.startPrank(user1);
+        router.depositNative{value: depositAmount}(nativePoolId);
+        vm.stopPrank();
+
+        // Add rewards
+        rewardToken.mint(owner, 100 ether);
+        rewardToken.transfer(address(nativePool), 100 ether);
+
+        // Partial withdraw (should claim all rewards)
+        uint nativeBalanceBefore = user1.balance;
+        uint rewardBalanceBefore = rewardToken.balanceOf(user1);
+        vm.startPrank(user1);
+        router.withdrawNative(nativePoolId, withdrawAmount);
+        vm.stopPrank();
+
+        // Verify
+        CrossGameRewardPool pool = CrossGameRewardPool(address(nativePool));
+        assertEq(pool.balances(user1), depositAmount - withdrawAmount, "Remaining deposit");
+        assertEq(user1.balance, nativeBalanceBefore + withdrawAmount, "Partial native CROSS");
+        assertApproxEqAbs(rewardToken.balanceOf(user1), rewardBalanceBefore + 100 ether, 10, "All rewards claimed");
+    }
+
     function testMultipleClaimsSamePool() public {
         // Deposit
         vm.startPrank(user1);
@@ -710,7 +821,7 @@ contract CrossGameRewardRouterTest is Test {
 
         // User2 withdraws (gets rewards + deposit back)
         vm.prank(user2);
-        router.withdrawNative(nativePoolId);
+        router.withdrawNative(nativePoolId, 0);
         assertApproxEqAbs(rewardToken.balanceOf(user2), 80 ether, 10, "User2 rewards from withdraw");
 
         // Add more rewards (all should go to user1 now)
@@ -815,5 +926,174 @@ contract CrossGameRewardRouterTest is Test {
 
         assertApproxEqAbs(rewardToken.balanceOf(user1), 40 ether, 10, "Active token claimed");
         assertApproxEqAbs(removedToken.balanceOf(user1), removedRewardAmount, 10, "Removed token claimed");
+    }
+
+    // ==================== WithdrawAll Tests ====================
+
+    function testWithdrawAllFromNativePool() public {
+        // Deposit to native pool
+        vm.startPrank(user1);
+        router.depositNative{value: 10 ether}(nativePoolId);
+        vm.stopPrank();
+
+        // Add rewards
+        rewardToken.mint(owner, 50 ether);
+        rewardToken.transfer(address(nativePool), 50 ether);
+
+        // WithdrawAll
+        uint balanceBefore = user1.balance;
+        vm.prank(user1);
+        router.withdrawAll();
+
+        // Verify
+        CrossGameRewardPool pool = CrossGameRewardPool(address(nativePool));
+        assertEq(pool.balances(user1), 0, "All withdrawn from native pool");
+        assertEq(user1.balance, balanceBefore + 10 ether, "Native CROSS returned");
+        assertApproxEqAbs(rewardToken.balanceOf(user1), 50 ether, 10, "Rewards claimed");
+    }
+
+    function testWithdrawAllFromERC20Pool() public {
+        // Deposit to ERC20 pool
+        vm.startPrank(user1);
+        depositToken.approve(address(router), 50 ether);
+        router.depositERC20(erc20PoolId, 50 ether);
+        vm.stopPrank();
+
+        // Add rewards
+        rewardToken.mint(owner, 100 ether);
+        rewardToken.transfer(address(erc20Pool), 100 ether);
+
+        // WithdrawAll
+        uint balanceBefore = depositToken.balanceOf(user1);
+        vm.prank(user1);
+        router.withdrawAll();
+
+        // Verify
+        CrossGameRewardPool pool = CrossGameRewardPool(address(erc20Pool));
+        assertEq(pool.balances(user1), 0, "All withdrawn from ERC20 pool");
+        assertEq(depositToken.balanceOf(user1), balanceBefore + 50 ether, "Deposit tokens returned");
+        assertApproxEqAbs(rewardToken.balanceOf(user1), 100 ether, 10, "Rewards claimed");
+    }
+
+    function testWithdrawAllFromMultiplePools() public {
+        // Deposit to both native and ERC20 pools
+        vm.startPrank(user1);
+        router.depositNative{value: 10 ether}(nativePoolId);
+        depositToken.approve(address(router), 50 ether);
+        router.depositERC20(erc20PoolId, 50 ether);
+        vm.stopPrank();
+
+        // Add rewards to both pools
+        rewardToken.mint(owner, 150 ether);
+        rewardToken.transfer(address(nativePool), 50 ether);
+        rewardToken.transfer(address(erc20Pool), 100 ether);
+
+        // WithdrawAll
+        uint nativeBalanceBefore = user1.balance;
+        uint tokenBalanceBefore = depositToken.balanceOf(user1);
+        vm.prank(user1);
+        router.withdrawAll();
+
+        // Verify native pool
+        CrossGameRewardPool nPool = CrossGameRewardPool(address(nativePool));
+        assertEq(nPool.balances(user1), 0, "All withdrawn from native pool");
+        assertEq(user1.balance, nativeBalanceBefore + 10 ether, "Native CROSS returned");
+
+        // Verify ERC20 pool
+        CrossGameRewardPool ePool = CrossGameRewardPool(address(erc20Pool));
+        assertEq(ePool.balances(user1), 0, "All withdrawn from ERC20 pool");
+        assertEq(depositToken.balanceOf(user1), tokenBalanceBefore + 50 ether, "Deposit tokens returned");
+
+        // Verify rewards (50 + 100 = 150)
+        assertApproxEqAbs(rewardToken.balanceOf(user1), 150 ether, 20, "All rewards claimed");
+    }
+
+    function testWithdrawAllNoDeposits() public {
+        // User has no deposits - should not revert
+        vm.prank(user1);
+        router.withdrawAll();
+
+        // Verify nothing changed
+        assertEq(user1.balance, 1000 ether, "Balance unchanged");
+    }
+
+    function testWithdrawAllWithRewards() public {
+        // Deposit to multiple pools
+        vm.startPrank(user1);
+        router.depositNative{value: 20 ether}(nativePoolId);
+        depositToken.approve(address(router), 80 ether);
+        router.depositERC20(erc20PoolId, 80 ether);
+        permitToken.approve(address(router), 100 ether);
+        router.depositERC20(permitPoolId, 100 ether);
+        vm.stopPrank();
+
+        // Add rewards to all pools
+        rewardToken.mint(owner, 300 ether);
+        rewardToken.transfer(address(nativePool), 100 ether);
+        rewardToken.transfer(address(erc20Pool), 100 ether);
+        rewardToken.transfer(address(permitPool), 100 ether);
+
+        // WithdrawAll
+        vm.prank(user1);
+        router.withdrawAll();
+
+        // Verify all pools empty
+        assertEq(CrossGameRewardPool(address(nativePool)).balances(user1), 0, "Native pool empty");
+        assertEq(CrossGameRewardPool(address(erc20Pool)).balances(user1), 0, "ERC20 pool empty");
+        assertEq(CrossGameRewardPool(address(permitPool)).balances(user1), 0, "Permit pool empty");
+
+        // Verify all rewards claimed
+        assertApproxEqAbs(rewardToken.balanceOf(user1), 300 ether, 30, "All rewards from all pools claimed");
+    }
+
+    // ==================== GetTotalDeposited Tests ====================
+
+    function testGetTotalDeposited() public {
+        // Deposit to multiple pools
+        vm.startPrank(user1);
+        router.depositNative{value: 10 ether}(nativePoolId);
+        depositToken.approve(address(router), 50 ether);
+        router.depositERC20(erc20PoolId, 50 ether);
+        vm.stopPrank();
+
+        vm.startPrank(user2);
+        router.depositNative{value: 20 ether}(nativePoolId);
+        depositToken.approve(address(router), 30 ether);
+        router.depositERC20(erc20PoolId, 30 ether);
+        vm.stopPrank();
+
+        // Get total deposited grouped by deposit token
+        // Native pool (WCROSS): 10 + 20 = 30 ether
+        // ERC20 pool (depositToken): 50 + 30 = 80 ether
+        // Permit pool (permitToken): 0 ether
+        (address[] memory depositTokens, uint[] memory totalDeposited) = router.getTotalDeposited();
+
+        assertEq(depositTokens.length, 3, "Should have 3 unique deposit tokens");
+        assertEq(totalDeposited.length, 3, "Should have 3 total deposit amounts");
+
+        // Find WCROSS, depositToken, and permitToken in results
+        uint wcrossTotal;
+        uint erc20Total;
+        uint permitTotal;
+        for (uint i = 0; i < depositTokens.length; i++) {
+            if (depositTokens[i] == address(wcross)) wcrossTotal = totalDeposited[i];
+            else if (depositTokens[i] == address(depositToken)) erc20Total = totalDeposited[i];
+            else if (depositTokens[i] == address(permitToken)) permitTotal = totalDeposited[i];
+        }
+
+        assertEq(wcrossTotal, 30 ether, "WCROSS pool total deposited");
+        assertEq(erc20Total, 80 ether, "ERC20 pool total deposited");
+        assertEq(permitTotal, 0, "Permit pool total deposited (empty)");
+
+        // Test getTotalDeposited for specific token
+        uint wcrossOnlyTotal = router.getTotalDeposited(address(wcross));
+        assertEq(wcrossOnlyTotal, 30 ether, "WCROSS specific total deposited");
+
+        uint erc20OnlyTotal = router.getTotalDeposited(address(depositToken));
+        assertEq(erc20OnlyTotal, 80 ether, "ERC20 specific total deposited");
+
+        // Test getTotalDeposited with NATIVE_TOKEN (0x1) for native CROSS
+        uint nativeTotal = router.getTotalDeposited(router.NATIVE_TOKEN());
+        assertEq(nativeTotal, 30 ether, "Native CROSS (NATIVE_TOKEN) total deposited");
     }
 }
