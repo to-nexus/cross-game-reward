@@ -3,8 +3,10 @@ pragma solidity 0.8.28;
 
 import "../src/CrossGameReward.sol";
 import "../src/CrossGameRewardPool.sol";
+import "../src/CrossGameRewardPoolV2.sol";
 import "../src/WCROSS.sol";
 import "../src/interfaces/ICrossGameRewardPool.sol";
+import "../src/interfaces/ICrossGameRewardPoolV2.sol";
 
 import "./mocks/MockERC20.sol";
 import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -14,10 +16,12 @@ import "forge-std/Test.sol";
 contract CrossGameRewardTest is Test {
     CrossGameReward public crossGameReward;
     CrossGameRewardPool public poolImplementation;
+    CrossGameRewardPoolV2 public poolImplementationV2;
     IWCROSS public wcross;
 
     MockERC20 public token1;
     MockERC20 public token2;
+    MockERC20 public rewardToken;
 
     address public owner;
     address public user1;
@@ -31,8 +35,9 @@ contract CrossGameRewardTest is Test {
         // Deploy WCROSS
         wcross = new WCROSS();
 
-        // Deploy pool implementation
+        // Deploy pool implementations
         poolImplementation = new CrossGameRewardPool();
+        poolImplementationV2 = new CrossGameRewardPoolV2();
 
         // Deploy CrossGameReward as UUPS proxy
         CrossGameReward implementation = new CrossGameReward();
@@ -42,12 +47,16 @@ contract CrossGameRewardTest is Test {
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
         crossGameReward = CrossGameReward(address(proxy));
 
+        // Set V2 implementation
+        crossGameReward.setPoolImplementationV2(ICrossGameRewardPool(address(poolImplementationV2)));
+
         // CrossGameReward creates the WCROSS instance internally
         wcross = crossGameReward.wcross();
 
         // Deploy test tokens
         token1 = new MockERC20("Token1", "TK1");
         token2 = new MockERC20("Token2", "TK2");
+        rewardToken = new MockERC20("CROSSD", "CROSSD");
     }
 
     // ==================== Initialization ====================
@@ -436,5 +445,203 @@ contract CrossGameRewardTest is Test {
         vm.prank(user1);
         vm.expectRevert();
         crossGameReward.upgradeToAndCall(address(newImplementation), "");
+    }
+
+    // ==================== Batch Pool Upgrades ====================
+
+    function testUpgradePoolsByType_V2() public {
+        // Create two V2 pools
+        (uint poolId1,) = crossGameReward.createPoolV2(
+            "V2 Pool 1", IERC20(address(token1)), IERC20(address(rewardToken)), 1 ether
+        );
+        (uint poolId2,) = crossGameReward.createPoolV2(
+            "V2 Pool 2", IERC20(address(token2)), IERC20(address(rewardToken)), 1 ether
+        );
+
+        // Deploy new V2 implementation
+        CrossGameRewardPoolV2 newImplV2 = new CrossGameRewardPoolV2();
+
+        // Batch upgrade all V2 pools
+        crossGameReward.upgradePoolsByType(ICrossGameReward.PoolType.GamePool, address(newImplV2), "");
+
+        // Verify stored implementation was updated
+        assertEq(address(crossGameReward.poolImplementationV2()), address(newImplV2));
+
+        // Verify pools still work (state preserved)
+        ICrossGameRewardPool pool1 = crossGameReward.getPoolAddress(poolId1);
+        ICrossGameRewardPool pool2 = crossGameReward.getPoolAddress(poolId2);
+        assertEq(address(pool1.depositToken()), address(token1));
+        assertEq(address(pool2.depositToken()), address(token2));
+    }
+
+    function testUpgradePoolsByType_V1() public {
+        // Create two V1 pools
+        (uint poolId1,) = crossGameReward.createPool("V1 Pool 1", IERC20(address(wcross)), 1 ether);
+        (uint poolId2,) = crossGameReward.createPool("V1 Pool 2", IERC20(address(token1)), 1 ether);
+
+        // Deploy new V1 implementation
+        CrossGameRewardPool newImplV1 = new CrossGameRewardPool();
+
+        // Batch upgrade all V1 pools
+        crossGameReward.upgradePoolsByType(ICrossGameReward.PoolType.CrossPool, address(newImplV1), "");
+
+        // Verify stored implementation was updated
+        assertEq(address(crossGameReward.poolImplementation()), address(newImplV1));
+
+        // Verify pools still work (state preserved)
+        ICrossGameRewardPool pool1 = crossGameReward.getPoolAddress(poolId1);
+        ICrossGameRewardPool pool2 = crossGameReward.getPoolAddress(poolId2);
+        assertEq(address(pool1.depositToken()), address(wcross));
+        assertEq(address(pool2.depositToken()), address(token1));
+    }
+
+    function testUpgradePoolsByType_OnlyUpgradesMatchingType() public {
+        // Create one V1 and one V2 pool
+        (uint v1PoolId,) = crossGameReward.createPool("V1 Pool", IERC20(address(wcross)), 1 ether);
+        (uint v2PoolId,) = crossGameReward.createPoolV2(
+            "V2 Pool", IERC20(address(token1)), IERC20(address(rewardToken)), 1 ether
+        );
+
+        // Deploy new V2 implementation
+        CrossGameRewardPoolV2 newImplV2 = new CrossGameRewardPoolV2();
+
+        // Upgrade only V2 pools
+        crossGameReward.upgradePoolsByType(ICrossGameReward.PoolType.GamePool, address(newImplV2), "");
+
+        // V2 pool upgraded, V1 pool untouched - both still functional
+        ICrossGameRewardPool v1Pool = crossGameReward.getPoolAddress(v1PoolId);
+        ICrossGameRewardPool v2Pool = crossGameReward.getPoolAddress(v2PoolId);
+        assertEq(address(v1Pool.depositToken()), address(wcross));
+        assertEq(address(v2Pool.depositToken()), address(token1));
+    }
+
+    function testUpgradePoolsByType_OnlyAdmin() public {
+        CrossGameRewardPoolV2 newImplV2 = new CrossGameRewardPoolV2();
+
+        vm.prank(user1);
+        vm.expectRevert();
+        crossGameReward.upgradePoolsByType(ICrossGameReward.PoolType.GamePool, address(newImplV2), "");
+    }
+
+    function testUpgradePoolsByType_ZeroAddress_Reverts() public {
+        vm.expectRevert(CrossGameReward.CGRCanNotZeroAddress.selector);
+        crossGameReward.upgradePoolsByType(ICrossGameReward.PoolType.GamePool, address(0), "");
+    }
+
+    function testUpgradePoolsByType_NoPools() public {
+        // No pools of this type exist - should not revert
+        CrossGameRewardPoolV2 newImplV2 = new CrossGameRewardPoolV2();
+        crossGameReward.upgradePoolsByType(ICrossGameReward.PoolType.GamePool, address(newImplV2), "");
+
+        // Implementation still updated
+        assertEq(address(crossGameReward.poolImplementationV2()), address(newImplV2));
+    }
+
+    function testUpgradePoolsByType_PreservesDeposits() public {
+        // Create V2 pool and make a deposit
+        (uint poolId,) = crossGameReward.createPoolV2(
+            "V2 Pool", IERC20(address(token1)), IERC20(address(rewardToken)), 1 ether
+        );
+
+        ICrossGameRewardPool pool = crossGameReward.getPoolAddress(poolId);
+
+        // User deposits
+        token1.mint(user1, 100 ether);
+        vm.startPrank(user1);
+        token1.approve(address(pool), 50 ether);
+        CrossGameRewardPoolV2(address(pool)).deposit(50 ether);
+        vm.stopPrank();
+
+        assertEq(pool.totalDeposited(), 50 ether);
+        assertEq(pool.balances(user1), 50 ether);
+
+        // Upgrade
+        CrossGameRewardPoolV2 newImplV2 = new CrossGameRewardPoolV2();
+        crossGameReward.upgradePoolsByType(ICrossGameReward.PoolType.GamePool, address(newImplV2), "");
+
+        // State preserved
+        assertEq(pool.totalDeposited(), 50 ether);
+        assertEq(pool.balances(user1), 50 ether);
+
+        // User can still withdraw after upgrade
+        vm.prank(user1);
+        CrossGameRewardPoolV2(address(pool)).withdraw(50 ether);
+
+        assertEq(pool.totalDeposited(), 0);
+        assertEq(pool.balances(user1), 0);
+    }
+
+    // ==================== Pool _authorizeUpgrade ====================
+
+    function testPool_OwnerCanUpgrade() public {
+        (, ICrossGameRewardPool pool) = crossGameReward.createPool("Pool", IERC20(address(wcross)), 1 ether);
+
+        CrossGameRewardPool newImpl = new CrossGameRewardPool();
+
+        // Owner (defaultAdmin = address(this)) can upgrade directly
+        CrossGameRewardPool(address(pool)).upgradeToAndCall(address(newImpl), "");
+
+        // Pool still works
+        assertEq(address(pool.depositToken()), address(wcross));
+    }
+
+    function testPool_RewardRootCanUpgrade() public {
+        (, ICrossGameRewardPool pool) = crossGameReward.createPool("Pool", IERC20(address(wcross)), 1 ether);
+
+        CrossGameRewardPool newImpl = new CrossGameRewardPool();
+
+        // CrossGameReward (rewardRoot) can upgrade via batch
+        crossGameReward.upgradePoolsByType(ICrossGameReward.PoolType.CrossPool, address(newImpl), "");
+
+        // Pool still works
+        assertEq(address(pool.depositToken()), address(wcross));
+    }
+
+    function testPool_UnauthorizedCannotUpgrade() public {
+        (, ICrossGameRewardPool pool) = crossGameReward.createPool("Pool", IERC20(address(wcross)), 1 ether);
+
+        CrossGameRewardPool newImpl = new CrossGameRewardPool();
+
+        vm.prank(user1);
+        vm.expectRevert();
+        CrossGameRewardPool(address(pool)).upgradeToAndCall(address(newImpl), "");
+    }
+
+    function testPoolV2_OwnerCanUpgrade() public {
+        (, ICrossGameRewardPool pool) = crossGameReward.createPoolV2(
+            "V2 Pool", IERC20(address(token1)), IERC20(address(rewardToken)), 1 ether
+        );
+
+        CrossGameRewardPoolV2 newImpl = new CrossGameRewardPoolV2();
+
+        // Owner can upgrade directly
+        CrossGameRewardPoolV2(address(pool)).upgradeToAndCall(address(newImpl), "");
+
+        assertEq(address(pool.depositToken()), address(token1));
+    }
+
+    function testPoolV2_RewardRootCanUpgrade() public {
+        (, ICrossGameRewardPool pool) = crossGameReward.createPoolV2(
+            "V2 Pool", IERC20(address(token1)), IERC20(address(rewardToken)), 1 ether
+        );
+
+        CrossGameRewardPoolV2 newImpl = new CrossGameRewardPoolV2();
+
+        // CrossGameReward (rewardRoot) can upgrade via batch
+        crossGameReward.upgradePoolsByType(ICrossGameReward.PoolType.GamePool, address(newImpl), "");
+
+        assertEq(address(pool.depositToken()), address(token1));
+    }
+
+    function testPoolV2_UnauthorizedCannotUpgrade() public {
+        (, ICrossGameRewardPool pool) = crossGameReward.createPoolV2(
+            "V2 Pool", IERC20(address(token1)), IERC20(address(rewardToken)), 1 ether
+        );
+
+        CrossGameRewardPoolV2 newImpl = new CrossGameRewardPoolV2();
+
+        vm.prank(user1);
+        vm.expectRevert();
+        CrossGameRewardPoolV2(address(pool)).upgradeToAndCall(address(newImpl), "");
     }
 }

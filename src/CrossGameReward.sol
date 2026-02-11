@@ -103,6 +103,12 @@ contract CrossGameReward is Initializable, AccessControl, UUPSUpgradeable, ICros
     /// @param developer The developer address
     event DeveloperRoleRevoked(uint indexed poolId, address indexed developer);
 
+    /// @notice Emitted when pools are batch upgraded
+    /// @param poolType The pool type that was upgraded
+    /// @param newImplementation The new implementation address
+    /// @param count Number of pools upgraded
+    event PoolsBatchUpgraded(PoolType poolType, address indexed newImplementation, uint count);
+
     // ==================== State Variables ====================
 
     /// @notice Block number when the contract was initialized
@@ -349,6 +355,55 @@ contract CrossGameReward is Initializable, AccessControl, UUPSUpgradeable, ICros
         require(address(newImplementation) != address(0), CGRCanNotZeroAddress());
         poolImplementationV2 = newImplementation;
         emit PoolImplementationV2Set(newImplementation);
+    }
+
+    /**
+     * @notice Upgrades all pools of a specific type to a new implementation
+     * @dev Only callable by DEFAULT_ADMIN_ROLE.
+     *
+     *      [V1 Pool 수동 업그레이드 필요 (최초 1회)]
+     *      기존에 배포된 V1 Pool의 _authorizeUpgrade는 onlyOwner로만 제한되어 있어,
+     *      CrossGameReward 컨트랙트(msg.sender)가 upgradeToAndCall을 호출할 수 없습니다.
+     *      Pool의 owner()는 CrossGameReward의 defaultAdmin 주소를 반환하므로,
+     *      CrossGameReward 컨트랙트 주소와 일치하지 않기 때문입니다.
+     *
+     *      따라서 이 함수를 최초로 사용하기 전에, V1 Pool들은 owner(defaultAdmin)가
+     *      직접 pool.upgradeToAndCall(newImpl, "")을 1회 수동 호출하여 새 구현체로
+     *      업그레이드해야 합니다. 새 구현체의 _authorizeUpgrade는 owner와 rewardRoot
+     *      (= CrossGameReward 컨트랙트) 모두를 허용하므로, 이후부터는 이 함수로
+     *      일괄 업그레이드가 가능합니다.
+     *
+     * @param poolType Pool type to upgrade (CrossPool or GamePool)
+     * @param newImplementation New implementation address
+     * @param data Calldata for reinitializer (pass "" if no reinitialization needed)
+     */
+    function upgradePoolsByType(PoolType poolType, address newImplementation, bytes calldata data)
+        external
+        onlyRole(DEFAULT_ADMIN_ROLE)
+    {
+        require(newImplementation != address(0), CGRCanNotZeroAddress());
+
+        uint totalCount = _allPoolIds.length();
+        uint upgradedCount = 0;
+
+        for (uint i = 0; i < totalCount; i++) {
+            uint poolId = _allPoolIds.at(i);
+            if (poolTypes[poolId] == poolType) {
+                UUPSUpgradeable(address(pools[poolId].pool)).upgradeToAndCall(newImplementation, data);
+                upgradedCount++;
+            }
+        }
+
+        // Update the stored implementation reference
+        if (poolType == PoolType.CrossPool) {
+            poolImplementation = ICrossGameRewardPool(newImplementation);
+            emit PoolImplementationSet(ICrossGameRewardPool(newImplementation));
+        } else {
+            poolImplementationV2 = ICrossGameRewardPool(newImplementation);
+            emit PoolImplementationV2Set(ICrossGameRewardPool(newImplementation));
+        }
+
+        emit PoolsBatchUpgraded(poolType, newImplementation, upgradedCount);
     }
 
     /**

@@ -115,4 +115,7 @@ interface ICrossGameReward is IERC5313 {
 
     /// @notice Retrieves pool IDs by pool type
     function getPoolIdsByType(PoolType poolType) external view returns (uint[] memory);
+
+    /// @notice Upgrades all pools of a specific type to a new implementation
+    function upgradePoolsByType(PoolType poolType, address newImplementation, bytes calldata data) external;
 }

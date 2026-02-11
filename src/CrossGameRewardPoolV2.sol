@@ -861,8 +861,11 @@ contract CrossGameRewardPoolV2 is
 
     /**
      * @dev Authorizes contract upgrades
+     *      Allows both the owner (defaultAdmin) and CrossGameReward (rewardRoot) to upgrade
      */
-    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
+    function _authorizeUpgrade(address) internal override {
+        require(msg.sender == owner() || msg.sender == address(crossGameReward), CGRP2OnlyOwner());
+    }
 
     // ==================== Storage Gap ====================
 
