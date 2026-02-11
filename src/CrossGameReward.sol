@@ -11,10 +11,12 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
 import {CrossGameRewardPool} from "./CrossGameRewardPool.sol";
+import {CrossGameRewardPoolV2} from "./CrossGameRewardPoolV2.sol";
 
 import {WCROSS} from "./WCROSS.sol";
 import {ICrossGameReward} from "./interfaces/ICrossGameReward.sol";
 import {ICrossGameRewardPool} from "./interfaces/ICrossGameRewardPool.sol";
+import {ICrossGameRewardPoolV2} from "./interfaces/ICrossGameRewardPoolV2.sol";
 import {IWCROSS} from "./interfaces/IWCROSS.sol";
 /**
  * @title CrossGameReward
@@ -43,6 +45,12 @@ contract CrossGameReward is Initializable, AccessControl, UUPSUpgradeable, ICros
     /// @notice Thrown when a zero value is provided where it's not allowed
     error CGRCanNotZeroValue();
 
+    /// @notice Thrown when V2 implementation is not set
+    error CGRV2ImplementationNotSet();
+
+    /// @notice Thrown when operation is not allowed for pool type
+    error CGRInvalidPoolType(uint poolId, PoolType expected, PoolType actual);
+
     // ==================== Events ====================
 
     /// @notice Emitted when a new game reward pool is created
@@ -66,6 +74,34 @@ contract CrossGameReward is Initializable, AccessControl, UUPSUpgradeable, ICros
     /// @param to The address receiving the reclaimed tokens
     /// @param amount The amount reclaimed
     event ReclaimedFromPool(uint indexed poolId, IERC20 indexed token, address indexed to, uint amount);
+
+    /// @notice Emitted when the pool implementation V2 is updated
+    /// @param implementation The new V2 implementation address
+    event PoolImplementationV2Set(ICrossGameRewardPool indexed implementation);
+
+    /// @notice Emitted when a V2 pool is created
+    /// @param poolId The ID of the newly created pool
+    /// @param poolAddress The address of the newly created pool
+    /// @param depositToken The token that can be deposited in this pool
+    /// @param rewardToken The reward token for this pool
+    /// @param name The name of the pool
+    event PoolV2Created(
+        uint indexed poolId,
+        address indexed poolAddress,
+        address depositToken,
+        address indexed rewardToken,
+        string name
+    );
+
+    /// @notice Emitted when developer role is granted for a V2 pool
+    /// @param poolId The pool ID
+    /// @param developer The developer address
+    event DeveloperRoleGranted(uint indexed poolId, address indexed developer);
+
+    /// @notice Emitted when developer role is revoked for a V2 pool
+    /// @param poolId The pool ID
+    /// @param developer The developer address
+    event DeveloperRoleRevoked(uint indexed poolId, address indexed developer);
 
     // ==================== State Variables ====================
 
@@ -95,6 +131,14 @@ contract CrossGameReward is Initializable, AccessControl, UUPSUpgradeable, ICros
 
     /// @notice Set of all pool IDs
     EnumerableSet.UintSet private _allPoolIds;
+
+    // ==================== V2 State Variables (using __gap slots) ====================
+
+    /// @notice Implementation address for CrossGameRewardPoolV2 (UUPS proxy pattern)
+    ICrossGameRewardPool public poolImplementationV2;
+
+    /// @notice Mapping from pool ID to pool type
+    mapping(uint => PoolType) public poolTypes;
 
     // ==================== Constructor ====================
 
@@ -167,8 +211,51 @@ contract CrossGameReward is Initializable, AccessControl, UUPSUpgradeable, ICros
         poolIds[pool] = poolId;
         _allPoolIds.add(poolId);
         _poolsByDepositToken[depositToken].add(poolId);
+        poolTypes[poolId] = PoolType.CrossPool;
 
         emit PoolCreated(poolId, address(pool), address(depositToken), name);
+    }
+
+    /**
+     * @notice Creates a new game reward pool V2 (GamePool)
+     * @dev Deploys a new UUPS proxy pointing to the V2 pool implementation
+     * @param name Name of the pool
+     * @param depositToken Address of the token to be deposited in the pool
+     * @param rewardToken Address of the reward token for this pool
+     * @param minDepositAmount Minimum amount required for depositing (in wei)
+     * @return poolId ID of the newly created pool
+     * @return pool Address of the newly created pool
+     */
+    function createPoolV2(string calldata name, IERC20 depositToken, IERC20 rewardToken, uint minDepositAmount)
+        external
+        onlyRole(MANAGER_ROLE)
+        returns (uint poolId, ICrossGameRewardPool pool)
+    {
+        require(address(poolImplementationV2) != address(0), CGRV2ImplementationNotSet());
+        require(bytes(name).length > 0, CGRCanNotZeroValue());
+        require(address(depositToken) != address(0), CGRCanNotZeroAddress());
+        require(address(rewardToken) != address(0), CGRCanNotZeroAddress());
+        require(minDepositAmount > 0, CGRCanNotZeroValue());
+
+        poolId = nextPoolId++;
+
+        // Deploy pool as UUPS proxy with V2 implementation
+        bytes memory initData =
+            abi.encodeCall(CrossGameRewardPoolV2.initialize, (depositToken, rewardToken, minDepositAmount));
+
+        ERC1967Proxy proxy = new ERC1967Proxy(address(poolImplementationV2), initData);
+        pool = ICrossGameRewardPool(address(proxy));
+
+        // Store pool information
+        pools[poolId] =
+            PoolInfo({poolId: poolId, pool: pool, name: name, depositToken: depositToken, createdAt: block.timestamp});
+
+        poolIds[pool] = poolId;
+        _allPoolIds.add(poolId);
+        _poolsByDepositToken[depositToken].add(poolId);
+        poolTypes[poolId] = PoolType.GamePool;
+
+        emit PoolV2Created(poolId, address(pool), address(depositToken), address(rewardToken), name);
     }
 
     /**
@@ -251,6 +338,45 @@ contract CrossGameReward is Initializable, AccessControl, UUPSUpgradeable, ICros
         require(address(newImplementation) != address(0), CGRCanNotZeroAddress());
         poolImplementation = newImplementation;
         emit PoolImplementationSet(newImplementation);
+    }
+
+    /**
+     * @notice Updates the pool implementation V2 address
+     * @dev Only affects newly created V2 pools, existing pools remain unchanged
+     * @param newImplementation Address of the new V2 implementation contract
+     */
+    function setPoolImplementationV2(ICrossGameRewardPool newImplementation) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(address(newImplementation) != address(0), CGRCanNotZeroAddress());
+        poolImplementationV2 = newImplementation;
+        emit PoolImplementationV2Set(newImplementation);
+    }
+
+    /**
+     * @notice Grants developer role to an account for a V2 pool
+     * @dev Only callable by MANAGER_ROLE
+     * @param poolId ID of the V2 pool
+     * @param developer Address to grant developer role
+     */
+    function grantDeveloperRole(uint poolId, address developer) external onlyRole(MANAGER_ROLE) {
+        require(address(pools[poolId].pool) != address(0), CGRPoolNotFound());
+        require(poolTypes[poolId] == PoolType.GamePool, CGRInvalidPoolType(poolId, PoolType.GamePool, poolTypes[poolId]));
+
+        ICrossGameRewardPoolV2(address(pools[poolId].pool)).grantDeveloperRole(developer);
+        emit DeveloperRoleGranted(poolId, developer);
+    }
+
+    /**
+     * @notice Revokes developer role from an account for a V2 pool
+     * @dev Only callable by MANAGER_ROLE
+     * @param poolId ID of the V2 pool
+     * @param developer Address to revoke developer role from
+     */
+    function revokeDeveloperRole(uint poolId, address developer) external onlyRole(MANAGER_ROLE) {
+        require(address(pools[poolId].pool) != address(0), CGRPoolNotFound());
+        require(poolTypes[poolId] == PoolType.GamePool, CGRInvalidPoolType(poolId, PoolType.GamePool, poolTypes[poolId]));
+
+        ICrossGameRewardPoolV2(address(pools[poolId].pool)).revokeDeveloperRole(developer);
+        emit DeveloperRoleRevoked(poolId, developer);
     }
 
     /**
@@ -375,6 +501,43 @@ contract CrossGameReward is Initializable, AccessControl, UUPSUpgradeable, ICros
         return activeIds;
     }
 
+    /**
+     * @notice Returns the pool type for a given pool ID
+     * @param poolId ID of the pool
+     * @return Pool type (CrossPool or GamePool)
+     */
+    function getPoolType(uint poolId) external view returns (PoolType) {
+        require(address(pools[poolId].pool) != address(0), CGRPoolNotFound());
+        return poolTypes[poolId];
+    }
+
+    /**
+     * @notice Retrieves pool IDs by pool type
+     * @param poolType The pool type to filter by
+     * @return Array of pool IDs matching the specified type
+     */
+    function getPoolIdsByType(PoolType poolType) external view returns (uint[] memory) {
+        uint totalCount = _allPoolIds.length();
+        uint[] memory tempIds = new uint[](totalCount);
+        uint matchCount = 0;
+
+        for (uint i = 0; i < totalCount; i++) {
+            uint poolId = _allPoolIds.at(i);
+            if (poolTypes[poolId] == poolType) {
+                tempIds[matchCount] = poolId;
+                matchCount++;
+            }
+        }
+
+        // Resize array
+        uint[] memory matchedIds = new uint[](matchCount);
+        for (uint i = 0; i < matchCount; i++) {
+            matchedIds[i] = tempIds[i];
+        }
+
+        return matchedIds;
+    }
+
     // ==================== UUPS ====================
 
     /**
@@ -387,6 +550,9 @@ contract CrossGameReward is Initializable, AccessControl, UUPSUpgradeable, ICros
 
     /**
      * @dev Storage gap for future upgrades
+     *      Reduced from 40 to 38 due to V2 state variables:
+     *      - poolImplementationV2 (1 slot)
+     *      - poolTypes mapping (1 slot)
      */
-    uint[40] private __gap;
+    uint[38] private __gap;
 }

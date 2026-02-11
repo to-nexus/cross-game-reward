@@ -1,0 +1,145 @@
+// SPDX-License-Identifier: BUSL-1.1
+pragma solidity 0.8.28;
+
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
+import {ICrossGameRewardPool} from "./ICrossGameRewardPool.sol";
+
+/**
+ * @title ICrossGameRewardPoolV2
+ * @notice Interface for the CrossGameRewardPoolV2 contract (Game Pool)
+ * @dev Extends ICrossGameRewardPool with round-based reward distribution
+ *
+ * Key differences from V1:
+ * - Single reward token per pool (set at initialization)
+ * - Round-based linear reward distribution over blocks
+ * - Developer role for round management
+ */
+interface ICrossGameRewardPoolV2 is ICrossGameRewardPool {
+    /**
+     * @notice Round information structure for reward distribution
+     * @param roundId Unique identifier for the round
+     * @param totalReward Total reward amount to be distributed
+     * @param startBlock Block number when distribution starts
+     * @param endBlock Block number when distribution ends
+     * @param rewardPerBlock Reward amount distributed per block
+     * @param lastRewardBlock Last block number when rewards were calculated
+     * @param accRewardPerShare Accumulated reward per share (scaled by PRECISION)
+     * @param isCancelled Whether the round has been cancelled
+     */
+    struct Round {
+        uint256 roundId;
+        uint256 totalReward;
+        uint256 startBlock;
+        uint256 endBlock;
+        uint256 rewardPerBlock;
+        uint256 lastRewardBlock;
+        uint256 accRewardPerShare;
+        bool isCancelled;
+    }
+
+    // ==================== Events ====================
+
+    /// @notice Emitted when a new round is created
+    /// @param roundId The ID of the created round
+    /// @param totalReward Total reward amount for the round
+    /// @param startBlock Block when distribution starts
+    /// @param endBlock Block when distribution ends
+    /// @param rewardPerBlock Reward distributed per block
+    event RoundCreated(
+        uint256 indexed roundId,
+        uint256 totalReward,
+        uint256 startBlock,
+        uint256 endBlock,
+        uint256 rewardPerBlock
+    );
+
+    /// @notice Emitted when a round is cancelled
+    /// @param roundId The ID of the cancelled round
+    /// @param refundAmount Amount refunded to the creator
+    event RoundCancelled(uint256 indexed roundId, uint256 refundAmount);
+
+    /// @notice Emitted when developer role is granted
+    /// @param account Address granted the developer role
+    event DeveloperRoleGranted(address indexed account);
+
+    /// @notice Emitted when developer role is revoked
+    /// @param account Address whose developer role was revoked
+    event DeveloperRoleRevoked(address indexed account);
+
+    // ==================== View Functions ====================
+
+    /// @notice Returns the single reward token for this pool
+    function rewardToken() external view returns (IERC20);
+
+    /// @notice Returns the next round ID to be assigned
+    function nextRoundId() external view returns (uint256);
+
+    /// @notice Returns the global accumulated reward per share
+    function globalAccRewardPerShare() external view returns (uint256);
+
+    /// @notice Returns the reclaimable amount (rewards distributed when totalDeposited was 0)
+    function reclaimableAmount() external view returns (uint256);
+
+    /// @notice Returns round information by round ID
+    /// @param roundId The ID of the round to query
+    /// @return Round information struct
+    function getRound(uint256 roundId) external view returns (Round memory);
+
+    /// @notice Returns all active (ongoing) rounds
+    /// @return Array of active Round structs
+    function getActiveRounds() external view returns (Round[] memory);
+
+    /// @notice Returns the number of active rounds
+    /// @return Count of active rounds
+    function getActiveRoundCount() external view returns (uint256);
+
+    /// @notice Returns all active round IDs
+    /// @return Array of active round IDs
+    function getActiveRoundIds() external view returns (uint256[] memory);
+
+    /// @notice Checks if an account has the developer role
+    /// @param account Address to check
+    /// @return True if the account has developer role
+    function hasDeveloperRole(address account) external view returns (bool);
+
+    // ==================== Round Management Functions ====================
+
+    /**
+     * @notice Creates a new reward distribution round
+     * @dev Only callable by accounts with DEVELOPER_ROLE
+     *      Transfers reward tokens from caller to the pool
+     * @param amount Total reward amount to distribute
+     * @param startBlock Block number when distribution starts (must be > current block)
+     * @param durationBlocks Number of blocks over which to distribute rewards
+     * @return roundId The ID of the created round
+     */
+    function createRound(uint256 amount, uint256 startBlock, uint256 durationBlocks)
+        external
+        returns (uint256 roundId);
+
+    /**
+     * @notice Cancels a round that hasn't started yet
+     * @dev Only callable by accounts with DEVELOPER_ROLE
+     *      Refunds the reward tokens to the caller
+     *      Can only cancel rounds where startBlock > current block
+     * @param roundId The ID of the round to cancel
+     */
+    function cancelRound(uint256 roundId) external;
+
+    // ==================== Admin Functions ====================
+
+    /**
+     * @notice Grants developer role to an account
+     * @dev Only callable by CrossGameReward contract (REWARD_ROOT_ROLE)
+     * @param developer Address to grant developer role
+     */
+    function grantDeveloperRole(address developer) external;
+
+    /**
+     * @notice Revokes developer role from an account
+     * @dev Only callable by CrossGameReward contract (REWARD_ROOT_ROLE)
+     * @param developer Address to revoke developer role from
+     */
+    function revokeDeveloperRole(address developer) external;
+}

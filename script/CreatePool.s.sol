@@ -2,6 +2,7 @@
 pragma solidity 0.8.28;
 
 import "../src/CrossGameReward.sol";
+import "../src/interfaces/IWCROSS.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "forge-std/Script.sol";
 
@@ -23,6 +24,8 @@ import "forge-std/Script.sol";
  * - REWARD_TOKEN: 보상 토큰 주소 (없으면 보상 토큰을 등록하지 않음)
  */
 contract CreatePool is Script {
+    address public constant NATIVE_TOKEN_ADDRESS = address(0x1);
+
     function run() external {
         // 환경변수에서 설정 읽기
         address crossGameRewardAddress = vm.envAddress("CROSS_GAME_REWARD");
@@ -33,18 +36,29 @@ contract CreatePool is Script {
         // CrossGameReward 컨트랙트 인스턴스 생성
         ICrossGameReward crossGameReward = ICrossGameReward(crossGameRewardAddress);
 
+        IWCROSS wcross = crossGameReward.wcross();
+        IERC20 depositToken;
+        if (depositTokenAddress == NATIVE_TOKEN_ADDRESS) {
+            depositToken = IERC20(address(wcross));
+            console.log("   Deposit Token: WCROSS (Native)");
+            console.log("   Token Address:", address(wcross));
+        } else {
+            depositToken = IERC20(depositTokenAddress);
+            console.log("   Deposit Token: ERC20");
+            console.log("   Token Address:", depositTokenAddress);
+        }
+
         console.log("\n=== Pool Creation Configuration ===");
         console.log("CrossGameReward Address:", crossGameRewardAddress);
         console.log("Pool Name:", poolName);
-        console.log("Deposit Token:", depositTokenAddress);
+        console.log("Deposit Token:", address(depositToken));
         console.log("Min Deposit Amount:", minDepositAmount);
         console.log("Deployer:", msg.sender);
 
         vm.startBroadcast();
 
         // 1. Pool 생성
-        (uint poolId, ICrossGameRewardPool pool) =
-            crossGameReward.createPool(poolName, IERC20(depositTokenAddress), minDepositAmount);
+        (uint poolId, ICrossGameRewardPool pool) = crossGameReward.createPool(poolName, depositToken, minDepositAmount);
 
         console.log("\n=== Pool Created ===");
         console.log("Pool ID:", poolId);
