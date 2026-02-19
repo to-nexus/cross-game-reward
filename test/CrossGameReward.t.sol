@@ -607,30 +607,30 @@ contract CrossGameRewardTest is Test {
         CrossGameRewardPool(address(pool)).upgradeToAndCall(address(newImpl), "");
     }
 
-    function testPoolV2_OwnerCanUpgrade() public {
+    function testPoolV2_AdminCanUpgradeViaBatch() public {
         (, ICrossGameRewardPool pool) = crossGameReward.createPoolV2(
             "V2 Pool", IERC20(address(token1)), IERC20(address(rewardToken)), 1 ether
         );
 
         CrossGameRewardPoolV2 newImpl = new CrossGameRewardPoolV2();
 
-        // Owner can upgrade directly
-        CrossGameRewardPoolV2(address(pool)).upgradeToAndCall(address(newImpl), "");
+        // V2 Pool's DEFAULT_ADMIN_ROLE is CrossGameReward contract,
+        // so upgrades must go through the factory's upgradePoolsByType
+        crossGameReward.upgradePoolsByType(ICrossGameReward.PoolType.GamePool, address(newImpl), "");
 
         assertEq(address(pool.depositToken()), address(token1));
     }
 
-    function testPoolV2_RewardRootCanUpgrade() public {
+    function testPoolV2_DirectUpgrade_Unauthorized() public {
         (, ICrossGameRewardPool pool) = crossGameReward.createPoolV2(
             "V2 Pool", IERC20(address(token1)), IERC20(address(rewardToken)), 1 ether
         );
 
         CrossGameRewardPoolV2 newImpl = new CrossGameRewardPoolV2();
 
-        // CrossGameReward (rewardRoot) can upgrade via batch
-        crossGameReward.upgradePoolsByType(ICrossGameReward.PoolType.GamePool, address(newImpl), "");
-
-        assertEq(address(pool.depositToken()), address(token1));
+        // Human admin (address(this)) does NOT have DEFAULT_ADMIN_ROLE on V2 pool
+        vm.expectRevert();
+        CrossGameRewardPoolV2(address(pool)).upgradeToAndCall(address(newImpl), "");
     }
 
     function testPoolV2_UnauthorizedCannotUpgrade() public {

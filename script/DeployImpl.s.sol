@@ -3,88 +3,130 @@ pragma solidity 0.8.28;
 
 import "../src/CrossGameReward.sol";
 import "../src/CrossGameRewardPool.sol";
+import "../src/CrossGameRewardPoolV2.sol";
 import "forge-std/Script.sol";
 
 /**
  * @title DeployImpl
  * @notice Implementation 컨트랙트만 배포하는 스크립트
- * @dev CrossGameReward와 CrossGameRewardPool의 Implementation을 배포합니다.
- *      업그레이드나 새로운 시스템 배포 시 사용할 수 있습니다.
+ * @dev CrossGameReward, CrossGameRewardPool (V1), CrossGameRewardPoolV2를 배포합니다.
  *
  * 사용법:
- * 1. 전체 배포 (기본):
+ * 1. 전체 배포 (기본 - V1 + CrossGameReward):
  *    forge script script/DeployImpl.s.sol:DeployImpl \
- *      --rpc-url <RPC_URL> \
- *      --broadcast
+ *      --rpc-url <RPC_URL> --broadcast
  *
- * 2. Pool Implementation만 배포:
+ * 2. 전체 배포 (V1 + V2 + CrossGameReward):
+ *    forge script script/DeployImpl.s.sol:DeployImpl \
+ *      --sig "deployAll()" \
+ *      --rpc-url <RPC_URL> --broadcast
+ *
+ * 3. Pool V1 Implementation만 배포:
  *    forge script script/DeployImpl.s.sol:DeployImpl \
  *      --sig "deployPool()" \
- *      --rpc-url <RPC_URL> \
- *      --broadcast
+ *      --rpc-url <RPC_URL> --broadcast
  *
- * 3. CrossGameReward Implementation만 배포:
+ * 4. Pool V2 Implementation만 배포:
+ *    forge script script/DeployImpl.s.sol:DeployImpl \
+ *      --sig "deployPoolV2()" \
+ *      --rpc-url <RPC_URL> --broadcast
+ *
+ * 5. CrossGameReward Implementation만 배포:
  *    forge script script/DeployImpl.s.sol:DeployImpl \
  *      --sig "deployCrossGameReward()" \
- *      --rpc-url <RPC_URL> \
- *      --broadcast
+ *      --rpc-url <RPC_URL> --broadcast
  */
 contract DeployImpl is Script {
     /**
-     * @notice 기본 실행 함수 - 모든 Implementation 배포
+     * @notice 기본 실행 - V1 Pool + CrossGameReward Implementation 배포
      */
     function run() external {
-        address deployer = msg.sender;
-
-        console.log("Deployer:", deployer);
+        console.log("Deployer:", msg.sender);
         console.log("Chain ID:", block.chainid);
 
         vm.startBroadcast();
 
-        // 1. CrossGameRewardPool Implementation 배포
-        CrossGameRewardPool poolImplementation = new CrossGameRewardPool();
-        console.log("\n1. Pool Implementation deployed:", address(poolImplementation));
+        CrossGameRewardPool poolImpl = new CrossGameRewardPool();
+        console.log("\n1. Pool V1 Implementation:", address(poolImpl));
 
-        // 2. CrossGameReward Implementation 배포
-        CrossGameReward crossGameRewardImpl = new CrossGameReward();
-        console.log("2. CrossGameReward Implementation deployed:", address(crossGameRewardImpl));
+        CrossGameReward cgrImpl = new CrossGameReward();
+        console.log("2. CrossGameReward Implementation:", address(cgrImpl));
 
         vm.stopBroadcast();
 
         console.log("\n=== Deployment Summary ===");
-        console.log("CrossGameReward Implementation:", address(crossGameRewardImpl));
-        console.log("Pool Implementation:", address(poolImplementation));
-        console.log("\n=== Next Steps ===");
-        console.log("1. Use these addresses in DeployFullSystem with environment variables:");
-        console.log("   CROSS_GAME_REWARD_ROOT_IMPLEMENTATION=", address(crossGameRewardImpl));
-        console.log("   POOL_IMPLEMENTATION=", address(poolImplementation));
-        console.log("2. Or use them for upgrading existing proxy contracts");
+        console.log("Pool V1 Implementation:", address(poolImpl));
+        console.log("CrossGameReward Implementation:", address(cgrImpl));
+        console.log("\n=== Environment Variables ===");
+        console.log("POOL_IMPLEMENTATION=", address(poolImpl));
+        console.log("CROSS_GAME_REWARD_ROOT_IMPLEMENTATION=", address(cgrImpl));
     }
 
     /**
-     * @notice CrossGameRewardPool Implementation만 배포
-     * @dev --sig "deployPool()" 플래그와 함께 사용
+     * @notice 전체 배포 - V1 + V2 Pool + CrossGameReward Implementation
+     * @dev --sig "deployAll()" 플래그와 함께 사용
      */
-    function deployPool() external {
-        address deployer = msg.sender;
-
-        console.log("Deployer:", deployer);
+    function deployAll() external {
+        console.log("Deployer:", msg.sender);
         console.log("Chain ID:", block.chainid);
 
         vm.startBroadcast();
 
-        CrossGameRewardPool poolImplementation = new CrossGameRewardPool();
-        console.log("\nPool Implementation deployed:", address(poolImplementation));
+        CrossGameRewardPool poolImpl = new CrossGameRewardPool();
+        console.log("\n1. Pool V1 Implementation:", address(poolImpl));
+
+        CrossGameRewardPoolV2 poolV2Impl = new CrossGameRewardPoolV2();
+        console.log("2. Pool V2 Implementation:", address(poolV2Impl));
+
+        CrossGameReward cgrImpl = new CrossGameReward();
+        console.log("3. CrossGameReward Implementation:", address(cgrImpl));
 
         vm.stopBroadcast();
 
         console.log("\n=== Deployment Summary ===");
-        console.log("Pool Implementation:", address(poolImplementation));
-        console.log("\n=== Next Steps ===");
-        console.log("Use this address for:");
-        console.log("1. Upgrading existing pool proxies");
-        console.log("2. Setting as poolImplementation in CrossGameReward");
-        console.log("   - Call setPoolImplementation(", address(poolImplementation), ")");
+        console.log("Pool V1 Implementation:", address(poolImpl));
+        console.log("Pool V2 Implementation:", address(poolV2Impl));
+        console.log("CrossGameReward Implementation:", address(cgrImpl));
+        console.log("\n=== Environment Variables ===");
+        console.log("POOL_IMPLEMENTATION=", address(poolImpl));
+        console.log("POOL_V2_IMPLEMENTATION=", address(poolV2Impl));
+        console.log("CROSS_GAME_REWARD_ROOT_IMPLEMENTATION=", address(cgrImpl));
+    }
+
+    /**
+     * @notice Pool V1 Implementation만 배포
+     * @dev --sig "deployPool()" 플래그와 함께 사용
+     */
+    function deployPool() external {
+        console.log("Deployer:", msg.sender);
+        console.log("Chain ID:", block.chainid);
+
+        vm.startBroadcast();
+
+        CrossGameRewardPool poolImpl = new CrossGameRewardPool();
+
+        vm.stopBroadcast();
+
+        console.log("\nPool V1 Implementation:", address(poolImpl));
+        console.log("Use: setPoolImplementation(", address(poolImpl), ")");
+    }
+
+    /**
+     * @notice Pool V2 Implementation만 배포
+     * @dev --sig "deployPoolV2()" 플래그와 함께 사용
+     */
+    function deployPoolV2() external {
+        console.log("Deployer:", msg.sender);
+        console.log("Chain ID:", block.chainid);
+
+        vm.startBroadcast();
+
+        CrossGameRewardPoolV2 poolV2Impl = new CrossGameRewardPoolV2();
+
+        vm.stopBroadcast();
+
+        console.log("\nPool V2 Implementation:", address(poolV2Impl));
+        console.log("Use: setPoolImplementationV2(", address(poolV2Impl), ")");
     }
 
     /**
@@ -92,24 +134,16 @@ contract DeployImpl is Script {
      * @dev --sig "deployCrossGameReward()" 플래그와 함께 사용
      */
     function deployCrossGameReward() external {
-        address deployer = msg.sender;
-
-        console.log("Deployer:", deployer);
+        console.log("Deployer:", msg.sender);
         console.log("Chain ID:", block.chainid);
 
         vm.startBroadcast();
 
-        CrossGameReward crossGameRewardImpl = new CrossGameReward();
-        console.log("\nCrossGameReward Implementation deployed:", address(crossGameRewardImpl));
+        CrossGameReward cgrImpl = new CrossGameReward();
 
         vm.stopBroadcast();
 
-        console.log("\n=== Deployment Summary ===");
-        console.log("CrossGameReward Implementation:", address(crossGameRewardImpl));
-        console.log("\n=== Next Steps ===");
-        console.log("Use this address for:");
-        console.log("1. Upgrading existing CrossGameReward proxy");
-        console.log("   - Call upgradeToAndCall(", address(crossGameRewardImpl), ", \"\")");
-        console.log("2. Creating new CrossGameReward proxy with this implementation");
+        console.log("\nCrossGameReward Implementation:", address(cgrImpl));
+        console.log("Use: upgradeToAndCall(", address(cgrImpl), ', "")');
     }
 }

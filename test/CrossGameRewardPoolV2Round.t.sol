@@ -15,7 +15,7 @@ contract CrossGameRewardPoolV2RoundTest is CrossGameRewardPoolV2Base {
         uint256 startBlock = block.number + 100;
         uint256 duration = 1000;
 
-        vm.startPrank(developer);
+        vm.startPrank(sponsor);
         crossdToken.approve(address(poolV2), amount);
         uint256 roundId = poolV2.createRound(amount, startBlock, duration);
         vm.stopPrank();
@@ -42,17 +42,17 @@ contract CrossGameRewardPoolV2RoundTest is CrossGameRewardPoolV2Base {
         assertEq(poolV2.getActiveRoundCount(), 3);
     }
 
-    function test_CreateRound_OnlyDeveloper() public {
+    function test_CreateRound_OnlySponsor() public {
         vm.startPrank(user1);
         crossdToken.approve(address(poolV2), 1000 ether);
 
-        vm.expectRevert(CrossGameRewardPoolV2.CGRP2OnlyDeveloper.selector);
+        vm.expectRevert();
         poolV2.createRound(1000 ether, block.number + 100, 1000);
         vm.stopPrank();
     }
 
     function test_CreateRound_InvalidStartBlock() public {
-        vm.startPrank(developer);
+        vm.startPrank(sponsor);
         crossdToken.approve(address(poolV2), 1000 ether);
 
         // Start block in the past
@@ -64,7 +64,7 @@ contract CrossGameRewardPoolV2RoundTest is CrossGameRewardPoolV2Base {
     }
 
     function test_CreateRound_ZeroAmount() public {
-        vm.startPrank(developer);
+        vm.startPrank(sponsor);
 
         vm.expectRevert(CrossGameRewardPoolV2.CGRP2CanNotZeroValue.selector);
         poolV2.createRound(0, block.number + 100, 1000);
@@ -72,7 +72,7 @@ contract CrossGameRewardPoolV2RoundTest is CrossGameRewardPoolV2Base {
     }
 
     function test_CreateRound_ZeroDuration() public {
-        vm.startPrank(developer);
+        vm.startPrank(sponsor);
         crossdToken.approve(address(poolV2), 1000 ether);
 
         vm.expectRevert(CrossGameRewardPoolV2.CGRP2InvalidDuration.selector);
@@ -86,15 +86,15 @@ contract CrossGameRewardPoolV2RoundTest is CrossGameRewardPoolV2Base {
         uint256 amount = 100000 ether;
         uint256 roundId = _createRound(amount, 100, 1000);
 
-        uint256 developerBalanceBefore = crossdToken.balanceOf(developer);
+        uint256 sponsorBalanceBefore = crossdToken.balanceOf(sponsor);
 
-        vm.prank(developer);
+        vm.prank(sponsor);
         poolV2.cancelRound(roundId);
 
         ICrossGameRewardPoolV2.Round memory round = poolV2.getRound(roundId);
         assertTrue(round.isCancelled);
         assertEq(poolV2.getActiveRoundCount(), 0);
-        assertEq(crossdToken.balanceOf(developer), developerBalanceBefore + amount);
+        assertEq(crossdToken.balanceOf(sponsor), sponsorBalanceBefore + amount);
     }
 
     function test_CancelRound_AlreadyStarted() public {
@@ -103,7 +103,7 @@ contract CrossGameRewardPoolV2RoundTest is CrossGameRewardPoolV2Base {
         // Advance past start block
         _advanceBlocks(20);
 
-        vm.prank(developer);
+        vm.prank(sponsor);
         vm.expectRevert(abi.encodeWithSelector(CrossGameRewardPoolV2.CGRP2RoundAlreadyStarted.selector, roundId));
         poolV2.cancelRound(roundId);
     }
@@ -111,16 +111,16 @@ contract CrossGameRewardPoolV2RoundTest is CrossGameRewardPoolV2Base {
     function test_CancelRound_AlreadyCancelled() public {
         uint256 roundId = _createRound(100000 ether, 100, 1000);
 
-        vm.prank(developer);
+        vm.prank(sponsor);
         poolV2.cancelRound(roundId);
 
-        vm.prank(developer);
+        vm.prank(sponsor);
         vm.expectRevert(abi.encodeWithSelector(CrossGameRewardPoolV2.CGRP2RoundAlreadyCancelled.selector, roundId));
         poolV2.cancelRound(roundId);
     }
 
     function test_CancelRound_NotFound() public {
-        vm.prank(developer);
+        vm.prank(sponsor);
         vm.expectRevert(abi.encodeWithSelector(CrossGameRewardPoolV2.CGRP2RoundNotFound.selector, 999));
         poolV2.cancelRound(999);
     }
@@ -413,14 +413,14 @@ contract CrossGameRewardPoolV2RoundTest is CrossGameRewardPoolV2Base {
         uint256 amount = 10001 ether;
         uint256 duration = 1000;
 
-        uint256 devBalanceBefore = crossdToken.balanceOf(developer);
+        uint256 devBalanceBefore = crossdToken.balanceOf(sponsor);
 
-        vm.startPrank(developer);
+        vm.startPrank(sponsor);
         crossdToken.approve(address(poolV2), amount);
         uint256 roundId = poolV2.createRound(amount, block.number + 10, duration);
         vm.stopPrank();
 
-        uint256 devBalanceAfter = crossdToken.balanceOf(developer);
+        uint256 devBalanceAfter = crossdToken.balanceOf(sponsor);
 
         // Verify round stores actualReward (without remainder)
         ICrossGameRewardPoolV2.Round memory round = poolV2.getRound(roundId);
@@ -456,7 +456,7 @@ contract CrossGameRewardPoolV2RoundTest is CrossGameRewardPoolV2Base {
         uint256 amount = 99; // 99 wei
         uint256 duration = 100;
 
-        vm.startPrank(developer);
+        vm.startPrank(sponsor);
         crossdToken.approve(address(poolV2), amount);
 
         vm.expectRevert(CrossGameRewardPoolV2.CGRP2RewardPerBlockZero.selector);
@@ -469,14 +469,14 @@ contract CrossGameRewardPoolV2RoundTest is CrossGameRewardPoolV2Base {
         uint256 amount = 10000 ether;
         uint256 duration = 100;
 
-        uint256 devBalanceBefore = crossdToken.balanceOf(developer);
+        uint256 devBalanceBefore = crossdToken.balanceOf(sponsor);
 
-        vm.startPrank(developer);
+        vm.startPrank(sponsor);
         crossdToken.approve(address(poolV2), amount);
         uint256 roundId = poolV2.createRound(amount, block.number + 10, duration);
         vm.stopPrank();
 
-        uint256 devBalanceAfter = crossdToken.balanceOf(developer);
+        uint256 devBalanceAfter = crossdToken.balanceOf(sponsor);
 
         // When exact division: totalReward == amount, full transfer
         ICrossGameRewardPoolV2.Round memory round = poolV2.getRound(roundId);
@@ -487,7 +487,7 @@ contract CrossGameRewardPoolV2RoundTest is CrossGameRewardPoolV2Base {
 
     function test_CreateRound_LargeRemainder_Wei() public {
         // Edge case: 999 wei / 1000 blocks => rewardPerBlock = 0 => reverts
-        vm.startPrank(developer);
+        vm.startPrank(sponsor);
         crossdToken.approve(address(poolV2), 999);
 
         vm.expectRevert(CrossGameRewardPoolV2.CGRP2RewardPerBlockZero.selector);
@@ -502,14 +502,14 @@ contract CrossGameRewardPoolV2RoundTest is CrossGameRewardPoolV2Base {
         uint256 amount = 7 ether;
         uint256 duration = 3;
 
-        uint256 devBalanceBefore = crossdToken.balanceOf(developer);
+        uint256 devBalanceBefore = crossdToken.balanceOf(sponsor);
 
-        vm.startPrank(developer);
+        vm.startPrank(sponsor);
         crossdToken.approve(address(poolV2), amount);
         uint256 roundId = poolV2.createRound(amount, block.number + 10, duration);
         vm.stopPrank();
 
-        uint256 devBalanceAfter = crossdToken.balanceOf(developer);
+        uint256 devBalanceAfter = crossdToken.balanceOf(sponsor);
 
         ICrossGameRewardPoolV2.Round memory round = poolV2.getRound(roundId);
         uint256 expectedRpb = amount / duration; // 2333333333333333333
@@ -521,7 +521,7 @@ contract CrossGameRewardPoolV2RoundTest is CrossGameRewardPoolV2Base {
         assertEq(round.rewardPerBlock, expectedRpb);
         assertEq(round.totalReward, expectedActual);
 
-        // Only actualReward was transferred (remainder stays with developer)
+        // Only actualReward was transferred (remainder stays with sponsor)
         assertEq(devBalanceBefore - devBalanceAfter, expectedActual);
     }
 

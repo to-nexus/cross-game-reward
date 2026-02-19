@@ -39,7 +39,7 @@ abstract contract CrossGameRewardPoolV2Base is Test {
     MockERC20V2 public crossdToken; // Reward token (CROSSD)
 
     address public owner = address(this);
-    address public developer = address(0x1001);
+    address public sponsor = address(0x1001);
     address public user1 = address(0x2001);
     address public user2 = address(0x2002);
     address public user3 = address(0x2003);
@@ -73,16 +73,16 @@ abstract contract CrossGameRewardPoolV2Base is Test {
         );
         poolV2 = CrossGameRewardPoolV2(address(crossGameReward.getPoolAddress(poolId)));
 
-        // Grant developer role
-        crossGameReward.grantDeveloperRole(poolId, developer);
+        // Grant sponsor role
+        crossGameReward.grantSponsorRole(poolId, sponsor);
 
         // Distribute game tokens to users
         gameToken.transfer(user1, 10000 ether);
         gameToken.transfer(user2, 10000 ether);
         gameToken.transfer(user3, 10000 ether);
 
-        // Allocate CROSSD to developer for creating rounds
-        crossdToken.transfer(developer, 1000000 ether);
+        // Allocate CROSSD to sponsor for creating rounds
+        crossdToken.transfer(sponsor, 1000000 ether);
     }
 
     // ==================== Helper functions ====================
@@ -98,7 +98,7 @@ abstract contract CrossGameRewardPoolV2Base is Test {
     }
 
     /**
-     * @notice Helper to create a round as developer
+     * @notice Helper to create a round as sponsor
      * @param amount Total reward amount
      * @param startBlockOffset Blocks from current block to start
      * @param durationBlocks Duration in blocks
@@ -107,7 +107,7 @@ abstract contract CrossGameRewardPoolV2Base is Test {
         internal
         returns (uint256 roundId)
     {
-        vm.startPrank(developer);
+        vm.startPrank(sponsor);
         crossdToken.approve(address(poolV2), amount);
         roundId = poolV2.createRound(amount, block.number + startBlockOffset, durationBlocks);
         vm.stopPrank();

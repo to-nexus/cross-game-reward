@@ -22,9 +22,9 @@ contract CrossGameRewardPoolV2Test is CrossGameRewardPoolV2Base {
         assertEq(uint(crossGameReward.getPoolType(poolId)), uint(ICrossGameReward.PoolType.GamePool));
     }
 
-    function test_Initialize_DeveloperRole() public view {
-        assertTrue(poolV2.hasDeveloperRole(developer));
-        assertFalse(poolV2.hasDeveloperRole(user1));
+    function test_Initialize_SponsorRole() public view {
+        assertTrue(poolV2.hasRole(poolV2.SPONSOR_ROLE(), sponsor));
+        assertFalse(poolV2.hasRole(poolV2.SPONSOR_ROLE(), user1));
     }
 
     // ==================== Deposit Tests ====================
@@ -195,27 +195,25 @@ contract CrossGameRewardPoolV2Test is CrossGameRewardPoolV2Base {
         assertEq(poolV2.minDepositAmount(), newMin);
     }
 
-    // ==================== Developer Role Tests ====================
+    // ==================== Sponsor Role Tests ====================
 
-    function test_GrantDeveloperRole() public {
-        address newDev = address(0x5000);
+    function test_GrantSponsorRole() public {
+        address newSponsor = address(0x5000);
 
-        crossGameReward.grantDeveloperRole(poolId, newDev);
+        crossGameReward.grantSponsorRole(poolId, newSponsor);
 
-        assertTrue(poolV2.hasDeveloperRole(newDev));
+        assertTrue(poolV2.hasRole(poolV2.SPONSOR_ROLE(), newSponsor));
     }
 
-    function test_RevokeDeveloperRole() public {
-        crossGameReward.revokeDeveloperRole(poolId, developer);
+    function test_RevokeSponsorRole() public {
+        crossGameReward.revokeSponsorRole(poolId, sponsor);
 
-        assertFalse(poolV2.hasDeveloperRole(developer));
+        assertFalse(poolV2.hasRole(poolV2.SPONSOR_ROLE(), sponsor));
     }
 
-    function test_DeveloperRole_OnlyForV2Pool() public {
-        // Create a V1 pool
+    function test_SponsorRole_OnlyForV2Pool() public {
         (uint v1PoolId,) = crossGameReward.createPool("V1 Pool", IERC20(address(gameToken)), MIN_DEPOSIT);
 
-        // Trying to grant developer role to V1 pool should fail
         vm.expectRevert(
             abi.encodeWithSelector(
                 CrossGameReward.CGRInvalidPoolType.selector,
@@ -224,6 +222,6 @@ contract CrossGameRewardPoolV2Test is CrossGameRewardPoolV2Base {
                 ICrossGameReward.PoolType.CrossPool
             )
         );
-        crossGameReward.grantDeveloperRole(v1PoolId, developer);
+        crossGameReward.grantSponsorRole(v1PoolId, sponsor);
     }
 }

@@ -9,11 +9,12 @@ import {ICrossGameRewardPool} from "./ICrossGameRewardPool.sol";
  * @title ICrossGameRewardPoolV2
  * @notice Interface for the CrossGameRewardPoolV2 contract (Game Pool)
  * @dev Extends ICrossGameRewardPool with round-based reward distribution
+ *      Uses OZ AccessControl for role management (SPONSOR_ROLE)
  *
  * Key differences from V1:
  * - Single reward token per pool (set at initialization)
  * - Round-based linear reward distribution over blocks
- * - Developer role for round management
+ * - Sponsor role (via AccessControl) for round management
  */
 interface ICrossGameRewardPoolV2 is ICrossGameRewardPool {
     /**
@@ -41,11 +42,6 @@ interface ICrossGameRewardPoolV2 is ICrossGameRewardPool {
     // ==================== Events ====================
 
     /// @notice Emitted when a new round is created
-    /// @param roundId The ID of the created round
-    /// @param totalReward Total reward amount for the round
-    /// @param startBlock Block when distribution starts
-    /// @param endBlock Block when distribution ends
-    /// @param rewardPerBlock Reward distributed per block
     event RoundCreated(
         uint256 indexed roundId,
         uint256 totalReward,
@@ -55,19 +51,12 @@ interface ICrossGameRewardPoolV2 is ICrossGameRewardPool {
     );
 
     /// @notice Emitted when a round is cancelled
-    /// @param roundId The ID of the cancelled round
-    /// @param refundAmount Amount refunded to the creator
     event RoundCancelled(uint256 indexed roundId, uint256 refundAmount);
 
-    /// @notice Emitted when developer role is granted
-    /// @param account Address granted the developer role
-    event DeveloperRoleGranted(address indexed account);
-
-    /// @notice Emitted when developer role is revoked
-    /// @param account Address whose developer role was revoked
-    event DeveloperRoleRevoked(address indexed account);
-
     // ==================== View Functions ====================
+
+    /// @notice Returns the sponsor role identifier
+    function SPONSOR_ROLE() external view returns (bytes32);
 
     /// @notice Returns the single reward token for this pool
     function rewardToken() external view returns (IERC20);
@@ -82,33 +71,22 @@ interface ICrossGameRewardPoolV2 is ICrossGameRewardPool {
     function reclaimableAmount() external view returns (uint256);
 
     /// @notice Returns round information by round ID
-    /// @param roundId The ID of the round to query
-    /// @return Round information struct
     function getRound(uint256 roundId) external view returns (Round memory);
 
     /// @notice Returns all active (ongoing) rounds
-    /// @return Array of active Round structs
     function getActiveRounds() external view returns (Round[] memory);
 
     /// @notice Returns the number of active rounds
-    /// @return Count of active rounds
     function getActiveRoundCount() external view returns (uint256);
 
     /// @notice Returns all active round IDs
-    /// @return Array of active round IDs
     function getActiveRoundIds() external view returns (uint256[] memory);
-
-    /// @notice Checks if an account has the developer role
-    /// @param account Address to check
-    /// @return True if the account has developer role
-    function hasDeveloperRole(address account) external view returns (bool);
 
     // ==================== Round Management Functions ====================
 
     /**
      * @notice Creates a new reward distribution round
-     * @dev Only callable by accounts with DEVELOPER_ROLE
-     *      Transfers reward tokens from caller to the pool
+     * @dev Only callable by accounts with SPONSOR_ROLE
      * @param amount Total reward amount to distribute
      * @param startBlock Block number when distribution starts (must be > current block)
      * @param durationBlocks Number of blocks over which to distribute rewards
@@ -120,26 +98,8 @@ interface ICrossGameRewardPoolV2 is ICrossGameRewardPool {
 
     /**
      * @notice Cancels a round that hasn't started yet
-     * @dev Only callable by accounts with DEVELOPER_ROLE
-     *      Refunds the reward tokens to the caller
-     *      Can only cancel rounds where startBlock > current block
+     * @dev Only callable by accounts with SPONSOR_ROLE
      * @param roundId The ID of the round to cancel
      */
     function cancelRound(uint256 roundId) external;
-
-    // ==================== Admin Functions ====================
-
-    /**
-     * @notice Grants developer role to an account
-     * @dev Only callable by CrossGameReward contract (REWARD_ROOT_ROLE)
-     * @param developer Address to grant developer role
-     */
-    function grantDeveloperRole(address developer) external;
-
-    /**
-     * @notice Revokes developer role from an account
-     * @dev Only callable by CrossGameReward contract (REWARD_ROOT_ROLE)
-     * @param developer Address to revoke developer role from
-     */
-    function revokeDeveloperRole(address developer) external;
 }

@@ -77,11 +77,11 @@ interface ICrossGameReward is IERC5313 {
     /// @notice Returns the pool type for a given pool ID
     function getPoolType(uint poolId) external view returns (PoolType);
 
-    /// @notice Grants developer role to an account for a V2 pool
-    function grantDeveloperRole(uint poolId, address developer) external;
+    /// @notice Grants sponsor role to an account for a V2 pool
+    function grantSponsorRole(uint poolId, address sponsor) external;
 
-    /// @notice Revokes developer role from an account for a V2 pool
-    function revokeDeveloperRole(uint poolId, address developer) external;
+    /// @notice Revokes sponsor role from an account for a V2 pool
+    function revokeSponsorRole(uint poolId, address sponsor) external;
 
     /// @notice Retrieves pool information by pool ID
     function getPoolInfo(uint poolId) external view returns (PoolInfo memory);

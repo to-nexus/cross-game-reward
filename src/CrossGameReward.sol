@@ -93,15 +93,15 @@ contract CrossGameReward is Initializable, AccessControl, UUPSUpgradeable, ICros
         string name
     );
 
-    /// @notice Emitted when developer role is granted for a V2 pool
+    /// @notice Emitted when sponsor role is granted for a V2 pool
     /// @param poolId The pool ID
-    /// @param developer The developer address
-    event DeveloperRoleGranted(uint indexed poolId, address indexed developer);
+    /// @param sponsor The sponsor address
+    event SponsorRoleGranted(uint indexed poolId, address indexed sponsor);
 
-    /// @notice Emitted when developer role is revoked for a V2 pool
+    /// @notice Emitted when sponsor role is revoked for a V2 pool
     /// @param poolId The pool ID
-    /// @param developer The developer address
-    event DeveloperRoleRevoked(uint indexed poolId, address indexed developer);
+    /// @param sponsor The sponsor address
+    event SponsorRoleRevoked(uint indexed poolId, address indexed sponsor);
 
     /// @notice Emitted when pools are batch upgraded
     /// @param poolType The pool type that was upgraded
@@ -407,31 +407,35 @@ contract CrossGameReward is Initializable, AccessControl, UUPSUpgradeable, ICros
     }
 
     /**
-     * @notice Grants developer role to an account for a V2 pool
-     * @dev Only callable by MANAGER_ROLE
+     * @notice Grants sponsor role to an account for a V2 pool
+     * @dev Only callable by MANAGER_ROLE.
+     *      Uses AccessControl standard grantRole on the V2 pool contract.
      * @param poolId ID of the V2 pool
-     * @param developer Address to grant developer role
+     * @param sponsor Address to grant sponsor role
      */
-    function grantDeveloperRole(uint poolId, address developer) external onlyRole(MANAGER_ROLE) {
+    function grantSponsorRole(uint poolId, address sponsor) external onlyRole(MANAGER_ROLE) {
         require(address(pools[poolId].pool) != address(0), CGRPoolNotFound());
         require(poolTypes[poolId] == PoolType.GamePool, CGRInvalidPoolType(poolId, PoolType.GamePool, poolTypes[poolId]));
 
-        ICrossGameRewardPoolV2(address(pools[poolId].pool)).grantDeveloperRole(developer);
-        emit DeveloperRoleGranted(poolId, developer);
+        ICrossGameRewardPoolV2 v2Pool = ICrossGameRewardPoolV2(address(pools[poolId].pool));
+        CrossGameRewardPoolV2(address(v2Pool)).grantRole(v2Pool.SPONSOR_ROLE(), sponsor);
+        emit SponsorRoleGranted(poolId, sponsor);
     }
 
     /**
-     * @notice Revokes developer role from an account for a V2 pool
-     * @dev Only callable by MANAGER_ROLE
+     * @notice Revokes sponsor role from an account for a V2 pool
+     * @dev Only callable by MANAGER_ROLE.
+     *      Uses AccessControl standard revokeRole on the V2 pool contract.
      * @param poolId ID of the V2 pool
-     * @param developer Address to revoke developer role from
+     * @param sponsor Address to revoke sponsor role from
      */
-    function revokeDeveloperRole(uint poolId, address developer) external onlyRole(MANAGER_ROLE) {
+    function revokeSponsorRole(uint poolId, address sponsor) external onlyRole(MANAGER_ROLE) {
         require(address(pools[poolId].pool) != address(0), CGRPoolNotFound());
         require(poolTypes[poolId] == PoolType.GamePool, CGRInvalidPoolType(poolId, PoolType.GamePool, poolTypes[poolId]));
 
-        ICrossGameRewardPoolV2(address(pools[poolId].pool)).revokeDeveloperRole(developer);
-        emit DeveloperRoleRevoked(poolId, developer);
+        ICrossGameRewardPoolV2 v2Pool = ICrossGameRewardPoolV2(address(pools[poolId].pool));
+        CrossGameRewardPoolV2(address(v2Pool)).revokeRole(v2Pool.SPONSOR_ROLE(), sponsor);
+        emit SponsorRoleRevoked(poolId, sponsor);
     }
 
     /**

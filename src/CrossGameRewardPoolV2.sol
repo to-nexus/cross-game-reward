@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.28;
 
+import {AccessControlDefaultAdminRulesUpgradeable as AccessControl} from
+    "@openzeppelin/contracts-upgradeable/access/extensions/AccessControlDefaultAdminRulesUpgradeable.sol";
 import {Initializable, UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import {ReentrancyGuardTransientUpgradeable} from
     "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardTransientUpgradeable.sol";
+import {IERC5313} from "@openzeppelin/contracts/interfaces/IERC5313.sol";
 import {IERC20, SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
@@ -26,7 +29,7 @@ import {ICrossGameRewardPoolV2} from "./interfaces/ICrossGameRewardPoolV2.sol";
  *
  * === Round System ===
  *
- * - Developers create rounds by depositing reward tokens
+ * - Sponsors create rounds by depositing reward tokens
  * - Each round has a start block, end block, and reward per block
  * - Rounds can be cancelled before they start (full refund)
  * - Completed rounds are automatically cleaned up
@@ -34,18 +37,18 @@ import {ICrossGameRewardPoolV2} from "./interfaces/ICrossGameRewardPoolV2.sol";
  * === Roles ===
  *
  * - Owner (CrossGameReward's admin): Full control, emergency functions
- * - RewardRoot (CrossGameReward contract): Pool management
- * - Developer: Round creation and cancellation
+ * - RewardRoot (CrossGameReward contract): Pool management, DEFAULT_ADMIN_ROLE holder
+ * - Sponsor: Round creation and cancellation
  */
 contract CrossGameRewardPoolV2 is
     Initializable,
+    AccessControl,
     PausableUpgradeable,
     ReentrancyGuardTransientUpgradeable,
     UUPSUpgradeable,
     ICrossGameRewardPoolV2
 {
     using SafeERC20 for IERC20;
-    using EnumerableSet for EnumerableSet.AddressSet;
     using EnumerableSet for EnumerableSet.UintSet;
 
     // ==================== Custom Errors ====================
@@ -73,9 +76,6 @@ contract CrossGameRewardPoolV2 is
 
     /// @notice Thrown when caller is not the reward root
     error CGRP2OnlyRewardRoot();
-
-    /// @notice Thrown when caller does not have developer role
-    error CGRP2OnlyDeveloper();
 
     /// @notice Thrown when attempting to deposit in an inactive or paused pool
     error CGRP2DepositNotAllowed(PoolStatus currentStatus);
@@ -117,8 +117,8 @@ contract CrossGameRewardPoolV2 is
     /// @notice Precision multiplier for reward calculations
     uint private constant PRECISION = 1e18;
 
-    /// @notice Developer role identifier
-    bytes32 public constant DEVELOPER_ROLE = keccak256("DEVELOPER_ROLE");
+    /// @notice Sponsor role identifier for round creation/cancellation
+    bytes32 public constant SPONSOR_ROLE = keccak256("SPONSOR_ROLE");
 
     // ==================== State Variables ====================
 
@@ -145,9 +145,6 @@ contract CrossGameRewardPoolV2 is
 
     /// @notice Current status of the pool
     PoolStatus public poolStatus;
-
-    /// @notice Set of accounts with developer role
-    EnumerableSet.AddressSet private _developers;
 
     // ==================== Round Management ====================
 
@@ -212,11 +209,6 @@ contract CrossGameRewardPoolV2 is
         _;
     }
 
-    modifier onlyDeveloper() {
-        require(_developers.contains(msg.sender), CGRP2OnlyDeveloper());
-        _;
-    }
-
     // ==================== Constructor ====================
 
     /// @custom:oz-upgrades-unsafe-allow constructor
@@ -228,7 +220,9 @@ contract CrossGameRewardPoolV2 is
 
     /**
      * @notice Initializes the CrossGameRewardPoolV2 contract
-     * @dev Sets up the pool with deposit and reward tokens
+     * @dev Sets up the pool with deposit and reward tokens.
+     *      Grants DEFAULT_ADMIN_ROLE to CrossGameReward (msg.sender) so it can
+     *      manage SPONSOR_ROLE via standard AccessControl grantRole/revokeRole.
      * @param _depositToken Address of the token to be deposited
      * @param _rewardToken Address of the reward token
      * @param _minDepositAmount Minimum amount required for depositing
@@ -241,6 +235,7 @@ contract CrossGameRewardPoolV2 is
 
         crossGameReward = ICrossGameReward(msg.sender);
 
+        __AccessControlDefaultAdminRules_init(0, msg.sender);
         __Pausable_init();
         __ReentrancyGuardTransient_init();
         __UUPSUpgradeable_init();
@@ -255,10 +250,12 @@ contract CrossGameRewardPoolV2 is
 
     /**
      * @notice Returns the owner of this pool
-     * @dev Returns CrossGameReward's owner
+     * @dev Returns the defaultAdmin from AccessControlDefaultAdminRules,
+     *      which is the CrossGameReward contract (set during initialize).
+     *      Overrides both AccessControlDefaultAdminRulesUpgradeable and IERC5313.
      */
-    function owner() public view returns (address) {
-        return crossGameReward.owner();
+    function owner() public view override(AccessControl, IERC5313) returns (address) {
+        return super.owner();
     }
 
     // ==================== Round Management Functions ====================
@@ -275,7 +272,7 @@ contract CrossGameRewardPoolV2 is
         external
         nonReentrant
         whenNotPaused
-        onlyDeveloper
+        onlyRole(SPONSOR_ROLE)
         returns (uint roundId)
     {
         require(amount > 0, CGRP2CanNotZeroValue());
@@ -285,10 +282,8 @@ contract CrossGameRewardPoolV2 is
         uint rewardPerBlock = amount / durationBlocks;
         require(rewardPerBlock > 0, CGRP2RewardPerBlockZero());
 
-        // Calculate actual distributable reward (remainder stays with developer)
         uint actualReward = rewardPerBlock * durationBlocks;
 
-        // Update pool state before creating new round
         _updatePool();
 
         roundId = nextRoundId++;
@@ -309,7 +304,6 @@ contract CrossGameRewardPoolV2 is
         _activeRoundIds.add(roundId);
         _allRoundIds.add(roundId);
 
-        // Transfer only actualReward from developer (remainder stays with developer)
         rewardToken.safeTransferFrom(msg.sender, address(this), actualReward);
 
         emit RoundCreated(roundId, actualReward, startBlock, endBlock, rewardPerBlock);
@@ -320,7 +314,7 @@ contract CrossGameRewardPoolV2 is
      * @dev Refunds the reward tokens to the caller
      * @param roundId The ID of the round to cancel
      */
-    function cancelRound(uint roundId) external nonReentrant whenNotPaused onlyDeveloper {
+    function cancelRound(uint roundId) external nonReentrant whenNotPaused onlyRole(SPONSOR_ROLE) {
         Round storage round = _rounds[roundId];
 
         require(round.roundId != 0, CGRP2RoundNotFound(roundId));
@@ -510,7 +504,7 @@ contract CrossGameRewardPoolV2 is
             rewardPerTokenStored: globalAccRewardPerShare,
             lastBalance: rewardToken.balanceOf(address(this)),
             reclaimableAmount: reclaimableAmount,
-            distributedAmount: 0, // Not tracked in V2 the same way
+            distributedAmount: 0,
             isRemoved: false
         });
     }
@@ -643,28 +637,6 @@ contract CrossGameRewardPoolV2 is
         emit PoolStatusChanged(oldStatus, newStatus);
     }
 
-    /**
-     * @notice Grants developer role to an account
-     */
-    function grantDeveloperRole(address developer) external onlyRewardRoot {
-        require(developer != address(0), CGRP2CanNotZeroAddress());
-        if (_developers.add(developer)) emit DeveloperRoleGranted(developer);
-    }
-
-    /**
-     * @notice Revokes developer role from an account
-     */
-    function revokeDeveloperRole(address developer) external onlyRewardRoot {
-        if (_developers.remove(developer)) emit DeveloperRoleRevoked(developer);
-    }
-
-    /**
-     * @notice Checks if an account has developer role
-     */
-    function hasDeveloperRole(address account) external view returns (bool) {
-        return _developers.contains(account);
-    }
-
     // ==================== Internal Functions: Pool Update ====================
 
     /**
@@ -681,16 +653,13 @@ contract CrossGameRewardPoolV2 is
             uint roundId = _activeRoundIds.at(i);
             Round storage round = _rounds[roundId];
 
-            // Skip cancelled rounds
             if (round.isCancelled) {
                 toRemove[removeCount++] = roundId;
                 continue;
             }
 
-            // Skip rounds that haven't started
             if (block.number < round.startBlock) continue;
 
-            // Skip if already updated this block
             if (block.number <= round.lastRewardBlock) continue;
 
             uint endBlock = block.number < round.endBlock ? block.number : round.endBlock;
@@ -698,10 +667,8 @@ contract CrossGameRewardPoolV2 is
             uint reward = multiplier * round.rewardPerBlock;
 
             if (totalDeposited == 0) {
-                // No depositors - accumulate to reclaimable
                 reclaimableAmount += reward;
             } else {
-                // Distribute to users
                 uint rewardPerShare = (reward * PRECISION) / totalDeposited;
                 round.accRewardPerShare += rewardPerShare;
                 globalAccRewardPerShare += rewardPerShare;
@@ -709,11 +676,9 @@ contract CrossGameRewardPoolV2 is
 
             round.lastRewardBlock = endBlock;
 
-            // Mark completed rounds for removal
             if (block.number >= round.endBlock) toRemove[removeCount++] = roundId;
         }
 
-        // Remove completed rounds from active set
         for (uint i = 0; i < removeCount; i++) {
             _activeRoundIds.remove(toRemove[i]);
         }
@@ -742,7 +707,6 @@ contract CrossGameRewardPoolV2 is
 
         if (userBalance == 0) return pending;
 
-        // Simulate pool update
         uint simulatedGlobalAcc = globalAccRewardPerShare;
         uint length = _activeRoundIds.length();
 
@@ -781,7 +745,6 @@ contract CrossGameRewardPoolV2 is
         balances[account] += amount;
         totalDeposited += amount;
 
-        // Update debt after balance change
         _userRewardDebt[account] = balances[account] * globalAccRewardPerShare;
 
         emit Deposited(account, amount);
@@ -799,13 +762,11 @@ contract CrossGameRewardPoolV2 is
         _updatePool();
         _updateUser(account);
 
-        // Claim rewards
         _claimRewardsInternal(account);
 
         balances[account] -= withdrawAmount;
         totalDeposited -= withdrawAmount;
 
-        // Update debt after balance change
         _userRewardDebt[account] = balances[account] * globalAccRewardPerShare;
 
         depositToken.safeTransfer(caller, withdrawAmount);
@@ -861,11 +822,9 @@ contract CrossGameRewardPoolV2 is
 
     /**
      * @dev Authorizes contract upgrades
-     *      Allows both the owner (defaultAdmin) and CrossGameReward (rewardRoot) to upgrade
+     *      Allows the CrossGameReward contract (DEFAULT_ADMIN_ROLE holder) to upgrade
      */
-    function _authorizeUpgrade(address) internal override {
-        require(msg.sender == owner() || msg.sender == address(crossGameReward), CGRP2OnlyOwner());
-    }
+    function _authorizeUpgrade(address) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
     // ==================== Storage Gap ====================
 
