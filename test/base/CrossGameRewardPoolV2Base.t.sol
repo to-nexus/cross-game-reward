@@ -40,6 +40,7 @@ abstract contract CrossGameRewardPoolV2Base is Test {
 
     address public owner = address(this);
     address public sponsor = address(0x1001);
+    address public sponsor2 = address(0x1002);
     address public user1 = address(0x2001);
     address public user2 = address(0x2002);
     address public user3 = address(0x2003);
@@ -73,16 +74,18 @@ abstract contract CrossGameRewardPoolV2Base is Test {
         );
         poolV2 = CrossGameRewardPoolV2(address(crossGameReward.getPoolAddress(poolId)));
 
-        // Grant sponsor role
+        // Grant sponsor roles
         crossGameReward.grantSponsorRole(poolId, sponsor);
+        crossGameReward.grantSponsorRole(poolId, sponsor2);
 
         // Distribute game tokens to users
         gameToken.transfer(user1, 10000 ether);
         gameToken.transfer(user2, 10000 ether);
         gameToken.transfer(user3, 10000 ether);
 
-        // Allocate CROSSD to sponsor for creating rounds
+        // Allocate CROSSD to sponsors for creating rounds
         crossdToken.transfer(sponsor, 1000000 ether);
+        crossdToken.transfer(sponsor2, 1000000 ether);
     }
 
     // ==================== Helper functions ====================

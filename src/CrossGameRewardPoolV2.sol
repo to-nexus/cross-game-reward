@@ -71,9 +71,6 @@ contract CrossGameRewardPoolV2 is
     /// @notice Thrown when caller is not the authorized router
     error CGRP2OnlyRouter();
 
-    /// @notice Thrown when caller is not the owner of the pool
-    error CGRP2OnlyOwner();
-
     /// @notice Thrown when caller is not the reward root
     error CGRP2OnlyRewardRoot();
 
@@ -112,10 +109,19 @@ contract CrossGameRewardPoolV2 is
     /// @param expected The expected reward token address
     error CGRP2InvalidRewardToken(address provided, address expected);
 
+    /// @notice Thrown when caller is not the creator of the round
+    error CGRP2OnlyRoundCreator(uint roundId, address caller, address creator);
+
+    /// @notice Thrown when pool status is unchanged
+    error CGRP2PoolStatusUnchanged();
+
     // ==================== Constants ====================
 
     /// @notice Precision multiplier for reward calculations
     uint private constant PRECISION = 1e18;
+
+    /// @notice Truncation precision for rewardPerBlock (8 decimal places in ether = 1e10 wei)
+    uint private constant REWARD_PER_BLOCK_PRECISION = 1e10;
 
     /// @notice Sponsor role identifier for round creation/cancellation
     bytes32 public constant SPONSOR_ROLE = keccak256("SPONSOR_ROLE");
@@ -157,9 +163,6 @@ contract CrossGameRewardPoolV2 is
     /// @notice Set of active round IDs
     EnumerableSet.UintSet private _activeRoundIds;
 
-    /// @notice Set of all round IDs (for history)
-    EnumerableSet.UintSet private _allRoundIds;
-
     // ==================== Reward Tracking ====================
 
     /// @notice Global accumulated reward per share (sum of all rounds' accRewardPerShare)
@@ -198,11 +201,6 @@ contract CrossGameRewardPoolV2 is
     event TokensReclaimed(IERC20 indexed token, address indexed to, uint amount);
 
     // ==================== Modifiers ====================
-
-    modifier onlyOwner() {
-        require(msg.sender == owner(), CGRP2OnlyOwner());
-        _;
-    }
 
     modifier onlyRewardRoot() {
         require(msg.sender == address(crossGameReward), CGRP2OnlyRewardRoot());
@@ -268,8 +266,21 @@ contract CrossGameRewardPoolV2 is
      * @param durationBlocks Number of blocks over which to distribute rewards
      * @return roundId The ID of the created round
      */
-    function createRound(uint amount, uint startBlock, uint durationBlocks)
-        external
+    function createRound(uint amount, uint startBlock, uint durationBlocks) external returns (uint roundId) {
+        return createRoundFromReserve(msg.sender, amount, startBlock, durationBlocks);
+    }
+
+    /**
+     * @notice Creates a new reward distribution round
+     * @dev Transfers reward tokens from caller and schedules distribution
+     * @param reserve The address of the reserve to transfer the reward tokens from
+     * @param amount Total reward amount to distribute
+     * @param startBlock Block number when distribution starts
+     * @param durationBlocks Number of blocks over which to distribute rewards
+     * @return roundId The ID of the created round
+     */
+    function createRoundFromReserve(address reserve, uint amount, uint startBlock, uint durationBlocks)
+        public
         nonReentrant
         whenNotPaused
         onlyRole(SPONSOR_ROLE)
@@ -279,10 +290,10 @@ contract CrossGameRewardPoolV2 is
         require(startBlock > block.number, CGRP2InvalidStartBlock(startBlock, block.number));
         require(durationBlocks > 0, CGRP2InvalidDuration());
 
-        uint rewardPerBlock = amount / durationBlocks;
+        uint rewardPerBlock = (amount / durationBlocks / REWARD_PER_BLOCK_PRECISION) * REWARD_PER_BLOCK_PRECISION;
         require(rewardPerBlock > 0, CGRP2RewardPerBlockZero());
 
-        uint actualReward = rewardPerBlock * durationBlocks;
+        uint remainderReward = amount - (rewardPerBlock * durationBlocks);
 
         _updatePool();
 
@@ -292,42 +303,60 @@ contract CrossGameRewardPoolV2 is
 
         _rounds[roundId] = Round({
             roundId: roundId,
-            totalReward: actualReward,
+            creator: msg.sender,
+            totalReward: amount,
             startBlock: startBlock,
             endBlock: endBlock,
             rewardPerBlock: rewardPerBlock,
             lastRewardBlock: startBlock,
             accRewardPerShare: 0,
+            remainderReward: remainderReward,
             isCancelled: false
         });
 
         _activeRoundIds.add(roundId);
-        _allRoundIds.add(roundId);
 
-        rewardToken.safeTransferFrom(msg.sender, address(this), actualReward);
+        rewardToken.safeTransferFrom(reserve, address(this), amount);
 
-        emit RoundCreated(roundId, actualReward, startBlock, endBlock, rewardPerBlock);
+        emit RoundCreated(roundId, msg.sender, amount, startBlock, endBlock, rewardPerBlock);
     }
 
     /**
-     * @notice Cancels a round that hasn't started yet
-     * @dev Refunds the reward tokens to the caller
+     * @notice Cancels a round that hasn't started yet (refund to caller)
+     * @dev Only the round creator can cancel, regardless of current SPONSOR_ROLE status
      * @param roundId The ID of the round to cancel
      */
-    function cancelRound(uint roundId) external nonReentrant whenNotPaused onlyRole(SPONSOR_ROLE) {
+    function cancelRound(uint roundId) external {
+        cancelRoundToRecipient(roundId, msg.sender);
+    }
+
+    /**
+     * @notice Cancels a round that hasn't started yet (refund to specified recipient)
+     * @dev Only the round creator can cancel, regardless of current SPONSOR_ROLE status.
+     *      This ensures creators can always recover their funds even if their role is revoked.
+     * @param roundId The ID of the round to cancel
+     * @param recipient The address to refund the reward tokens to
+     */
+    function cancelRoundToRecipient(uint roundId, address recipient)
+        public
+        nonReentrant
+    {
         Round storage round = _rounds[roundId];
 
         require(round.roundId != 0, CGRP2RoundNotFound(roundId));
         require(!round.isCancelled, CGRP2RoundAlreadyCancelled(roundId));
+        require(msg.sender == round.creator, CGRP2OnlyRoundCreator(roundId, msg.sender, round.creator));
         require(block.number < round.startBlock, CGRP2RoundAlreadyStarted(roundId));
+
+        if (recipient == address(0)) recipient = msg.sender;
 
         round.isCancelled = true;
         _activeRoundIds.remove(roundId);
 
         uint refundAmount = round.totalReward;
-        rewardToken.safeTransfer(msg.sender, refundAmount);
+        rewardToken.safeTransfer(recipient, refundAmount);
 
-        emit RoundCancelled(roundId, refundAmount);
+        emit RoundCancelled(roundId, recipient, refundAmount);
     }
 
     // ==================== View Functions - Round ====================
@@ -627,7 +656,7 @@ contract CrossGameRewardPoolV2 is
      */
     function setPoolStatus(PoolStatus newStatus) external onlyRewardRoot {
         PoolStatus oldStatus = poolStatus;
-        require(oldStatus != newStatus, "Pool status unchanged");
+        require(oldStatus != newStatus, CGRP2PoolStatusUnchanged());
 
         poolStatus = newStatus;
 
@@ -665,6 +694,7 @@ contract CrossGameRewardPoolV2 is
             uint endBlock = block.number < round.endBlock ? block.number : round.endBlock;
             uint multiplier = endBlock - round.lastRewardBlock;
             uint reward = multiplier * round.rewardPerBlock;
+            if (endBlock == round.endBlock) reward += round.remainderReward;
 
             if (totalDeposited == 0) {
                 reclaimableAmount += reward;
@@ -721,6 +751,7 @@ contract CrossGameRewardPoolV2 is
             uint endBlock = block.number < round.endBlock ? block.number : round.endBlock;
             uint multiplier = endBlock - round.lastRewardBlock;
             uint reward = multiplier * round.rewardPerBlock;
+            if (endBlock == round.endBlock) reward += round.remainderReward;
 
             if (totalDeposited > 0) simulatedGlobalAcc += (reward * PRECISION) / totalDeposited;
         }

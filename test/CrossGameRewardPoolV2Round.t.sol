@@ -25,10 +25,12 @@ contract CrossGameRewardPoolV2RoundTest is CrossGameRewardPoolV2Base {
 
         ICrossGameRewardPoolV2.Round memory round = poolV2.getRound(roundId);
         assertEq(round.roundId, 1);
+        assertEq(round.creator, sponsor);
         assertEq(round.totalReward, amount);
         assertEq(round.startBlock, startBlock);
         assertEq(round.endBlock, startBlock + duration);
-        assertEq(round.rewardPerBlock, amount / duration);
+        assertEq(round.rewardPerBlock, (amount / duration / 1e10) * 1e10);
+        assertEq(round.remainderReward, amount - round.rewardPerBlock * duration);
         assertEq(round.lastRewardBlock, startBlock);
         assertFalse(round.isCancelled);
     }
@@ -123,6 +125,107 @@ contract CrossGameRewardPoolV2RoundTest is CrossGameRewardPoolV2Base {
         vm.prank(sponsor);
         vm.expectRevert(abi.encodeWithSelector(CrossGameRewardPoolV2.CGRP2RoundNotFound.selector, 999));
         poolV2.cancelRound(999);
+    }
+
+    function test_CancelRound_OnlyCreator() public {
+        uint256 roundId = _createRound(100000 ether, 100, 1000);
+
+        // sponsor2 has SPONSOR_ROLE but is not the creator
+        vm.prank(sponsor2);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                CrossGameRewardPoolV2.CGRP2OnlyRoundCreator.selector, roundId, sponsor2, sponsor
+            )
+        );
+        poolV2.cancelRound(roundId);
+
+        // Original creator can cancel
+        vm.prank(sponsor);
+        poolV2.cancelRound(roundId);
+
+        ICrossGameRewardPoolV2.Round memory round = poolV2.getRound(roundId);
+        assertTrue(round.isCancelled);
+    }
+
+    function test_CancelRoundToRecipient_OnlyCreator() public {
+        uint256 roundId = _createRound(100000 ether, 100, 1000);
+
+        address recipient = address(0x9999);
+
+        // sponsor2 cannot cancel to a recipient
+        vm.prank(sponsor2);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                CrossGameRewardPoolV2.CGRP2OnlyRoundCreator.selector, roundId, sponsor2, sponsor
+            )
+        );
+        poolV2.cancelRoundToRecipient(roundId, recipient);
+
+        // Creator can cancel to a custom recipient
+        uint256 recipientBalBefore = crossdToken.balanceOf(recipient);
+
+        vm.prank(sponsor);
+        poolV2.cancelRoundToRecipient(roundId, recipient);
+
+        assertEq(crossdToken.balanceOf(recipient), recipientBalBefore + 100000 ether);
+    }
+
+    function test_CreateRoundFromReserve_StoresCallerAsCreator() public {
+        // sponsor2 creates a round pulling tokens from sponsor (reserve)
+        vm.prank(sponsor);
+        crossdToken.approve(address(poolV2), 100000 ether);
+
+        vm.prank(sponsor2);
+        uint256 roundId = poolV2.createRoundFromReserve(sponsor, 100000 ether, block.number + 100, 1000);
+
+        ICrossGameRewardPoolV2.Round memory round = poolV2.getRound(roundId);
+        assertEq(round.creator, sponsor2);
+
+        // sponsor (the reserve, not the creator) cannot cancel
+        vm.prank(sponsor);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                CrossGameRewardPoolV2.CGRP2OnlyRoundCreator.selector, roundId, sponsor, sponsor2
+            )
+        );
+        poolV2.cancelRound(roundId);
+
+        // sponsor2 (the creator) can cancel
+        vm.prank(sponsor2);
+        poolV2.cancelRound(roundId);
+        assertTrue(poolV2.getRound(roundId).isCancelled);
+    }
+
+    function test_CancelRound_AfterRoleRevoked() public {
+        uint256 roundId = _createRound(100000 ether, 100, 1000);
+
+        // Revoke sponsor's SPONSOR_ROLE
+        crossGameReward.revokeSponsorRole(poolId, sponsor);
+
+        // Creator can still cancel even without SPONSOR_ROLE
+        uint256 balBefore = crossdToken.balanceOf(sponsor);
+
+        vm.prank(sponsor);
+        poolV2.cancelRound(roundId);
+
+        assertEq(crossdToken.balanceOf(sponsor), balBefore + 100000 ether);
+        assertTrue(poolV2.getRound(roundId).isCancelled);
+    }
+
+    function test_CancelRound_WhenPaused() public {
+        uint256 roundId = _createRound(100000 ether, 100, 1000);
+
+        // Pause the pool
+        crossGameReward.setPoolStatus(poolId, ICrossGameRewardPool.PoolStatus.Paused);
+
+        // Creator can still cancel even when pool is paused
+        uint256 balBefore = crossdToken.balanceOf(sponsor);
+
+        vm.prank(sponsor);
+        poolV2.cancelRound(roundId);
+
+        assertEq(crossdToken.balanceOf(sponsor), balBefore + 100000 ether);
+        assertTrue(poolV2.getRound(roundId).isCancelled);
     }
 
     // ==================== Reward Distribution Tests ====================
@@ -409,9 +512,9 @@ contract CrossGameRewardPoolV2RoundTest is CrossGameRewardPoolV2Base {
     // ==================== Audit Fix: Remainder / Dust Token Lock Tests ====================
 
     function test_CreateRound_RemainderNotLocked() public {
-        // 10001 CROSSD / 1000 blocks = 10 CROSSD/block, remainder = 1 CROSSD
-        uint256 amount = 10001 ether;
-        uint256 duration = 1000;
+        // 5 ether / 3 blocks → truncated rewardPerBlock, remainder distributed in last block
+        uint256 amount = 5 ether;
+        uint256 duration = 3;
 
         uint256 devBalanceBefore = crossdToken.balanceOf(sponsor);
 
@@ -422,32 +525,31 @@ contract CrossGameRewardPoolV2RoundTest is CrossGameRewardPoolV2Base {
 
         uint256 devBalanceAfter = crossdToken.balanceOf(sponsor);
 
-        // Verify round stores actualReward (without remainder)
         ICrossGameRewardPoolV2.Round memory round = poolV2.getRound(roundId);
-        uint256 expectedRewardPerBlock = amount / duration; // 10 ether
-        uint256 expectedActualReward = expectedRewardPerBlock * duration; // 10000 ether
-        assertEq(round.totalReward, expectedActualReward);
-        assertEq(round.rewardPerBlock, expectedRewardPerBlock);
+        uint256 expectedRpb = (amount / duration / 1e10) * 1e10;
+        uint256 expectedRemainder = amount - (expectedRpb * duration);
 
-        // Developer should only have been charged actualReward (remainder stays)
-        assertEq(devBalanceBefore - devBalanceAfter, expectedActualReward);
+        assertEq(round.totalReward, amount);
+        assertEq(round.rewardPerBlock, expectedRpb);
+        assertEq(round.remainderReward, expectedRemainder);
+        assertGt(expectedRemainder, 0);
 
-        // Pool balance should equal actualReward
-        assertEq(crossdToken.balanceOf(address(poolV2)), expectedActualReward);
+        // Full amount is transferred from sponsor
+        assertEq(devBalanceBefore - devBalanceAfter, amount);
+        assertEq(crossdToken.balanceOf(address(poolV2)), amount);
 
-        // Now verify full distribution: deposit user, run through round
+        // Verify full distribution: deposit user, run through entire round
         _userDeposit(user1, 100 ether);
         _advanceToBlock(round.startBlock);
         _advanceBlocks(duration);
 
         uint256 pending = _getPendingReward(user1);
-        assertEq(pending, expectedActualReward);
+        assertEq(pending, amount);
 
         // Claim and verify no tokens are stuck
         vm.prank(user1);
         poolV2.claimRewards();
 
-        // Pool should have 0 reward tokens left (no dust)
         assertEq(crossdToken.balanceOf(address(poolV2)), 0);
     }
 
@@ -478,10 +580,10 @@ contract CrossGameRewardPoolV2RoundTest is CrossGameRewardPoolV2Base {
 
         uint256 devBalanceAfter = crossdToken.balanceOf(sponsor);
 
-        // When exact division: totalReward == amount, full transfer
         ICrossGameRewardPoolV2.Round memory round = poolV2.getRound(roundId);
         assertEq(round.totalReward, amount);
         assertEq(round.rewardPerBlock, 100 ether);
+        assertEq(round.remainderReward, 0);
         assertEq(devBalanceBefore - devBalanceAfter, amount);
     }
 
@@ -497,8 +599,8 @@ contract CrossGameRewardPoolV2RoundTest is CrossGameRewardPoolV2Base {
 
     function test_CreateRound_NonDivisibleAmount() public {
         // 7 ether / 3 blocks:
-        // rewardPerBlock = 7e18 / 3 = 2333333333333333333
-        // actualReward = 2333333333333333333 * 3 = 6999999999999999999 (1 wei remainder)
+        // rewardPerBlock truncated to 1e10: (7e18 / 3 / 1e10) * 1e10 = 2333333330000000000
+        // remainder = 7e18 - 2333333330000000000 * 3 = 10000000000
         uint256 amount = 7 ether;
         uint256 duration = 3;
 
@@ -512,17 +614,159 @@ contract CrossGameRewardPoolV2RoundTest is CrossGameRewardPoolV2Base {
         uint256 devBalanceAfter = crossdToken.balanceOf(sponsor);
 
         ICrossGameRewardPoolV2.Round memory round = poolV2.getRound(roundId);
-        uint256 expectedRpb = amount / duration; // 2333333333333333333
-        uint256 expectedActual = expectedRpb * duration; // 6999999999999999999
-        uint256 remainder = amount - expectedActual; // 1 wei
+        uint256 expectedRpb = (amount / duration / 1e10) * 1e10;
+        uint256 expectedRemainder = amount - (expectedRpb * duration);
 
         assertGt(expectedRpb, 0);
-        assertGt(remainder, 0); // There IS a remainder
+        assertGt(expectedRemainder, 0);
         assertEq(round.rewardPerBlock, expectedRpb);
-        assertEq(round.totalReward, expectedActual);
+        assertEq(round.totalReward, amount);
+        assertEq(round.remainderReward, expectedRemainder);
 
-        // Only actualReward was transferred (remainder stays with sponsor)
-        assertEq(devBalanceBefore - devBalanceAfter, expectedActual);
+        // Full amount transferred from sponsor
+        assertEq(devBalanceBefore - devBalanceAfter, amount);
+    }
+
+    // ==================== Truncation & Remainder Edge Case Tests ====================
+
+    function test_CreateRound_TruncatedRewardPerBlock() public {
+        // 5 ether / 3 blocks:
+        // raw = 1666666666666666666, truncated to 1e10 = 1666666660000000000
+        uint256 amount = 5 ether;
+        uint256 duration = 3;
+
+        uint256 roundId = _createRound(amount, 10, duration);
+        ICrossGameRewardPoolV2.Round memory round = poolV2.getRound(roundId);
+
+        uint256 expectedRpb = 1666666660000000000;
+        assertEq(round.rewardPerBlock, expectedRpb);
+        assertEq(round.rewardPerBlock % 1e10, 0);
+    }
+
+    function test_CreateRound_RemainderInLastBlock() public {
+        // 5 ether / 3 blocks → remainder distributed in final block
+        uint256 amount = 5 ether;
+        uint256 duration = 3;
+
+        _userDeposit(user1, 100 ether);
+
+        uint256 roundId = _createRound(amount, 10, duration);
+        ICrossGameRewardPoolV2.Round memory round = poolV2.getRound(roundId);
+
+        _advanceToBlock(round.startBlock);
+
+        // After 2 blocks (not yet last block): 2 * rewardPerBlock
+        _advanceBlocks(2);
+        uint256 pendingMid = _getPendingReward(user1);
+        assertEq(pendingMid, round.rewardPerBlock * 2);
+
+        // After last block: totalReward fully distributed
+        _advanceBlocks(1);
+        uint256 pendingEnd = _getPendingReward(user1);
+        assertEq(pendingEnd, amount);
+
+        // Claim and verify zero dust
+        vm.prank(user1);
+        poolV2.claimRewards();
+        assertEq(crossdToken.balanceOf(address(poolV2)), 0);
+    }
+
+    function test_CancelRound_FullRefundWithRemainder() public {
+        // Non-divisible amount: cancel should refund full amount
+        uint256 amount = 7 ether;
+        uint256 duration = 3;
+
+        uint256 balBefore = crossdToken.balanceOf(sponsor);
+
+        uint256 roundId = _createRound(amount, 100, duration);
+
+        uint256 balAfterCreate = crossdToken.balanceOf(sponsor);
+        assertEq(balBefore - balAfterCreate, amount);
+
+        vm.prank(sponsor);
+        poolV2.cancelRound(roundId);
+
+        assertEq(crossdToken.balanceOf(sponsor), balBefore);
+    }
+
+    function test_CreateRound_TruncationCausesRevert() public {
+        // amount / durationBlocks < 1e10 after truncation → revert
+        // 15e9 wei / 3 blocks = 5e9 per block → truncated to 0
+        uint256 amount = 15e9;
+        uint256 duration = 3;
+
+        vm.startPrank(sponsor);
+        crossdToken.approve(address(poolV2), amount);
+
+        vm.expectRevert(CrossGameRewardPoolV2.CGRP2RewardPerBlockZero.selector);
+        poolV2.createRound(amount, block.number + 10, duration);
+        vm.stopPrank();
+    }
+
+    function test_RewardDistribution_RemainderMultipleUsers() public {
+        // Two users with equal deposits; remainder shared proportionally at last block
+        _userDeposit(user1, 100 ether);
+        _userDeposit(user2, 100 ether);
+
+        uint256 amount = 5 ether;
+        uint256 duration = 3;
+
+        uint256 roundId = _createRound(amount, 10, duration);
+        ICrossGameRewardPoolV2.Round memory round = poolV2.getRound(roundId);
+
+        _advanceToBlock(round.startBlock);
+        _advanceBlocks(duration);
+
+        uint256 pending1 = _getPendingReward(user1);
+        uint256 pending2 = _getPendingReward(user2);
+
+        // Each user gets 50% of total reward
+        assertEq(pending1, pending2);
+        assertEq(pending1 + pending2, amount);
+    }
+
+    function test_RewardDistribution_FullRoundWithRemainder() public {
+        // Single user gets exactly totalReward (= original amount) after full round
+        uint256 amount = 11 ether;
+        uint256 duration = 7;
+
+        _userDeposit(user1, 100 ether);
+
+        uint256 roundId = _createRound(amount, 10, duration);
+        ICrossGameRewardPoolV2.Round memory round = poolV2.getRound(roundId);
+
+        assertGt(round.remainderReward, 0);
+
+        _advanceToBlock(round.startBlock);
+        _advanceBlocks(duration);
+
+        assertEq(_getPendingReward(user1), amount);
+
+        uint256 balBefore = crossdToken.balanceOf(user1);
+        vm.prank(user1);
+        poolV2.claimRewards();
+
+        assertEq(crossdToken.balanceOf(user1), balBefore + amount);
+        assertEq(crossdToken.balanceOf(address(poolV2)), 0);
+    }
+
+    function test_Reclaimable_WithRemainder() public {
+        // No depositors: entire amount including remainder goes to reclaimable
+        uint256 amount = 5 ether;
+        uint256 duration = 3;
+
+        uint256 roundId = _createRound(amount, 10, duration);
+        ICrossGameRewardPoolV2.Round memory round = poolV2.getRound(roundId);
+
+        assertGt(round.remainderReward, 0);
+
+        _advanceToBlock(round.startBlock);
+        _advanceBlocks(duration);
+
+        // Trigger pool update
+        _userDeposit(user1, 100 ether);
+
+        assertEq(poolV2.reclaimableAmount(), amount);
     }
 
     // ==================== Audit Fix: claimReward Token Validation Tests ====================

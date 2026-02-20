@@ -20,22 +20,26 @@ interface ICrossGameRewardPoolV2 is ICrossGameRewardPool {
     /**
      * @notice Round information structure for reward distribution
      * @param roundId Unique identifier for the round
+     * @param creator Address of the sponsor who created this round
      * @param totalReward Total reward amount to be distributed
      * @param startBlock Block number when distribution starts
      * @param endBlock Block number when distribution ends
-     * @param rewardPerBlock Reward amount distributed per block
+     * @param rewardPerBlock Reward amount distributed per block (truncated to 1e10 precision)
      * @param lastRewardBlock Last block number when rewards were calculated
      * @param accRewardPerShare Accumulated reward per share (scaled by PRECISION)
+     * @param remainderReward Remaining reward added to the last block after truncation
      * @param isCancelled Whether the round has been cancelled
      */
     struct Round {
         uint256 roundId;
+        address creator;
         uint256 totalReward;
         uint256 startBlock;
         uint256 endBlock;
         uint256 rewardPerBlock;
         uint256 lastRewardBlock;
         uint256 accRewardPerShare;
+        uint256 remainderReward;
         bool isCancelled;
     }
 
@@ -44,6 +48,7 @@ interface ICrossGameRewardPoolV2 is ICrossGameRewardPool {
     /// @notice Emitted when a new round is created
     event RoundCreated(
         uint256 indexed roundId,
+        address indexed creator,
         uint256 totalReward,
         uint256 startBlock,
         uint256 endBlock,
@@ -51,7 +56,7 @@ interface ICrossGameRewardPoolV2 is ICrossGameRewardPool {
     );
 
     /// @notice Emitted when a round is cancelled
-    event RoundCancelled(uint256 indexed roundId, uint256 refundAmount);
+    event RoundCancelled(uint256 indexed roundId, address indexed recipient, uint256 refundAmount);
 
     // ==================== View Functions ====================
 
@@ -85,7 +90,7 @@ interface ICrossGameRewardPoolV2 is ICrossGameRewardPool {
     // ==================== Round Management Functions ====================
 
     /**
-     * @notice Creates a new reward distribution round
+     * @notice Creates a new reward distribution round (tokens from caller)
      * @dev Only callable by accounts with SPONSOR_ROLE
      * @param amount Total reward amount to distribute
      * @param startBlock Block number when distribution starts (must be > current block)
@@ -97,9 +102,30 @@ interface ICrossGameRewardPoolV2 is ICrossGameRewardPool {
         returns (uint256 roundId);
 
     /**
-     * @notice Cancels a round that hasn't started yet
+     * @notice Creates a new reward distribution round (tokens from specified reserve)
      * @dev Only callable by accounts with SPONSOR_ROLE
+     * @param reserve Address to transfer reward tokens from
+     * @param amount Total reward amount to distribute
+     * @param startBlock Block number when distribution starts (must be > current block)
+     * @param durationBlocks Number of blocks over which to distribute rewards
+     * @return roundId The ID of the created round
+     */
+    function createRoundFromReserve(address reserve, uint256 amount, uint256 startBlock, uint256 durationBlocks)
+        external
+        returns (uint256 roundId);
+
+    /**
+     * @notice Cancels a round that hasn't started yet (refund to caller)
+     * @dev Only callable by the round creator
      * @param roundId The ID of the round to cancel
      */
     function cancelRound(uint256 roundId) external;
+
+    /**
+     * @notice Cancels a round that hasn't started yet (refund to specified recipient)
+     * @dev Only callable by the round creator
+     * @param roundId The ID of the round to cancel
+     * @param recipient Address to receive the refund
+     */
+    function cancelRoundToRecipient(uint256 roundId, address recipient) external;
 }
