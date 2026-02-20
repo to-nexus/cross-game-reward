@@ -348,8 +348,6 @@ contract GamePool is
         require(msg.sender == round.creator, GPOnlyRoundCreator(roundId, msg.sender, round.creator));
         require(block.number < round.startBlock, GPRoundAlreadyStarted(roundId));
 
-        if (recipient == address(0)) recipient = msg.sender;
-
         round.isCancelled = true;
         _activeRoundIds.remove(roundId);
 
@@ -500,7 +498,8 @@ contract GamePool is
      * @param user Address of the user to query
      * @return amount Pending reward amount
      */
-    function pendingReward(address user, IERC20) external view returns (uint amount) {
+    function pendingReward(address user, IERC20 token) external view returns (uint amount) {
+        require(token == rewardToken, GPInvalidRewardToken(address(token), address(rewardToken)));
         return _calculatePendingReward(user);
     }
 
