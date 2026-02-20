@@ -346,6 +346,7 @@ contract GamePool is
         require(round.roundId != 0, GPRoundNotFound(roundId));
         require(!round.isCancelled, GPRoundAlreadyCancelled(roundId));
         require(msg.sender == round.creator, GPOnlyRoundCreator(roundId, msg.sender, round.creator));
+        require(recipient != address(0), GPCanNotZeroAddress());
         require(block.number < round.startBlock, GPRoundAlreadyStarted(roundId));
 
         round.isCancelled = true;
