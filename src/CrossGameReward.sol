@@ -86,11 +86,7 @@ contract CrossGameReward is Initializable, AccessControl, UUPSUpgradeable, ICros
     /// @param rewardToken The reward token for this pool
     /// @param name The name of the pool
     event PoolV2Created(
-        uint indexed poolId,
-        address indexed poolAddress,
-        address depositToken,
-        address indexed rewardToken,
-        string name
+        uint indexed poolId, address indexed poolAddress, address depositToken, address indexed rewardToken, string name
     );
 
     /// @notice Emitted when sponsor role is granted for a V2 pool
@@ -415,7 +411,9 @@ contract CrossGameReward is Initializable, AccessControl, UUPSUpgradeable, ICros
      */
     function grantSponsorRole(uint poolId, address sponsor) external onlyRole(MANAGER_ROLE) {
         require(address(pools[poolId].pool) != address(0), CGRPoolNotFound());
-        require(poolTypes[poolId] == PoolType.GamePool, CGRInvalidPoolType(poolId, PoolType.GamePool, poolTypes[poolId]));
+        require(
+            poolTypes[poolId] == PoolType.GamePool, CGRInvalidPoolType(poolId, PoolType.GamePool, poolTypes[poolId])
+        );
 
         ICrossGameRewardPoolV2 v2Pool = ICrossGameRewardPoolV2(address(pools[poolId].pool));
         CrossGameRewardPoolV2(address(v2Pool)).grantRole(v2Pool.SPONSOR_ROLE(), sponsor);
@@ -431,7 +429,9 @@ contract CrossGameReward is Initializable, AccessControl, UUPSUpgradeable, ICros
      */
     function revokeSponsorRole(uint poolId, address sponsor) external onlyRole(MANAGER_ROLE) {
         require(address(pools[poolId].pool) != address(0), CGRPoolNotFound());
-        require(poolTypes[poolId] == PoolType.GamePool, CGRInvalidPoolType(poolId, PoolType.GamePool, poolTypes[poolId]));
+        require(
+            poolTypes[poolId] == PoolType.GamePool, CGRInvalidPoolType(poolId, PoolType.GamePool, poolTypes[poolId])
+        );
 
         ICrossGameRewardPoolV2 v2Pool = ICrossGameRewardPoolV2(address(pools[poolId].pool));
         CrossGameRewardPoolV2(address(v2Pool)).revokeRole(v2Pool.SPONSOR_ROLE(), sponsor);

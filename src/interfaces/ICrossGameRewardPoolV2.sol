@@ -58,6 +58,9 @@ interface ICrossGameRewardPoolV2 is ICrossGameRewardPool {
     /// @notice Emitted when a round is cancelled
     event RoundCancelled(uint256 indexed roundId, address indexed recipient, uint256 refundAmount);
 
+    /// @notice Emitted when rounds are synced via emergency pagination
+    event RoundsSynced(uint256 processed, uint256 removed);
+
     // ==================== View Functions ====================
 
     /// @notice Returns the sponsor role identifier
@@ -128,4 +131,15 @@ interface ICrossGameRewardPoolV2 is ICrossGameRewardPool {
      * @param recipient Address to receive the refund
      */
     function cancelRoundToRecipient(uint256 roundId, address recipient) external;
+
+    /**
+     * @notice Emergency paginated round sync for backlog resolution
+     * @dev Callable by SPONSOR_ROLE holders or the factory owner.
+     *      Processes up to maxRounds active rounds (0 = all).
+     *      Identical state transitions to internal _updatePool().
+     * @param maxRounds Maximum number of rounds to process (0 = unlimited)
+     * @return processed Number of rounds iterated
+     * @return removed Number of completed/cancelled rounds removed from active set
+     */
+    function syncRounds(uint256 maxRounds) external returns (uint256 processed, uint256 removed);
 }

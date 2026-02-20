@@ -74,6 +74,9 @@ contract CrossGameRewardPoolV2 is
     /// @notice Thrown when caller is not the reward root
     error CGRP2OnlyRewardRoot();
 
+    /// @notice Thrown when caller is not authorized for sync (must be SPONSOR_ROLE or factory owner)
+    error CGRP2SyncNotAuthorized();
+
     /// @notice Thrown when attempting to deposit in an inactive or paused pool
     error CGRP2DepositNotAllowed(PoolStatus currentStatus);
 
@@ -337,10 +340,7 @@ contract CrossGameRewardPoolV2 is
      * @param roundId The ID of the round to cancel
      * @param recipient The address to refund the reward tokens to
      */
-    function cancelRoundToRecipient(uint roundId, address recipient)
-        public
-        nonReentrant
-    {
+    function cancelRoundToRecipient(uint roundId, address recipient) public nonReentrant {
         Round storage round = _rounds[roundId];
 
         require(round.roundId != 0, CGRP2RoundNotFound(roundId));
@@ -666,19 +666,50 @@ contract CrossGameRewardPoolV2 is
         emit PoolStatusChanged(oldStatus, newStatus);
     }
 
+    // ==================== Emergency Admin Functions ====================
+
+    /**
+     * @notice Emergency paginated round sync for backlog resolution
+     * @dev Callable by SPONSOR_ROLE holders or the factory owner (crossGameReward.owner()).
+     *      Reuses the same _updatePoolPaginated() logic as user-facing functions.
+     *      Does NOT affect user reward debt; user-facing functions still call
+     *      _updatePool() internally. This is a non-critical emergency tool for
+     *      reducing round backlog when the active round count grows large.
+     * @param maxRounds Maximum number of rounds to process (0 = all)
+     * @return processed Number of rounds iterated
+     * @return removed Number of completed/cancelled rounds removed from active set
+     */
+    function syncRounds(uint maxRounds) external returns (uint processed, uint removed) {
+        require(hasRole(SPONSOR_ROLE, msg.sender) || msg.sender == crossGameReward.owner(), CGRP2SyncNotAuthorized());
+        (processed, removed) = _updatePoolPaginated(maxRounds);
+        emit RoundsSynced(processed, removed);
+    }
+
     // ==================== Internal Functions: Pool Update ====================
 
     /**
-     * @dev Updates all active rounds and accumulates rewards
+     * @dev Updates all active rounds and accumulates rewards (processes all)
      */
     function _updatePool() internal {
-        uint length = _activeRoundIds.length();
-        if (length == 0) return;
+        _updatePoolPaginated(0);
+    }
 
-        uint[] memory toRemove = new uint[](length);
+    /**
+     * @dev Core round update logic with optional pagination
+     * @param maxRounds Maximum rounds to process (0 = all)
+     * @return processed Number of rounds iterated
+     * @return removed Number of completed/cancelled rounds removed from active set
+     */
+    function _updatePoolPaginated(uint maxRounds) private returns (uint processed, uint removed) {
+        uint length = _activeRoundIds.length();
+        if (length == 0) return (0, 0);
+
+        uint limit = maxRounds == 0 ? length : (maxRounds < length ? maxRounds : length);
+
+        uint[] memory toRemove = new uint[](limit);
         uint removeCount = 0;
 
-        for (uint i = 0; i < length; i++) {
+        for (uint i = 0; i < limit; i++) {
             uint roundId = _activeRoundIds.at(i);
             Round storage round = _rounds[roundId];
 
@@ -712,6 +743,8 @@ contract CrossGameRewardPoolV2 is
         for (uint i = 0; i < removeCount; i++) {
             _activeRoundIds.remove(toRemove[i]);
         }
+
+        return (limit, removeCount);
     }
 
     /**

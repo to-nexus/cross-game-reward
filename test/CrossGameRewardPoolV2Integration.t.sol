@@ -324,4 +324,156 @@ contract CrossGameRewardPoolV2IntegrationTest is CrossGameRewardPoolV2Base {
 
         assertEq(crossdToken.balanceOf(recipient), 10000 ether);
     }
+
+    // ==================== WithdrawAll Large Pool Scenario Tests ====================
+
+    function test_WithdrawAll_ManyMixedPools() public {
+        uint256 v1Count = 5;
+        uint256 v2Count = 5;
+
+        MockERC20V2[] memory v1Tokens = new MockERC20V2[](v1Count);
+        MockERC20V2[] memory v1RewardTokens = new MockERC20V2[](v1Count);
+        uint256[] memory v1PoolIds = new uint256[](v1Count);
+
+        for (uint256 i = 0; i < v1Count; i++) {
+            v1Tokens[i] = new MockERC20V2(string.concat("V1Dep", vm.toString(i)), "V1D");
+            v1RewardTokens[i] = new MockERC20V2(string.concat("V1Rwd", vm.toString(i)), "V1R");
+            v1Tokens[i].transfer(user1, 1000 ether);
+
+            (v1PoolIds[i],) = crossGameReward.createPool(
+                string.concat("V1 Pool ", vm.toString(i)),
+                IERC20(address(v1Tokens[i])),
+                MIN_DEPOSIT
+            );
+            crossGameReward.addRewardToken(v1PoolIds[i], IERC20(address(v1RewardTokens[i])));
+
+            v1RewardTokens[i].transfer(address(crossGameReward.getPoolAddress(v1PoolIds[i])), 100 ether);
+        }
+
+        MockERC20V2[] memory v2GameTokens = new MockERC20V2[](v2Count);
+        MockERC20V2[] memory v2RewardTokens = new MockERC20V2[](v2Count);
+        uint256[] memory v2PoolIds = new uint256[](v2Count);
+        CrossGameRewardPoolV2[] memory v2Pools = new CrossGameRewardPoolV2[](v2Count);
+
+        for (uint256 i = 0; i < v2Count; i++) {
+            v2GameTokens[i] = new MockERC20V2(string.concat("V2Game", vm.toString(i)), "V2G");
+            v2RewardTokens[i] = new MockERC20V2(string.concat("V2Rwd", vm.toString(i)), "V2R");
+            v2GameTokens[i].transfer(user1, 1000 ether);
+            v2RewardTokens[i].transfer(sponsor, 100000 ether);
+
+            (v2PoolIds[i],) = crossGameReward.createPoolV2(
+                string.concat("V2 Pool ", vm.toString(i)),
+                IERC20(address(v2GameTokens[i])),
+                IERC20(address(v2RewardTokens[i])),
+                MIN_DEPOSIT
+            );
+            v2Pools[i] = CrossGameRewardPoolV2(address(crossGameReward.getPoolAddress(v2PoolIds[i])));
+            crossGameReward.grantSponsorRole(v2PoolIds[i], sponsor);
+
+            vm.startPrank(sponsor);
+            v2RewardTokens[i].approve(address(v2Pools[i]), 10000 ether);
+            v2Pools[i].createRound(10000 ether, block.number + 10, 100);
+            vm.stopPrank();
+        }
+
+        vm.startPrank(user1);
+        for (uint256 i = 0; i < v1Count; i++) {
+            v1Tokens[i].approve(address(router), 100 ether);
+            router.depositERC20(v1PoolIds[i], 100 ether);
+        }
+        for (uint256 i = 0; i < v2Count; i++) {
+            v2GameTokens[i].approve(address(router), 100 ether);
+            router.depositERC20(v2PoolIds[i], 100 ether);
+        }
+        vm.stopPrank();
+
+        _advanceBlocks(200);
+
+        for (uint256 i = 0; i < v2Count; i++) {
+            vm.prank(sponsor);
+            v2Pools[i].syncRounds(0);
+        }
+
+        vm.prank(user1);
+        router.withdrawAll();
+
+        for (uint256 i = 0; i < v1Count; i++) {
+            assertEq(crossGameReward.getPoolAddress(v1PoolIds[i]).balances(user1), 0);
+        }
+        for (uint256 i = 0; i < v2Count; i++) {
+            assertEq(v2Pools[i].balances(user1), 0);
+        }
+    }
+
+    function test_WithdrawAll_ManyPools_NoPreSync() public {
+        uint256 poolCount = 8;
+
+        MockERC20V2[] memory gameTokens = new MockERC20V2[](poolCount);
+        MockERC20V2[] memory rwdTokens = new MockERC20V2[](poolCount);
+        uint256[] memory pIds = new uint256[](poolCount);
+        CrossGameRewardPoolV2[] memory pools = new CrossGameRewardPoolV2[](poolCount);
+
+        for (uint256 i = 0; i < poolCount; i++) {
+            gameTokens[i] = new MockERC20V2(string.concat("G", vm.toString(i)), "G");
+            rwdTokens[i] = new MockERC20V2(string.concat("R", vm.toString(i)), "R");
+            gameTokens[i].transfer(user1, 1000 ether);
+            rwdTokens[i].transfer(sponsor, 500000 ether);
+
+            (pIds[i],) = crossGameReward.createPoolV2(
+                string.concat("Pool ", vm.toString(i)),
+                IERC20(address(gameTokens[i])),
+                IERC20(address(rwdTokens[i])),
+                MIN_DEPOSIT
+            );
+            pools[i] = CrossGameRewardPoolV2(address(crossGameReward.getPoolAddress(pIds[i])));
+            crossGameReward.grantSponsorRole(pIds[i], sponsor);
+
+            vm.startPrank(sponsor);
+            rwdTokens[i].approve(address(pools[i]), 100000 ether);
+            for (uint256 j = 0; j < 5; j++) {
+                pools[i].createRound(10000 ether, block.number + 10 + j, 100);
+            }
+            vm.stopPrank();
+        }
+
+        vm.startPrank(user1);
+        for (uint256 i = 0; i < poolCount; i++) {
+            gameTokens[i].approve(address(router), 100 ether);
+            router.depositERC20(pIds[i], 100 ether);
+        }
+        vm.stopPrank();
+
+        _advanceBlocks(200);
+
+        vm.prank(user1);
+        router.withdrawAll();
+
+        for (uint256 i = 0; i < poolCount; i++) {
+            assertEq(pools[i].balances(user1), 0);
+            assertEq(pools[i].getActiveRoundCount(), 0);
+        }
+    }
+
+    function test_WithdrawAll_OnlyDeposited_PoolsSkipped() public {
+        MockERC20V2 extraGameToken = new MockERC20V2("Extra", "EXT");
+        MockERC20V2 extraRewardToken = new MockERC20V2("ExtraR", "EXTR");
+
+        (uint256 extraPoolId,) = crossGameReward.createPoolV2(
+            "Extra Pool",
+            IERC20(address(extraGameToken)),
+            IERC20(address(extraRewardToken)),
+            MIN_DEPOSIT
+        );
+
+        vm.startPrank(user1);
+        gameToken.approve(address(router), 100 ether);
+        router.depositERC20(poolId, 100 ether);
+        vm.stopPrank();
+
+        vm.prank(user1);
+        router.withdrawAll();
+
+        assertEq(poolV2.balances(user1), 0);
+        assertEq(crossGameReward.getPoolAddress(extraPoolId).balances(user1), 0);
+    }
 }

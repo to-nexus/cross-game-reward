@@ -821,4 +821,235 @@ contract CrossGameRewardPoolV2RoundTest is CrossGameRewardPoolV2Base {
 
         assertEq(crossdToken.balanceOf(user1), balanceBefore + 10000 ether);
     }
+
+    // ==================== Emergency Sync Pagination Tests ====================
+
+    function test_SyncRounds_PartialPagination() public {
+        _userDeposit(user1, 100 ether);
+
+        for (uint256 i = 0; i < 10; i++) {
+            _createRound(10000 ether, 100, 1000);
+        }
+        assertEq(poolV2.getActiveRoundCount(), 10);
+
+        _advanceBlocks(1200);
+
+        vm.startPrank(sponsor);
+        (uint256 processed, uint256 removed) = poolV2.syncRounds(5);
+        assertEq(processed, 5);
+        assertEq(removed, 5);
+        assertEq(poolV2.getActiveRoundCount(), 5);
+
+        (processed, removed) = poolV2.syncRounds(5);
+        assertEq(processed, 5);
+        assertEq(removed, 5);
+        assertEq(poolV2.getActiveRoundCount(), 0);
+        vm.stopPrank();
+    }
+
+    function test_SyncRounds_ZeroMeansAll() public {
+        _userDeposit(user1, 100 ether);
+
+        for (uint256 i = 0; i < 8; i++) {
+            _createRound(10000 ether, 100, 1000);
+        }
+        assertEq(poolV2.getActiveRoundCount(), 8);
+
+        _advanceBlocks(1200);
+
+        vm.prank(sponsor);
+        (uint256 processed, uint256 removed) = poolV2.syncRounds(0);
+        assertEq(processed, 8);
+        assertEq(removed, 8);
+        assertEq(poolV2.getActiveRoundCount(), 0);
+    }
+
+    function test_SyncRounds_MaxGreaterThanActive() public {
+        _userDeposit(user1, 100 ether);
+        _createRound(10000 ether, 10, 100);
+        _createRound(10000 ether, 10, 100);
+
+        _advanceBlocks(200);
+
+        vm.prank(sponsor);
+        (uint256 processed,) = poolV2.syncRounds(100);
+        assertEq(processed, 2);
+        assertEq(poolV2.getActiveRoundCount(), 0);
+    }
+
+    function test_SyncRounds_EmptyActiveSet() public {
+        vm.prank(sponsor);
+        (uint256 processed, uint256 removed) = poolV2.syncRounds(10);
+        assertEq(processed, 0);
+        assertEq(removed, 0);
+    }
+
+    function test_SyncRounds_MixedStates() public {
+        _userDeposit(user1, 100 ether);
+
+        uint256 round1 = _createRound(10000 ether, 10, 100);
+        _createRound(10000 ether, 500, 100);
+        _createRound(10000 ether, 10, 100);
+
+        vm.prank(sponsor);
+        poolV2.cancelRound(round1);
+
+        _advanceBlocks(200);
+
+        // round1: cancelled (already removed from active set by cancelRound)
+        // round2: not started yet (startBlock=current+500), stays
+        // round3: completed (startBlock+10, duration 100), removed
+        vm.prank(sponsor);
+        (uint256 processed, uint256 removed) = poolV2.syncRounds(0);
+        assertEq(processed, 2);
+        assertEq(removed, 1);
+        assertEq(poolV2.getActiveRoundCount(), 1);
+    }
+
+    function test_SyncRounds_EquivalenceWithUserPath() public {
+        _userDeposit(user1, 100 ether);
+        _userDeposit(user2, 100 ether);
+
+        for (uint256 i = 0; i < 5; i++) {
+            _createRound(10000 ether, 50, 200);
+        }
+        _advanceBlocks(300);
+
+        uint256 snapshot = vm.snapshot();
+
+        vm.prank(user1);
+        poolV2.claimRewards();
+        uint256 directReward = crossdToken.balanceOf(user1);
+        uint256 directGlobalAcc = poolV2.globalAccRewardPerShare();
+
+        vm.revertTo(snapshot);
+
+        vm.prank(sponsor);
+        poolV2.syncRounds(0);
+
+        vm.prank(user1);
+        poolV2.claimRewards();
+        uint256 syncedReward = crossdToken.balanceOf(user1);
+        uint256 syncedGlobalAcc = poolV2.globalAccRewardPerShare();
+
+        assertEq(syncedGlobalAcc, directGlobalAcc);
+        assertEq(syncedReward, directReward);
+    }
+
+    function test_SyncRounds_SteppedEquivalence() public {
+        _userDeposit(user1, 100 ether);
+
+        for (uint256 i = 0; i < 6; i++) {
+            _createRound(10000 ether, 50, 200);
+        }
+        _advanceBlocks(300);
+
+        uint256 snapshot = vm.snapshot();
+
+        vm.prank(user1);
+        poolV2.claimRewards();
+        uint256 fullReward = crossdToken.balanceOf(user1);
+
+        vm.revertTo(snapshot);
+
+        vm.startPrank(sponsor);
+        poolV2.syncRounds(2);
+        poolV2.syncRounds(2);
+        poolV2.syncRounds(2);
+        vm.stopPrank();
+
+        vm.prank(user1);
+        poolV2.claimRewards();
+        uint256 steppedReward = crossdToken.balanceOf(user1);
+
+        assertEq(steppedReward, fullReward);
+    }
+
+    function test_SyncRounds_NoDoubleCountAfterPartialSync() public {
+        _userDeposit(user1, 100 ether);
+
+        _createRound(10000 ether, 10, 100);
+        _advanceBlocks(60);
+
+        vm.prank(sponsor);
+        poolV2.syncRounds(1);
+        uint256 globalAfterSync = poolV2.globalAccRewardPerShare();
+
+        _advanceBlocks(50);
+
+        vm.prank(sponsor);
+        poolV2.syncRounds(1);
+        uint256 globalAfterSync2 = poolV2.globalAccRewardPerShare();
+
+        assertGt(globalAfterSync2, globalAfterSync);
+
+        vm.prank(user1);
+        poolV2.claimRewards();
+
+        assertEq(crossdToken.balanceOf(user1), 10000 ether);
+    }
+
+    function test_SyncRounds_LargeRoundCount_GasComparison() public {
+        _userDeposit(user1, 100 ether);
+
+        uint256 roundCount = 50;
+        for (uint256 i = 0; i < roundCount; i++) {
+            _createRound(10000 ether, 100, 500);
+        }
+        assertEq(poolV2.getActiveRoundCount(), roundCount);
+
+        _advanceBlocks(700);
+
+        vm.prank(sponsor);
+        poolV2.syncRounds(0);
+        assertEq(poolV2.getActiveRoundCount(), 0);
+
+        uint256 pending = _getPendingReward(user1);
+        assertEq(pending, 10000 ether * roundCount);
+    }
+
+    function test_SyncRounds_NotStartedRoundsSkipped() public {
+        _userDeposit(user1, 100 ether);
+
+        _createRound(10000 ether, 10, 100);
+        _createRound(10000 ether, 9999, 100);
+
+        _advanceBlocks(200);
+
+        vm.prank(sponsor);
+        (uint256 processed, uint256 removed) = poolV2.syncRounds(0);
+        assertEq(processed, 2);
+        assertEq(removed, 1);
+        assertEq(poolV2.getActiveRoundCount(), 1);
+    }
+
+    function test_SyncRounds_ReclaimableWithNoDepositors() public {
+        for (uint256 i = 0; i < 5; i++) {
+            _createRound(10000 ether, 10, 100);
+        }
+
+        _advanceBlocks(200);
+
+        vm.prank(sponsor);
+        poolV2.syncRounds(0);
+
+        assertEq(poolV2.reclaimableAmount(), 50000 ether);
+        assertEq(poolV2.getActiveRoundCount(), 0);
+    }
+
+    function test_SyncRounds_FactoryOwnerCanSync() public {
+        _createRound(10000 ether, 10, 100);
+        _advanceBlocks(200);
+
+        // owner = address(this) = crossGameReward.owner()
+        (uint256 processed, uint256 removed) = poolV2.syncRounds(0);
+        assertEq(processed, 1);
+        assertEq(removed, 1);
+    }
+
+    function test_SyncRounds_UnauthorizedReverts() public {
+        vm.prank(user1);
+        vm.expectRevert(abi.encodeWithSelector(CrossGameRewardPoolV2.CGRP2SyncNotAuthorized.selector));
+        poolV2.syncRounds(10);
+    }
 }
