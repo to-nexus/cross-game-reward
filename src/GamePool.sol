@@ -426,7 +426,6 @@ contract GamePool is
      * @param amount Amount of tokens to withdraw (0 = withdraw all)
      */
     function withdraw(uint amount) external nonReentrant whenNotPaused {
-        require(poolStatus != PoolStatus.Paused, GPNotAllowedInCurrentState());
         _withdraw(msg.sender, msg.sender, amount);
     }
 
@@ -436,7 +435,6 @@ contract GamePool is
      * @param amount Amount of tokens to withdraw (0 = withdraw all)
      */
     function withdrawFor(address account, uint amount) external nonReentrant whenNotPaused {
-        require(poolStatus != PoolStatus.Paused, GPNotAllowedInCurrentState());
         _checkDelegate(account);
         _withdraw(msg.sender, account, amount);
     }
@@ -447,7 +445,6 @@ contract GamePool is
      * @notice Claims all pending rewards without withdrawing
      */
     function claimRewards() external nonReentrant whenNotPaused {
-        require(poolStatus != PoolStatus.Paused, GPNotAllowedInCurrentState());
         _claimRewards(msg.sender);
     }
 
@@ -456,7 +453,6 @@ contract GamePool is
      * @param account Address of the account to claim rewards for
      */
     function claimRewardsFor(address account) external nonReentrant whenNotPaused {
-        require(poolStatus != PoolStatus.Paused, GPNotAllowedInCurrentState());
         _checkDelegate(account);
         _claimRewards(account);
     }
@@ -467,7 +463,6 @@ contract GamePool is
      * @param token Address of the reward token to claim (must match pool's rewardToken)
      */
     function claimReward(IERC20 token) external nonReentrant whenNotPaused {
-        require(poolStatus != PoolStatus.Paused, GPNotAllowedInCurrentState());
         require(token == rewardToken, GPInvalidRewardToken(address(token), address(rewardToken)));
         _claimRewards(msg.sender);
     }
@@ -479,7 +474,6 @@ contract GamePool is
      * @param token Address of the reward token to claim (must match pool's rewardToken)
      */
     function claimRewardFor(address account, IERC20 token) external nonReentrant whenNotPaused {
-        require(poolStatus != PoolStatus.Paused, GPNotAllowedInCurrentState());
         require(token == rewardToken, GPInvalidRewardToken(address(token), address(rewardToken)));
         _checkDelegate(account);
         _claimRewards(account);
