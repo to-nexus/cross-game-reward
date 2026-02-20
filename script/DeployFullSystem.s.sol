@@ -3,7 +3,7 @@ pragma solidity 0.8.28;
 
 import "../src/CrossGameReward.sol";
 import "../src/CrossGameRewardPool.sol";
-import "../src/CrossGameRewardPoolV2.sol";
+import "../src/GamePool.sol";
 import "../src/CrossGameRewardRouter.sol";
 import "../src/WCROSS.sol";
 import "../src/interfaces/ICrossGameRewardPool.sol";
@@ -15,12 +15,12 @@ import "forge-std/Script.sol";
  * @title DeployFullSystem
  * @notice 전체 시스템 배포 스크립트
  * @dev WCROSS, CrossGameReward (UUPS), CrossGameRewardRouter 배포
- *      V1/V2 Pool Implementation 모두 지원
+ *      V1/GamePool Implementation 모두 지원
  *
  * .env 파일에서 읽어오는 환경 변수:
  * - CROSS_GAME_REWARD_ROOT_IMPLEMENTATION (required)
  * - POOL_IMPLEMENTATION (required)
- * - POOL_V2_IMPLEMENTATION (optional, V2 Pool 지원 시 필요)
+ * - GAME_POOL_IMPLEMENTATION (optional, GamePool 지원 시 필요)
  * - INITIAL_DELAY (optional, default: 1 days)
  * - ADMIN_ADDRESS (optional, default: deployer)
  *
@@ -31,7 +31,7 @@ import "forge-std/Script.sol";
  *   - DEPOSIT_TOKEN (0x1=native token)
  *   - POOL_NAME, MIN_DEPOSIT_AMOUNT
  *   - REWARD_TOKEN (optional, V1 pool에 보상 토큰 등록)
- *   V2 전용:
+ *   GamePool 전용:
  *   - DEPOSIT_TOKEN (게임토큰 주소)
  *   - REWARD_TOKEN (required, CROSSD 등)
  *   - POOL_NAME, MIN_DEPOSIT_AMOUNT
@@ -75,12 +75,12 @@ contract DeployFullSystem is Script {
         CrossGameReward crossGameReward = CrossGameReward(address(crossGameRewardProxy));
         console.log("3. CrossGameReward Proxy deployed:", address(crossGameReward));
 
-        // 4. V2 Implementation 등록 (선택적)
-        try vm.envAddress("POOL_V2_IMPLEMENTATION") returns (address poolV2ImplAddr) {
-            crossGameReward.setPoolImplementationV2(ICrossGameRewardPool(poolV2ImplAddr));
-            console.log("4. Pool V2 Implementation set:", poolV2ImplAddr);
+        // 4. GamePool Implementation 등록 (선택적)
+        try vm.envAddress("GAME_POOL_IMPLEMENTATION") returns (address gamePoolImplAddr) {
+            crossGameReward.setGamePoolImplementation(ICrossGameRewardPool(gamePoolImplAddr));
+            console.log("4. Pool GamePool Implementation set:", gamePoolImplAddr);
         } catch {
-            console.log("4. POOL_V2_IMPLEMENTATION not set, skipping V2 setup");
+            console.log("4. GAME_POOL_IMPLEMENTATION not set, skipping GamePool setup");
         }
 
         // 5. Router 배포
@@ -103,7 +103,7 @@ contract DeployFullSystem is Script {
                 uint poolVersion = vm.envOr("POOL_VERSION", uint(1));
 
                 if (poolVersion == 2) {
-                    poolId = _createPoolV2(crossGameReward);
+                    poolId = _createGamePool(crossGameReward);
                 } else {
                     poolId = _createPoolV1(crossGameReward, wcross);
                 }
@@ -160,21 +160,21 @@ contract DeployFullSystem is Script {
         console.log("   Pool ID:", poolId);
     }
 
-    function _createPoolV2(CrossGameReward crossGameReward) internal returns (uint poolId) {
+    function _createGamePool(CrossGameReward crossGameReward) internal returns (uint poolId) {
         address depositTokenAddr = vm.envAddress("DEPOSIT_TOKEN");
         address rewardTokenAddr = vm.envAddress("REWARD_TOKEN");
         string memory poolName = vm.envOr("POOL_NAME", string("Game Token Pool"));
         uint minDepositAmount = vm.envOr("MIN_DEPOSIT_AMOUNT", uint(1 ether));
 
-        require(depositTokenAddr != NATIVE_TOKEN_ADDRESS, "V2 Pool does not support native token deposit");
+        require(depositTokenAddr != NATIVE_TOKEN_ADDRESS, "GamePool does not support native token deposit");
 
-        console.log("\n8. Creating V2 Pool (GamePool)...");
+        console.log("\n8. Creating GamePool...");
         console.log("   Pool Name:", poolName);
         console.log("   Deposit Token:", depositTokenAddr);
         console.log("   Reward Token:", rewardTokenAddr);
         console.log("   Min Deposit:", minDepositAmount);
 
-        (poolId,) = crossGameReward.createPoolV2(
+        (poolId,) = crossGameReward.createGamePool(
             poolName, IERC20(depositTokenAddr), IERC20(rewardTokenAddr), minDepositAmount
         );
         console.log("   Pool ID:", poolId);

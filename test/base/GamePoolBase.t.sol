@@ -3,19 +3,19 @@ pragma solidity 0.8.28;
 
 import "../../src/CrossGameReward.sol";
 import "../../src/CrossGameRewardPool.sol";
-import "../../src/CrossGameRewardPoolV2.sol";
+import "../../src/GamePool.sol";
 import "../../src/interfaces/ICrossGameRewardPool.sol";
-import "../../src/interfaces/ICrossGameRewardPoolV2.sol";
+import "../../src/interfaces/IGamePool.sol";
 import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "forge-std/Test.sol";
 
 /**
- * @title MockERC20V2
- * @notice Simple ERC20 token for V2 testing
+ * @title MockERC20GP
+ * @notice Simple ERC20 token for GamePool testing
  */
-contract MockERC20V2 is ERC20 {
+contract MockERC20GP is ERC20 {
     constructor(string memory name, string memory symbol) ERC20(name, symbol) {
         _mint(msg.sender, 10000000 ether);
     }
@@ -26,17 +26,17 @@ contract MockERC20V2 is ERC20 {
 }
 
 /**
- * @title CrossGameRewardPoolV2Base
- * @notice Shared base contract used by all V2 pool tests
+ * @title GamePoolBase
+ * @notice Shared base contract used by all GamePool tests
  * @dev Provides setup and convenience helpers for GamePool testing
  */
-abstract contract CrossGameRewardPoolV2Base is Test {
+abstract contract GamePoolBase is Test {
     CrossGameReward public crossGameReward;
-    CrossGameRewardPoolV2 public poolV2;
+    GamePool public gamePool;
     uint256 public poolId;
 
-    MockERC20V2 public gameToken; // Deposit token (game token)
-    MockERC20V2 public crossdToken; // Reward token (CROSSD)
+    MockERC20GP public gameToken; // Deposit token (game token)
+    MockERC20GP public crossdToken; // Reward token (CROSSD)
 
     address public owner = address(this);
     address public sponsor = address(0x1001);
@@ -50,12 +50,12 @@ abstract contract CrossGameRewardPoolV2Base is Test {
 
     function setUp() public virtual {
         // Deploy mock tokens
-        gameToken = new MockERC20V2("Game Token", "GAME");
-        crossdToken = new MockERC20V2("CROSSD Stablecoin", "CROSSD");
+        gameToken = new MockERC20GP("Game Token", "GAME");
+        crossdToken = new MockERC20GP("CROSSD Stablecoin", "CROSSD");
 
-        // Deploy CrossGameReward with both V1 and V2 implementations
+        // Deploy CrossGameReward with both V1 and GamePool implementations
         CrossGameRewardPool poolImplementation = new CrossGameRewardPool();
-        CrossGameRewardPoolV2 poolImplementationV2 = new CrossGameRewardPoolV2();
+        GamePool gamePoolImpl = new GamePool();
         CrossGameReward gameRewardImplementation = new CrossGameReward();
 
         bytes memory initData = abi.encodeCall(
@@ -65,14 +65,14 @@ abstract contract CrossGameRewardPoolV2Base is Test {
         ERC1967Proxy proxy = new ERC1967Proxy(address(gameRewardImplementation), initData);
         crossGameReward = CrossGameReward(address(proxy));
 
-        // Set V2 implementation
-        crossGameReward.setPoolImplementationV2(ICrossGameRewardPool(address(poolImplementationV2)));
+        // Set GamePool implementation
+        crossGameReward.setGamePoolImplementation(ICrossGameRewardPool(address(gamePoolImpl)));
 
-        // Create V2 pool through the CrossGameReward factory
-        (poolId,) = crossGameReward.createPoolV2(
+        // Create GamePool through the CrossGameReward factory
+        (poolId,) = crossGameReward.createGamePool(
             "Test Game Pool", IERC20(address(gameToken)), IERC20(address(crossdToken)), MIN_DEPOSIT
         );
-        poolV2 = CrossGameRewardPoolV2(address(crossGameReward.getPoolAddress(poolId)));
+        gamePool = GamePool(address(crossGameReward.getPoolAddress(poolId)));
 
         // Grant sponsor roles
         crossGameReward.grantSponsorRole(poolId, sponsor);
@@ -95,8 +95,8 @@ abstract contract CrossGameRewardPoolV2Base is Test {
      */
     function _userDeposit(address user, uint256 amount) internal {
         vm.startPrank(user);
-        gameToken.approve(address(poolV2), amount);
-        poolV2.deposit(amount);
+        gameToken.approve(address(gamePool), amount);
+        gamePool.deposit(amount);
         vm.stopPrank();
     }
 
@@ -111,8 +111,8 @@ abstract contract CrossGameRewardPoolV2Base is Test {
         returns (uint256 roundId)
     {
         vm.startPrank(sponsor);
-        crossdToken.approve(address(poolV2), amount);
-        roundId = poolV2.createRound(amount, block.number + startBlockOffset, durationBlocks);
+        crossdToken.approve(address(gamePool), amount);
+        roundId = gamePool.createRound(amount, block.number + startBlockOffset, durationBlocks);
         vm.stopPrank();
     }
 
@@ -144,6 +144,6 @@ abstract contract CrossGameRewardPoolV2Base is Test {
      * @notice Helper to get pending reward for a user
      */
     function _getPendingReward(address user) internal view returns (uint256) {
-        return poolV2.pendingReward(user, crossdToken);
+        return gamePool.pendingReward(user, crossdToken);
     }
 }

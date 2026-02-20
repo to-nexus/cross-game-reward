@@ -13,10 +13,10 @@ import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet
 
 import {ICrossGameReward} from "./interfaces/ICrossGameReward.sol";
 import {ICrossGameRewardPool} from "./interfaces/ICrossGameRewardPool.sol";
-import {ICrossGameRewardPoolV2} from "./interfaces/ICrossGameRewardPoolV2.sol";
+import {IGamePool} from "./interfaces/IGamePool.sol";
 
 /**
- * @title CrossGameRewardPoolV2
+ * @title GamePool
  * @notice Game reward pool with round-based linear reward distribution
  * @dev Implements block-per-block reward distribution with UUPS upgradeability
  *
@@ -40,13 +40,13 @@ import {ICrossGameRewardPoolV2} from "./interfaces/ICrossGameRewardPoolV2.sol";
  * - RewardRoot (CrossGameReward contract): Pool management, DEFAULT_ADMIN_ROLE holder
  * - Sponsor: Round creation and cancellation
  */
-contract CrossGameRewardPoolV2 is
+contract GamePool is
     Initializable,
     AccessControl,
     PausableUpgradeable,
     ReentrancyGuardTransientUpgradeable,
     UUPSUpgradeable,
-    ICrossGameRewardPoolV2
+    IGamePool
 {
     using SafeERC20 for IERC20;
     using EnumerableSet for EnumerableSet.UintSet;
@@ -54,69 +54,69 @@ contract CrossGameRewardPoolV2 is
     // ==================== Custom Errors ====================
 
     /// @notice Thrown when deposit amount is below minimum required
-    error CGRP2BelowMinimumDepositAmount(uint provided, uint minimum);
+    error GPBelowMinimumDepositAmount(uint provided, uint minimum);
 
     /// @notice Thrown when attempting to withdraw with no active deposit
-    error CGRP2NoDepositFound(address account);
+    error GPNoDepositFound(address account);
 
     /// @notice Thrown when attempting to withdraw more than the deposited amount
-    error CGRP2InsufficientBalance(uint depositedAmount, uint withdrawAmount);
+    error GPInsufficientBalance(uint depositedAmount, uint withdrawAmount);
 
     /// @notice Thrown when a zero address is provided where it's not allowed
-    error CGRP2CanNotZeroAddress();
+    error GPCanNotZeroAddress();
 
     /// @notice Thrown when a zero value is provided where it's not allowed
-    error CGRP2CanNotZeroValue();
+    error GPCanNotZeroValue();
 
     /// @notice Thrown when caller is not the authorized router
-    error CGRP2OnlyRouter();
+    error GPOnlyRouter();
 
     /// @notice Thrown when caller is not the reward root
-    error CGRP2OnlyRewardRoot();
+    error GPOnlyRewardRoot();
 
     /// @notice Thrown when caller is not authorized for sync (must be SPONSOR_ROLE or factory owner)
-    error CGRP2SyncNotAuthorized();
+    error GPSyncNotAuthorized();
 
     /// @notice Thrown when attempting to deposit in an inactive or paused pool
-    error CGRP2DepositNotAllowed(PoolStatus currentStatus);
+    error GPDepositNotAllowed(PoolStatus currentStatus);
 
     /// @notice Thrown when attempting an operation not allowed in current pool state
-    error CGRP2NotAllowedInCurrentState();
+    error GPNotAllowedInCurrentState();
 
     /// @notice Thrown when round is not found
-    error CGRP2RoundNotFound(uint roundId);
+    error GPRoundNotFound(uint roundId);
 
     /// @notice Thrown when attempting to cancel an already started round
-    error CGRP2RoundAlreadyStarted(uint roundId);
+    error GPRoundAlreadyStarted(uint roundId);
 
     /// @notice Thrown when attempting to cancel an already cancelled round
-    error CGRP2RoundAlreadyCancelled(uint roundId);
+    error GPRoundAlreadyCancelled(uint roundId);
 
     /// @notice Thrown when start block is not in the future
-    error CGRP2InvalidStartBlock(uint startBlock, uint currentBlock);
+    error GPInvalidStartBlock(uint startBlock, uint currentBlock);
 
     /// @notice Thrown when duration is zero
-    error CGRP2InvalidDuration();
+    error GPInvalidDuration();
 
     /// @notice Thrown when there is no reclaimable amount
-    error CGRP2NoReclaimableAmount();
+    error GPNoReclaimableAmount();
 
     /// @notice Thrown when reward token cannot be deposit token
-    error CGRP2RewardIsDepositToken();
+    error GPRewardIsDepositToken();
 
     /// @notice Thrown when rewardPerBlock would be zero (amount < durationBlocks)
-    error CGRP2RewardPerBlockZero();
+    error GPRewardPerBlockZero();
 
     /// @notice Thrown when provided token does not match the pool's reward token
     /// @param provided The token address provided
     /// @param expected The expected reward token address
-    error CGRP2InvalidRewardToken(address provided, address expected);
+    error GPInvalidRewardToken(address provided, address expected);
 
     /// @notice Thrown when caller is not the creator of the round
-    error CGRP2OnlyRoundCreator(uint roundId, address caller, address creator);
+    error GPOnlyRoundCreator(uint roundId, address caller, address creator);
 
     /// @notice Thrown when pool status is unchanged
-    error CGRP2PoolStatusUnchanged();
+    error GPPoolStatusUnchanged();
 
     // ==================== Constants ====================
 
@@ -206,7 +206,7 @@ contract CrossGameRewardPoolV2 is
     // ==================== Modifiers ====================
 
     modifier onlyRewardRoot() {
-        require(msg.sender == address(crossGameReward), CGRP2OnlyRewardRoot());
+        require(msg.sender == address(crossGameReward), GPOnlyRewardRoot());
         _;
     }
 
@@ -220,7 +220,7 @@ contract CrossGameRewardPoolV2 is
     // ==================== Initializer ====================
 
     /**
-     * @notice Initializes the CrossGameRewardPoolV2 contract
+     * @notice Initializes the GamePool contract
      * @dev Sets up the pool with deposit and reward tokens.
      *      Grants DEFAULT_ADMIN_ROLE to CrossGameReward (msg.sender) so it can
      *      manage SPONSOR_ROLE via standard AccessControl grantRole/revokeRole.
@@ -229,10 +229,10 @@ contract CrossGameRewardPoolV2 is
      * @param _minDepositAmount Minimum amount required for depositing
      */
     function initialize(IERC20 _depositToken, IERC20 _rewardToken, uint _minDepositAmount) external initializer {
-        require(address(_depositToken) != address(0), CGRP2CanNotZeroAddress());
-        require(address(_rewardToken) != address(0), CGRP2CanNotZeroAddress());
-        require(address(_depositToken) != address(_rewardToken), CGRP2RewardIsDepositToken());
-        require(_minDepositAmount > 0, CGRP2CanNotZeroValue());
+        require(address(_depositToken) != address(0), GPCanNotZeroAddress());
+        require(address(_rewardToken) != address(0), GPCanNotZeroAddress());
+        require(address(_depositToken) != address(_rewardToken), GPRewardIsDepositToken());
+        require(_minDepositAmount > 0, GPCanNotZeroValue());
 
         crossGameReward = ICrossGameReward(msg.sender);
 
@@ -289,12 +289,12 @@ contract CrossGameRewardPoolV2 is
         onlyRole(SPONSOR_ROLE)
         returns (uint roundId)
     {
-        require(amount > 0, CGRP2CanNotZeroValue());
-        require(startBlock > block.number, CGRP2InvalidStartBlock(startBlock, block.number));
-        require(durationBlocks > 0, CGRP2InvalidDuration());
+        require(amount > 0, GPCanNotZeroValue());
+        require(startBlock > block.number, GPInvalidStartBlock(startBlock, block.number));
+        require(durationBlocks > 0, GPInvalidDuration());
 
         uint rewardPerBlock = (amount / durationBlocks / REWARD_PER_BLOCK_PRECISION) * REWARD_PER_BLOCK_PRECISION;
-        require(rewardPerBlock > 0, CGRP2RewardPerBlockZero());
+        require(rewardPerBlock > 0, GPRewardPerBlockZero());
 
         uint remainderReward = amount - (rewardPerBlock * durationBlocks);
 
@@ -343,10 +343,10 @@ contract CrossGameRewardPoolV2 is
     function cancelRoundToRecipient(uint roundId, address recipient) public nonReentrant {
         Round storage round = _rounds[roundId];
 
-        require(round.roundId != 0, CGRP2RoundNotFound(roundId));
-        require(!round.isCancelled, CGRP2RoundAlreadyCancelled(roundId));
-        require(msg.sender == round.creator, CGRP2OnlyRoundCreator(roundId, msg.sender, round.creator));
-        require(block.number < round.startBlock, CGRP2RoundAlreadyStarted(roundId));
+        require(round.roundId != 0, GPRoundNotFound(roundId));
+        require(!round.isCancelled, GPRoundAlreadyCancelled(roundId));
+        require(msg.sender == round.creator, GPOnlyRoundCreator(roundId, msg.sender, round.creator));
+        require(block.number < round.startBlock, GPRoundAlreadyStarted(roundId));
 
         if (recipient == address(0)) recipient = msg.sender;
 
@@ -365,7 +365,7 @@ contract CrossGameRewardPoolV2 is
      * @notice Returns round information by round ID
      */
     function getRound(uint roundId) external view returns (Round memory) {
-        require(_rounds[roundId].roundId != 0, CGRP2RoundNotFound(roundId));
+        require(_rounds[roundId].roundId != 0, GPRoundNotFound(roundId));
         return _rounds[roundId];
     }
 
@@ -404,7 +404,7 @@ contract CrossGameRewardPoolV2 is
      * @param amount Amount of tokens to deposit
      */
     function deposit(uint amount) external nonReentrant whenNotPaused {
-        require(poolStatus == PoolStatus.Active, CGRP2DepositNotAllowed(poolStatus));
+        require(poolStatus == PoolStatus.Active, GPDepositNotAllowed(poolStatus));
         _deposit(msg.sender, msg.sender, amount);
     }
 
@@ -414,7 +414,7 @@ contract CrossGameRewardPoolV2 is
      * @param amount Amount of tokens to deposit
      */
     function depositFor(address account, uint amount) external nonReentrant whenNotPaused {
-        require(poolStatus == PoolStatus.Active, CGRP2DepositNotAllowed(poolStatus));
+        require(poolStatus == PoolStatus.Active, GPDepositNotAllowed(poolStatus));
         _checkDelegate(account);
         _deposit(msg.sender, account, amount);
     }
@@ -426,7 +426,7 @@ contract CrossGameRewardPoolV2 is
      * @param amount Amount of tokens to withdraw (0 = withdraw all)
      */
     function withdraw(uint amount) external nonReentrant whenNotPaused {
-        require(poolStatus != PoolStatus.Paused, CGRP2NotAllowedInCurrentState());
+        require(poolStatus != PoolStatus.Paused, GPNotAllowedInCurrentState());
         _withdraw(msg.sender, msg.sender, amount);
     }
 
@@ -436,7 +436,7 @@ contract CrossGameRewardPoolV2 is
      * @param amount Amount of tokens to withdraw (0 = withdraw all)
      */
     function withdrawFor(address account, uint amount) external nonReentrant whenNotPaused {
-        require(poolStatus != PoolStatus.Paused, CGRP2NotAllowedInCurrentState());
+        require(poolStatus != PoolStatus.Paused, GPNotAllowedInCurrentState());
         _checkDelegate(account);
         _withdraw(msg.sender, account, amount);
     }
@@ -447,7 +447,7 @@ contract CrossGameRewardPoolV2 is
      * @notice Claims all pending rewards without withdrawing
      */
     function claimRewards() external nonReentrant whenNotPaused {
-        require(poolStatus != PoolStatus.Paused, CGRP2NotAllowedInCurrentState());
+        require(poolStatus != PoolStatus.Paused, GPNotAllowedInCurrentState());
         _claimRewards(msg.sender);
     }
 
@@ -456,31 +456,31 @@ contract CrossGameRewardPoolV2 is
      * @param account Address of the account to claim rewards for
      */
     function claimRewardsFor(address account) external nonReentrant whenNotPaused {
-        require(poolStatus != PoolStatus.Paused, CGRP2NotAllowedInCurrentState());
+        require(poolStatus != PoolStatus.Paused, GPNotAllowedInCurrentState());
         _checkDelegate(account);
         _claimRewards(account);
     }
 
     /**
      * @notice Claims pending rewards for a specific token
-     * @dev In V2, validates that the provided token matches the pool's reward token
+     * @dev Validates that the provided token matches the pool's reward token
      * @param token Address of the reward token to claim (must match pool's rewardToken)
      */
     function claimReward(IERC20 token) external nonReentrant whenNotPaused {
-        require(poolStatus != PoolStatus.Paused, CGRP2NotAllowedInCurrentState());
-        require(token == rewardToken, CGRP2InvalidRewardToken(address(token), address(rewardToken)));
+        require(poolStatus != PoolStatus.Paused, GPNotAllowedInCurrentState());
+        require(token == rewardToken, GPInvalidRewardToken(address(token), address(rewardToken)));
         _claimRewards(msg.sender);
     }
 
     /**
      * @notice Claims pending reward for a specific token on behalf of another account
-     * @dev In V2, validates that the provided token matches the pool's reward token
+     * @dev Validates that the provided token matches the pool's reward token
      * @param account Address of the account to claim rewards for
      * @param token Address of the reward token to claim (must match pool's rewardToken)
      */
     function claimRewardFor(address account, IERC20 token) external nonReentrant whenNotPaused {
-        require(poolStatus != PoolStatus.Paused, CGRP2NotAllowedInCurrentState());
-        require(token == rewardToken, CGRP2InvalidRewardToken(address(token), address(rewardToken)));
+        require(poolStatus != PoolStatus.Paused, GPNotAllowedInCurrentState());
+        require(token == rewardToken, GPInvalidRewardToken(address(token), address(rewardToken)));
         _checkDelegate(account);
         _claimRewards(account);
     }
@@ -514,7 +514,7 @@ contract CrossGameRewardPoolV2 is
 
     /**
      * @notice Returns reward token address at index
-     * @dev V2 only has one reward token, so only index 0 is valid
+     * @dev GamePool only has one reward token, so only index 0 is valid
      */
     function rewardTokenAt(uint index) external view returns (IERC20) {
         require(index == 0, "Invalid index");
@@ -563,7 +563,7 @@ contract CrossGameRewardPoolV2 is
 
     /**
      * @notice Returns all removed reward token addresses
-     * @dev V2 doesn't support removing reward tokens, always returns empty
+     * @dev GamePool doesn't support removing reward tokens, always returns empty
      */
     function getRemovedRewardTokens() external pure returns (address[] memory) {
         return new address[](0);
@@ -585,7 +585,7 @@ contract CrossGameRewardPoolV2 is
 
     /**
      * @notice Returns user's claimable rewards for removed tokens
-     * @dev V2 doesn't support removing reward tokens, always returns empty
+     * @dev GamePool doesn't support removing reward tokens, always returns empty
      */
     function getRemovedTokenRewards(address) external pure returns (address[] memory tokens, uint[] memory rewards) {
         return (new address[](0), new uint[](0));
@@ -603,19 +603,19 @@ contract CrossGameRewardPoolV2 is
     // ==================== Admin Functions ====================
 
     /**
-     * @notice Adds a reward token (V1 compatibility - no-op in V2)
-     * @dev V2 has a fixed reward token set at initialization
+     * @notice Adds a reward token (V1 compatibility - no-op in GamePool)
+     * @dev GamePool has a fixed reward token set at initialization
      */
     function addRewardToken(IERC20 token) external view onlyRewardRoot {
         require(token == rewardToken, "Cannot add different reward token");
     }
 
     /**
-     * @notice Removes a reward token (V1 compatibility - no-op in V2)
-     * @dev V2 doesn't support removing reward tokens
+     * @notice Removes a reward token (V1 compatibility - no-op in GamePool)
+     * @dev GamePool doesn't support removing reward tokens
      */
     function removeRewardToken(IERC20) external view onlyRewardRoot {
-        revert("V2 does not support removing reward tokens");
+        revert("GamePool does not support removing reward tokens");
     }
 
     /**
@@ -632,8 +632,8 @@ contract CrossGameRewardPoolV2 is
      */
     function reclaimTokens(IERC20 token, address to) external onlyRewardRoot {
         require(token == rewardToken, "Invalid token");
-        require(reclaimableAmount > 0, CGRP2NoReclaimableAmount());
-        require(to != address(0), CGRP2CanNotZeroAddress());
+        require(reclaimableAmount > 0, GPNoReclaimableAmount());
+        require(to != address(0), GPCanNotZeroAddress());
 
         uint amount = reclaimableAmount;
         reclaimableAmount = 0;
@@ -646,7 +646,7 @@ contract CrossGameRewardPoolV2 is
      * @notice Sets the minimum deposit amount
      */
     function updateMinDepositAmount(uint amount) external onlyRewardRoot {
-        require(amount > 0, CGRP2CanNotZeroValue());
+        require(amount > 0, GPCanNotZeroValue());
         emit MinDepositAmountUpdated(minDepositAmount, amount);
         minDepositAmount = amount;
     }
@@ -656,7 +656,7 @@ contract CrossGameRewardPoolV2 is
      */
     function setPoolStatus(PoolStatus newStatus) external onlyRewardRoot {
         PoolStatus oldStatus = poolStatus;
-        require(oldStatus != newStatus, CGRP2PoolStatusUnchanged());
+        require(oldStatus != newStatus, GPPoolStatusUnchanged());
 
         poolStatus = newStatus;
 
@@ -680,7 +680,7 @@ contract CrossGameRewardPoolV2 is
      * @return removed Number of completed/cancelled rounds removed from active set
      */
     function syncRounds(uint maxRounds) external returns (uint processed, uint removed) {
-        require(hasRole(SPONSOR_ROLE, msg.sender) || msg.sender == crossGameReward.owner(), CGRP2SyncNotAuthorized());
+        require(hasRole(SPONSOR_ROLE, msg.sender) || msg.sender == crossGameReward.owner(), GPSyncNotAuthorized());
         (processed, removed) = _updatePoolPaginated(maxRounds);
         emit RoundsSynced(processed, removed);
     }
@@ -799,7 +799,7 @@ contract CrossGameRewardPoolV2 is
      * @dev Internal deposit logic
      */
     function _deposit(address payer, address account, uint amount) internal {
-        require(amount >= minDepositAmount, CGRP2BelowMinimumDepositAmount(amount, minDepositAmount));
+        require(amount >= minDepositAmount, GPBelowMinimumDepositAmount(amount, minDepositAmount));
 
         _updatePool();
         _updateUser(account);
@@ -818,10 +818,10 @@ contract CrossGameRewardPoolV2 is
      * @dev Internal withdraw logic
      */
     function _withdraw(address caller, address account, uint amount) internal {
-        require(balances[account] > 0, CGRP2NoDepositFound(account));
+        require(balances[account] > 0, GPNoDepositFound(account));
 
         uint withdrawAmount = amount == 0 ? balances[account] : amount;
-        require(withdrawAmount <= balances[account], CGRP2InsufficientBalance(balances[account], withdrawAmount));
+        require(withdrawAmount <= balances[account], GPInsufficientBalance(balances[account], withdrawAmount));
 
         _updatePool();
         _updateUser(account);
@@ -845,7 +845,7 @@ contract CrossGameRewardPoolV2 is
         uint userBalance = balances[account];
         uint pending = _userPendingRewards[account];
 
-        require(userBalance > 0 || pending > 0, CGRP2NoDepositFound(account));
+        require(userBalance > 0 || pending > 0, GPNoDepositFound(account));
 
         if (userBalance > 0) {
             _updatePool();
@@ -878,8 +878,8 @@ contract CrossGameRewardPoolV2 is
      * @dev Validates that the caller is the authorized router
      */
     function _checkDelegate(address account) internal view {
-        require(account != address(0), CGRP2CanNotZeroAddress());
-        require(msg.sender == crossGameReward.router(), CGRP2OnlyRouter());
+        require(account != address(0), GPCanNotZeroAddress());
+        require(msg.sender == crossGameReward.router(), GPOnlyRouter());
     }
 
     // ==================== UUPS ====================

@@ -2,7 +2,7 @@
 pragma solidity 0.8.28;
 
 import "../src/CrossGameReward.sol";
-import "../src/interfaces/ICrossGameRewardPoolV2.sol";
+import "../src/interfaces/IGamePool.sol";
 import "../src/interfaces/IWCROSS.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "forge-std/Script.sol";
@@ -10,7 +10,7 @@ import "forge-std/Script.sol";
 /**
  * @title CreatePool
  * @notice CrossGameReward에 새로운 풀을 추가하는 스크립트
- * @dev V1 (CrossPool) 또는 V2 (GamePool) 풀을 생성할 수 있습니다.
+ * @dev V1 (CrossPool) 또는 GamePool 풀을 생성할 수 있습니다.
  *
  * 사용법:
  * # V1 Pool (CrossPool) 생성
@@ -18,9 +18,9 @@ import "forge-std/Script.sol";
  *   --rpc-url <RPC_URL> \
  *   --broadcast
  *
- * # V2 Pool (GamePool) 생성
+ * # GamePool 생성
  * forge script script/CreatePool.s.sol:CreatePool \
- *   --sig "createPoolV2()" \
+ *   --sig "createGamePool()" \
  *   --rpc-url <RPC_URL> \
  *   --broadcast
  *
@@ -32,13 +32,13 @@ import "forge-std/Script.sol";
  * V1 선택 환경변수:
  * - REWARD_TOKEN: 보상 토큰 주소 (없으면 보상 토큰을 등록하지 않음)
  *
- * V2 필수 환경변수:
+ * GamePool 필수 환경변수:
  * - CROSS_GAME_REWARD: CrossGameReward 컨트랙트 주소
  * - POOL_NAME: 생성할 풀 이름
  * - DEPOSIT_TOKEN: 예치 토큰 주소 (게임토큰)
  * - REWARD_TOKEN: 보상 토큰 주소 (CROSSD 등)
  * - MIN_DEPOSIT_AMOUNT: 최소 예치 금액 (wei 단위)
- * V2 선택 환경변수:
+ * GamePool 선택 환경변수:
  * - SPONSOR_ADDRESS: 라운드 생성 권한을 부여할 스폰서 지갑 주소
  */
 contract CreatePool is Script {
@@ -83,10 +83,10 @@ contract CreatePool is Script {
     }
 
     /**
-     * @notice V2 Pool (GamePool) 생성
-     * @dev --sig "createPoolV2()" 플래그와 함께 사용
+     * @notice GamePool 생성
+     * @dev --sig "createGamePool()" 플래그와 함께 사용
      */
-    function createPoolV2() external {
+    function createGamePool() external {
         ICrossGameReward crossGameReward = _getCrossGameReward();
 
         string memory poolName = vm.envString("POOL_NAME");
@@ -95,13 +95,13 @@ contract CreatePool is Script {
         uint minDepositAmount = vm.envUint("MIN_DEPOSIT_AMOUNT");
 
         require(depositTokenAddr != address(0), "DEPOSIT_TOKEN is required");
-        require(depositTokenAddr != NATIVE_TOKEN_ADDRESS, "V2 Pool does not support native token deposit");
-        require(rewardTokenAddr != address(0), "REWARD_TOKEN is required for V2 Pool");
+        require(depositTokenAddr != NATIVE_TOKEN_ADDRESS, "GamePool does not support native token deposit");
+        require(rewardTokenAddr != address(0), "REWARD_TOKEN is required for GamePool");
 
         IERC20 depositToken = IERC20(depositTokenAddr);
         IERC20 rewardToken = IERC20(rewardTokenAddr);
 
-        console.log("\n=== V2 Pool (GamePool) Creation ===");
+        console.log("\n=== GamePool Creation ===");
         console.log("CrossGameReward:", address(crossGameReward));
         console.log("Pool Name:", poolName);
         console.log("Deposit Token:", depositTokenAddr);
@@ -111,14 +111,14 @@ contract CreatePool is Script {
         vm.startBroadcast();
 
         (uint poolId, ICrossGameRewardPool pool) =
-            crossGameReward.createPoolV2(poolName, depositToken, rewardToken, minDepositAmount);
+            crossGameReward.createGamePool(poolName, depositToken, rewardToken, minDepositAmount);
 
         console.log("\nPool Created:");
         console.log("  Pool ID:", poolId);
         console.log("  Pool Address:", address(pool));
-        console.log("  Pool Type: GamePool (V2)");
+        console.log("  Pool Type: GamePool");
 
-        // V2: Sponsor Role 부여 (선택적)
+        // GamePool: Sponsor Role 부여 (선택적)
         try vm.envAddress("SPONSOR_ADDRESS") returns (address sponsorAddr) {
             crossGameReward.grantSponsorRole(poolId, sponsorAddr);
             console.log("  Sponsor Role Granted:", sponsorAddr);

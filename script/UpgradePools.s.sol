@@ -3,7 +3,7 @@ pragma solidity 0.8.28;
 
 import "../src/CrossGameReward.sol";
 import "../src/CrossGameRewardPool.sol";
-import "../src/CrossGameRewardPoolV2.sol";
+import "../src/GamePool.sol";
 import "../src/interfaces/ICrossGameReward.sol";
 import "../src/interfaces/ICrossGameRewardPool.sol";
 import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -12,7 +12,7 @@ import "forge-std/Script.sol";
 /**
  * @title UpgradePools
  * @notice CrossGameReward에 등록된 Pool을 타입별로 일괄 업그레이드하는 스크립트
- * @dev upgradePoolsByType()를 사용하여 V1 또는 V2 풀을 일괄 업그레이드합니다.
+ * @dev upgradePoolsByType()를 사용하여 V1 또는 GamePool 풀을 일괄 업그레이드합니다.
  *
  * 사용법:
  * # V1 Pool (CrossPool) 일괄 업그레이드
@@ -20,9 +20,9 @@ import "forge-std/Script.sol";
  *   --rpc-url <RPC_URL> \
  *   --broadcast
  *
- * # V2 Pool (GamePool) 일괄 업그레이드
+ * # GamePool 일괄 업그레이드
  * forge script script/UpgradePools.s.sol:UpgradePools \
- *   --sig "upgradeV2()" \
+ *   --sig "upgradeGamePool()" \
  *   --rpc-url <RPC_URL> \
  *   --broadcast
  *
@@ -50,11 +50,11 @@ contract UpgradePools is Script {
     }
 
     /**
-     * @notice V2 Pool (GamePool) 일괄 업그레이드
-     * @dev --sig "upgradeV2()" 플래그와 함께 사용
+     * @notice GamePool 일괄 업그레이드
+     * @dev --sig "upgradeGamePool()" 플래그와 함께 사용
      */
-    function upgradeV2() external {
-        _upgrade(ICrossGameReward.PoolType.GamePool, "V2 (GamePool)");
+    function upgradeGamePool() external {
+        _upgrade(ICrossGameReward.PoolType.GamePool, "GamePool");
     }
 
     function _upgrade(ICrossGameReward.PoolType poolType, string memory typeName) internal {

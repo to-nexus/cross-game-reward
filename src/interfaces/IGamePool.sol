@@ -6,8 +6,8 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ICrossGameRewardPool} from "./ICrossGameRewardPool.sol";
 
 /**
- * @title ICrossGameRewardPoolV2
- * @notice Interface for the CrossGameRewardPoolV2 contract (Game Pool)
+ * @title IGamePool
+ * @notice Interface for the GamePool contract (Game Pool)
  * @dev Extends ICrossGameRewardPool with round-based reward distribution
  *      Uses OZ AccessControl for role management (SPONSOR_ROLE)
  *
@@ -16,7 +16,7 @@ import {ICrossGameRewardPool} from "./ICrossGameRewardPool.sol";
  * - Round-based linear reward distribution over blocks
  * - Sponsor role (via AccessControl) for round management
  */
-interface ICrossGameRewardPoolV2 is ICrossGameRewardPool {
+interface IGamePool is ICrossGameRewardPool {
     /**
      * @notice Round information structure for reward distribution
      * @param roundId Unique identifier for the round

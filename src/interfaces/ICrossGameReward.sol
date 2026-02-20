@@ -17,11 +17,11 @@ interface ICrossGameReward is IERC5313 {
     /**
      * @notice Pool type enum
      * @param CrossPool V1 pool - CROSS deposit, game token rewards (real-time distribution)
-     * @param GamePool V2 pool - Game token deposit, CROSSD rewards (round-based distribution)
+     * @param GamePool Game token deposit, CROSSD rewards (round-based distribution)
      */
     enum PoolType {
         CrossPool, // V1: CROSS -> Game Token
-        GamePool // V2: Game Token -> CROSSD
+        GamePool // Game Token -> CROSSD
     }
 
     /**
@@ -49,8 +49,8 @@ interface ICrossGameReward is IERC5313 {
     /// @notice Returns the address of the pool implementation (V1)
     function poolImplementation() external view returns (ICrossGameRewardPool);
 
-    /// @notice Returns the address of the pool implementation V2
-    function poolImplementationV2() external view returns (ICrossGameRewardPool);
+    /// @notice Returns the address of the GamePool implementation
+    function gamePoolImplementation() external view returns (ICrossGameRewardPool);
 
     /// @notice Returns the next pool ID to be assigned
     function nextPoolId() external view returns (uint);
@@ -60,8 +60,8 @@ interface ICrossGameReward is IERC5313 {
         external
         returns (uint poolId, ICrossGameRewardPool poolAddress);
 
-    /// @notice Creates a new game reward pool V2 (GamePool)
-    function createPoolV2(string calldata name, IERC20 depositToken, IERC20 rewardToken, uint minDepositAmount)
+    /// @notice Creates a new GamePool
+    function createGamePool(string calldata name, IERC20 depositToken, IERC20 rewardToken, uint minDepositAmount)
         external
         returns (uint poolId, ICrossGameRewardPool poolAddress);
 
@@ -77,10 +77,10 @@ interface ICrossGameReward is IERC5313 {
     /// @notice Returns the pool type for a given pool ID
     function getPoolType(uint poolId) external view returns (PoolType);
 
-    /// @notice Grants sponsor role to an account for a V2 pool
+    /// @notice Grants sponsor role to an account for a GamePool
     function grantSponsorRole(uint poolId, address sponsor) external;
 
-    /// @notice Revokes sponsor role from an account for a V2 pool
+    /// @notice Revokes sponsor role from an account for a GamePool
     function revokeSponsorRole(uint poolId, address sponsor) external;
 
     /// @notice Retrieves pool information by pool ID
