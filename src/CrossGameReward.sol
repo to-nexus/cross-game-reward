@@ -439,6 +439,21 @@ contract CrossGameReward is Initializable, AccessControl, UUPSUpgradeable, ICros
     }
 
     /**
+     * @notice Sets the maximum active rounds for a GamePool
+     * @dev Only callable by MANAGER_ROLE
+     * @param poolId ID of the GamePool
+     * @param newMax New maximum active rounds (must be > 0)
+     */
+    function setMaxActiveRounds(uint poolId, uint newMax) external onlyRole(MANAGER_ROLE) {
+        require(address(pools[poolId].pool) != address(0), CGRPoolNotFound());
+        require(
+            poolTypes[poolId] == PoolType.GamePool, CGRInvalidPoolType(poolId, PoolType.GamePool, poolTypes[poolId])
+        );
+
+        GamePool(address(pools[poolId].pool)).setMaxActiveRounds(newMax);
+    }
+
+    /**
      * @notice Sets the router address for WCROSS operations
      * @param _router Address of the router contract
      */
