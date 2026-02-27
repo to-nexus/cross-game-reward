@@ -34,6 +34,13 @@ import {IGamePool} from "./interfaces/IGamePool.sol";
  * - Rounds can be cancelled before they start (full refund)
  * - Completed rounds are automatically cleaned up
  *
+ * === Token Compatibility ===
+ *
+ * This pool is designed for standard ERC20 tokens only.
+ * Rebasing tokens (e.g., aTokens, stETH), fee-on-transfer tokens,
+ * or any tokens that modify balances outside of explicit transfer calls
+ * are NOT supported and may result in incorrect accounting or loss of funds.
+ *
  * === Roles ===
  *
  * - Owner (CrossGameReward's admin): Full control, emergency functions
@@ -118,6 +125,12 @@ contract GamePool is
     /// @notice Thrown when pool status is unchanged
     error GPPoolStatusUnchanged();
 
+    /// @notice Thrown when active round limit is reached
+    error GPMaxActiveRoundsReached(uint current, uint max);
+
+    /// @notice Thrown when max active rounds value is invalid
+    error GPInvalidMaxActiveRounds();
+
     // ==================== Constants ====================
 
     /// @notice Precision multiplier for reward calculations
@@ -180,6 +193,9 @@ contract GamePool is
     /// @notice Reclaimable amount (rewards distributed when totalDeposited was 0)
     uint public reclaimableAmount;
 
+    /// @notice Maximum number of active rounds allowed (0 = unlimited)
+    uint public maxActiveRounds;
+
     // ==================== Events ====================
 
     /// @notice Emitted when a user deposits tokens
@@ -202,6 +218,9 @@ contract GamePool is
 
     /// @notice Emitted when tokens are reclaimed
     event TokensReclaimed(IERC20 indexed token, address indexed to, uint amount);
+
+    /// @notice Emitted when the maximum active rounds limit is updated
+    event MaxActiveRoundsUpdated(uint oldMax, uint newMax);
 
     // ==================== Modifiers ====================
 
@@ -247,6 +266,7 @@ contract GamePool is
         minDepositAmount = _minDepositAmount;
         poolStatus = PoolStatus.Active;
         nextRoundId = 1;
+        maxActiveRounds = 50;
     }
 
     /**
@@ -292,6 +312,10 @@ contract GamePool is
         require(amount > 0, GPCanNotZeroValue());
         require(startBlock > block.number, GPInvalidStartBlock(startBlock, block.number));
         require(durationBlocks > 0, GPInvalidDuration());
+        require(
+            maxActiveRounds == 0 || _activeRoundIds.length() < maxActiveRounds,
+            GPMaxActiveRoundsReached(_activeRoundIds.length(), maxActiveRounds)
+        );
 
         uint rewardPerBlock = (amount / durationBlocks / REWARD_PER_BLOCK_PRECISION) * REWARD_PER_BLOCK_PRECISION;
         require(rewardPerBlock > 0, GPRewardPerBlockZero());
@@ -588,7 +612,8 @@ contract GamePool is
     /**
      * @notice Returns user reward info (V1 compatibility)
      */
-    function userRewards(address account, IERC20) external view returns (uint rewardPerTokenPaid, uint rewards) {
+    function userRewards(address account, IERC20 token) external view returns (uint rewardPerTokenPaid, uint rewards) {
+        require(token == rewardToken, GPInvalidRewardToken(address(token), address(rewardToken)));
         uint balance = balances[account];
         if (balance > 0) rewardPerTokenPaid = _userRewardDebt[account] / balance;
         rewards = _userPendingRewards[account];
@@ -660,6 +685,16 @@ contract GamePool is
         emit PoolStatusChanged(oldStatus, newStatus);
     }
 
+    /**
+     * @notice Sets the maximum number of active rounds allowed
+     * @param newMax New maximum (must be > 0)
+     */
+    function setMaxActiveRounds(uint newMax) external onlyRewardRoot {
+        require(newMax > 0, GPInvalidMaxActiveRounds());
+        emit MaxActiveRoundsUpdated(maxActiveRounds, newMax);
+        maxActiveRounds = newMax;
+    }
+
     // ==================== Emergency Admin Functions ====================
 
     /**
@@ -725,8 +760,15 @@ contract GamePool is
                 reclaimableAmount += reward;
             } else {
                 uint rewardPerShare = (reward * PRECISION) / totalDeposited;
-                round.accRewardPerShare += rewardPerShare;
-                globalAccRewardPerShare += rewardPerShare;
+                if (rewardPerShare > 0) {
+                    round.accRewardPerShare += rewardPerShare;
+                    globalAccRewardPerShare += rewardPerShare;
+                    uint distributed = (rewardPerShare * totalDeposited) / PRECISION;
+                    uint dust = reward - distributed;
+                    if (dust > 0) reclaimableAmount += dust;
+                } else {
+                    reclaimableAmount += reward;
+                }
             }
 
             round.lastRewardBlock = endBlock;
@@ -889,5 +931,5 @@ contract GamePool is
     /**
      * @dev Storage gap for future upgrades
      */
-    uint[30] private __gap;
+    uint[29] private __gap;
 }

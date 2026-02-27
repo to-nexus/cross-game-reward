@@ -78,6 +78,9 @@ interface IGamePool is ICrossGameRewardPool {
     /// @notice Returns the reclaimable amount (rewards distributed when totalDeposited was 0)
     function reclaimableAmount() external view returns (uint256);
 
+    /// @notice Returns the maximum number of active rounds allowed
+    function maxActiveRounds() external view returns (uint256);
+
     /// @notice Returns round information by round ID
     function getRound(uint256 roundId) external view returns (Round memory);
 
