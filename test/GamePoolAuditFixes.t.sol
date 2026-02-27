@@ -473,4 +473,63 @@ contract GamePoolAuditFixesTest is GamePoolBase {
         // after _updateUser was called
         assertGt(rewards, 0, "Should have accumulated pending rewards");
     }
+
+    // ==================== Owner Function Tests ====================
+
+    function test_Owner_ReturnsCrossGameRewardOwner() public view {
+        // GamePool.owner() should return crossGameReward.owner(), not the CrossGameReward contract itself
+        address expectedOwner = crossGameReward.owner();
+        address actualOwner = gamePool.owner();
+
+        assertEq(actualOwner, expectedOwner, "GamePool.owner() should return CrossGameReward's owner");
+        assertEq(actualOwner, address(this), "Owner should be the test contract (deployer)");
+    }
+
+    function test_Owner_ConsistentWithCrossGameRewardPool() public {
+        // Create a CrossGameRewardPool
+        (, ICrossGameRewardPool crossPool) =
+            crossGameReward.createPool("CrossPool", crossdToken, 1 ether);
+
+        // Both pool types should return the same owner
+        assertEq(
+            gamePool.owner(),
+            CrossGameRewardPool(address(crossPool)).owner(),
+            "GamePool and CrossGameRewardPool should return the same owner"
+        );
+    }
+
+    function test_Owner_AllowsDirectUpgradeByOwner() public {
+        // Deploy new implementation
+        GamePool newImpl = new GamePool();
+
+        // Owner (crossGameReward.owner() = address(this)) should be able to upgrade directly
+        gamePool.upgradeToAndCall(address(newImpl), "");
+
+        // Verify pool still works after upgrade
+        assertEq(address(gamePool.depositToken()), address(gameToken));
+    }
+
+    function test_Owner_AllowsUpgradeByCrossGameReward() public {
+        // Deploy new implementation
+        GamePool newImpl = new GamePool();
+
+        // CrossGameReward contract should also be able to upgrade via batch function
+        crossGameReward.upgradePoolsByType(
+            ICrossGameReward.PoolType.GamePool,
+            address(newImpl),
+            ""
+        );
+
+        // Verify pool still works after upgrade
+        assertEq(address(gamePool.depositToken()), address(gameToken));
+    }
+
+    function test_Owner_UnauthorizedCannotUpgrade() public {
+        GamePool newImpl = new GamePool();
+
+        // Random user should NOT be able to upgrade
+        vm.prank(user1);
+        vm.expectRevert();
+        gamePool.upgradeToAndCall(address(newImpl), "");
+    }
 }

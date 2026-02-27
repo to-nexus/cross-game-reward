@@ -357,17 +357,23 @@ contract CrossGameReward is Initializable, AccessControl, UUPSUpgradeable, ICros
      * @notice Upgrades all pools of a specific type to a new implementation
      * @dev Only callable by DEFAULT_ADMIN_ROLE.
      *
-     *      [V1 Pool 수동 업그레이드 필요 (최초 1회)]
-     *      기존에 배포된 V1 Pool의 _authorizeUpgrade는 onlyOwner로만 제한되어 있어,
-     *      CrossGameReward 컨트랙트(msg.sender)가 upgradeToAndCall을 호출할 수 없습니다.
-     *      Pool의 owner()는 CrossGameReward의 defaultAdmin 주소를 반환하므로,
-     *      CrossGameReward 컨트랙트 주소와 일치하지 않기 때문입니다.
+     *      This function performs atomic batch upgrades to ensure all pools of a given type
+     *      run the same implementation version. Partial upgrades (some pools on old version,
+     *      others on new) would introduce inconsistency risks across the protocol.
      *
-     *      따라서 이 함수를 최초로 사용하기 전에, V1 Pool들은 owner(defaultAdmin)가
-     *      직접 pool.upgradeToAndCall(newImpl, "")을 1회 수동 호출하여 새 구현체로
-     *      업그레이드해야 합니다. 새 구현체의 _authorizeUpgrade는 owner와 rewardRoot
-     *      (= CrossGameReward 컨트랙트) 모두를 허용하므로, 이후부터는 이 함수로
-     *      일괄 업그레이드가 가능합니다.
+     *      [Manual Upgrade Required for Legacy V1 Pools (One-Time)]
+     *      Legacy V1 pools have `_authorizeUpgrade` restricted to `onlyOwner` only.
+     *      Since the pool's `owner()` returns CrossGameReward's defaultAdmin address
+     *      (not the CrossGameReward contract itself), this function cannot upgrade them directly.
+     *
+     *      Before using this function for the first time, the owner (defaultAdmin) must
+     *      manually call `pool.upgradeToAndCall(newImpl, "")` once for each V1 pool.
+     *      The new implementation allows both owner and rewardRoot (CrossGameReward contract)
+     *      to authorize upgrades, enabling batch upgrades thereafter.
+     *
+     *      [Fallback for Failed Batch Upgrades]
+     *      If a batch upgrade fails (e.g., incompatible pool), the entire transaction reverts.
+     *      In such cases, upgrade pools individually using `pool.upgradeToAndCall()` directly.
      *
      * @param poolType Pool type to upgrade (CrossPool or GamePool)
      * @param newImplementation New implementation address
