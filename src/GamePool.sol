@@ -131,6 +131,9 @@ contract GamePool is
     /// @notice Thrown when max active rounds value is invalid
     error GPInvalidMaxActiveRounds();
 
+    /// @notice Thrown when caller is not owner or rewardRoot (CrossGameReward)
+    error GPOnlyOwnerOrRewardRoot();
+
     // ==================== Constants ====================
 
     /// @notice Precision multiplier for reward calculations
@@ -271,12 +274,12 @@ contract GamePool is
 
     /**
      * @notice Returns the owner of this pool
-     * @dev Returns the defaultAdmin from AccessControlDefaultAdminRules,
-     *      which is the CrossGameReward contract (set during initialize).
+     * @dev Returns the owner from CrossGameReward (rewardRoot) contract.
+     *      This ensures consistency with CrossGameRewardPool.owner() behavior.
      *      Overrides both AccessControlDefaultAdminRulesUpgradeable and IERC5313.
      */
     function owner() public view override(AccessControl, IERC5313) returns (address) {
-        return super.owner();
+        return crossGameReward.owner();
     }
 
     // ==================== Round Management Functions ====================
@@ -922,9 +925,11 @@ contract GamePool is
 
     /**
      * @dev Authorizes contract upgrades
-     *      Allows the CrossGameReward contract (DEFAULT_ADMIN_ROLE holder) to upgrade
+     *      Allows both the owner (defaultAdmin) and CrossGameReward (rewardRoot) to upgrade
      */
-    function _authorizeUpgrade(address) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
+    function _authorizeUpgrade(address) internal override {
+        require(msg.sender == owner() || msg.sender == address(crossGameReward), GPOnlyOwnerOrRewardRoot());
+    }
 
     // ==================== Storage Gap ====================
 
