@@ -31,6 +31,13 @@ import {ICrossGameRewardPool} from "./interfaces/ICrossGameRewardPool.sol";
  *   - Each reward is distributed proportionally to current deposit amounts
  *   - Do NOT receive rewards deposited before their deposit
  *
+ * === Token Compatibility ===
+ *
+ * This pool is designed for standard ERC20 tokens only.
+ * Rebasing tokens (e.g., aTokens, stETH), fee-on-transfer tokens,
+ * or any tokens that modify balances outside of explicit transfer calls
+ * are NOT supported and may result in incorrect accounting or loss of funds.
+ *
  * === Upgradeability ===
  *
  * UUPS Pattern:
@@ -934,9 +941,11 @@ contract CrossGameRewardPool is
 
     /**
      * @dev Authorizes contract upgrades
-     * @param newImplementation Address of the new implementation
+     *      Allows both the owner (defaultAdmin) and CrossGameReward (rewardRoot) to upgrade
      */
-    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
+    function _authorizeUpgrade(address) internal override {
+        require(msg.sender == owner() || msg.sender == address(crossGameReward), CGRPOnlyOwner());
+    }
 
     // ==================== Storage Gap ====================
 
